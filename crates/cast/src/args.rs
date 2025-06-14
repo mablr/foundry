@@ -368,12 +368,26 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
             let who = who.resolve(&provider).await?;
             sh_println!("{}", Cast::new(provider).codesize(who, block).await?)?
         }
-        CastSubcommand::ComputeAddress { address, nonce, rpc } => {
-            let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
-
+        CastSubcommand::ComputeAddress { address, nonce, salt, init_code, init_code_hash, rpc } => {
             let address = stdin::unwrap_line(address)?;
-            let computed = Cast::new(provider).compute_address(address, nonce).await?;
+
+            let computed = if init_code.is_some() || init_code_hash.is_some() {
+                // For CREATE2, address can be computed directly
+                let salt = salt.unwrap_or(B256::ZERO);
+                let init_code_hash = if let Some(hash) = init_code_hash {
+                    hash
+                } else if let Some(code) = init_code {
+                    keccak256(hex::decode(code)?)
+                } else {
+                    eyre::bail!("Either init_code or init_code_hash must be provided for CREATE2 address computation");
+                };
+                address.create2(salt, init_code_hash)
+            } else {
+                // For CREATE, rpc is needed to compute the address
+                let config = rpc.load_config()?;
+                let provider = utils::get_provider(&config)?;
+                Cast::new(provider).compute_address(address, nonce).await?
+            };
             sh_println!("Computed Address: {}", computed.to_checksum(None))?
         }
         CastSubcommand::Disassemble { bytecode } => {
