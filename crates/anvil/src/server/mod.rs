@@ -2,7 +2,7 @@
 
 use crate::{EthApi, IpcTask};
 use anvil_server::{ServerConfig, ipc::IpcEndpoint};
-use axum::Router;
+use axum::{Router, routing::get};
 use futures::StreamExt;
 use handler::{HttpEthRpcHandler, PubSubEthRpcHandler};
 use std::{io, net::SocketAddr, pin::pin};
@@ -10,6 +10,7 @@ use tokio::net::TcpListener;
 
 pub mod error;
 mod handler;
+mod beacon_handler;
 
 /// Configures a server that handles [`EthApi`] related JSON-RPC calls via HTTP and WS.
 ///
@@ -36,8 +37,21 @@ pub async fn serve_on(
 /// Configures an [`axum::Router`] that handles [`EthApi`] related JSON-RPC calls via HTTP and WS.
 pub fn router(api: EthApi, config: ServerConfig) -> Router {
     let http = HttpEthRpcHandler::new(api.clone());
-    let ws = PubSubEthRpcHandler::new(api);
-    anvil_server::http_ws_router(config, http, ws)
+    let ws = PubSubEthRpcHandler::new(api.clone());
+    
+    // Create the base JSON-RPC router
+    let base_router = anvil_server::http_ws_router(config, http, ws);
+    
+    // Create a separate router for beacon API endpoints with EthApi state
+    let beacon_router = Router::new()
+        .route(
+            "/eth/v1/beacon/blob_sidecars/{block_id}",
+            get(beacon_handler::handle_get_blob_sidecars),
+        )
+        .with_state(api);
+    
+    // Merge the routers
+    base_router.merge(beacon_router)
 }
 
 /// Launches an ipc server at the given path in a new task

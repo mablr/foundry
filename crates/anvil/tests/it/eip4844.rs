@@ -449,3 +449,89 @@ async fn can_get_blobs_by_tx_hash() {
     let blobs = api.anvil_get_blob_by_tx_hash(hash).unwrap().unwrap();
     assert_eq!(blobs, sidecar.blobs);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_beacon_api_get_blob_sidecars() {
+    let node_config = NodeConfig::test().with_hardfork(Some(EthereumHardfork::Cancun.into()));
+    let (_api, handle) = spawn(node_config).await;
+
+    let wallets = handle.dev_wallets().collect::<Vec<_>>();
+    let from = wallets[0].address();
+    let to = wallets[1].address();
+
+    let provider = http_provider(&handle.http_endpoint());
+
+    let eip1559_est = provider.estimate_eip1559_fees().await.unwrap();
+    let gas_price = provider.get_gas_price().await.unwrap();
+
+    // Create a blob transaction
+    let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(b"Hello Beacon API");
+    let sidecar = sidecar.build().unwrap();
+
+    let tx = TransactionRequest::default()
+        .with_from(from)
+        .with_to(to)
+        .with_nonce(0)
+        .with_max_fee_per_blob_gas(gas_price + 1)
+        .with_max_fee_per_gas(eip1559_est.max_fee_per_gas)
+        .with_max_priority_fee_per_gas(eip1559_est.max_priority_fee_per_gas)
+        .with_blob_sidecar(sidecar)
+        .value(U256::from(100));
+
+    let mut tx = WithOtherFields::new(tx);
+    tx.populate_blob_hashes();
+
+    let receipt = provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+    let block_number = receipt.block_number.unwrap();
+
+    // Test Beacon API endpoint using HTTP client
+    let client = reqwest::Client::new();
+    let url = format!(
+        "{}/eth/v1/beacon/blob_sidecars/{}",
+        handle.http_endpoint(),
+        block_number
+    );
+
+    let response = client.get(&url).send().await.unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    
+    // Verify response structure
+    assert!(body["data"].is_array());
+    assert!(body["execution_optimistic"].is_boolean());
+    assert!(body["finalized"].is_boolean());
+    
+    // Verify we have blob data
+    let blobs = body["data"].as_array().unwrap();
+    assert!(!blobs.is_empty());
+    
+    // Verify blob structure
+    let first_blob = &blobs[0];
+    assert!(first_blob["index"].is_string());
+    assert!(first_blob["blob"].is_string());
+    assert!(first_blob["kzg_commitment"].is_string());
+    assert!(first_blob["kzg_proof"].is_string());
+
+    // Test with special block identifiers
+    let test_ids = vec!["head", "finalized", "latest"];
+    for block_id in test_ids {
+        let url = format!("{}/eth/v1/beacon/blob_sidecars/{}", handle.http_endpoint(), block_id);
+        let response = client.get(&url).send().await.unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+    }
+
+    // Test with hex block number
+    let url = format!(
+        "{}/eth/v1/beacon/blob_sidecars/0x{}",
+        handle.http_endpoint(),
+        format!("{:x}", block_number)
+    );
+    let response = client.get(&url).send().await.unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    // Test with non-existent block
+    let url = format!("{}/eth/v1/beacon/blob_sidecars/999999", handle.http_endpoint());
+    let response = client.get(&url).send().await.unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+}
