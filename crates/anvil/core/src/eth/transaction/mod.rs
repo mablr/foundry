@@ -571,12 +571,12 @@ impl PendingTransaction {
 }
 
 /// Container type for signed, typed transactions.
-#[derive(Clone, Debug, TransactionEnvelope)]
+#[derive(Clone, Debug, TransactionEnvelope, Serialize)]
 #[envelope(
     alloy_consensus = alloy_consensus,
     tx_type_name = TxType,
     typed = TypedTransactionRequest,
-    serde_cfg(all()),
+    serde_cfg(not(all())),
 )]
 pub enum TypedTransaction {
     /// Legacy transaction type
@@ -597,6 +597,75 @@ pub enum TypedTransaction {
     /// op-stack deposit transaction
     #[envelope(ty = 126)]
     Deposit(TxDeposit),
+}
+
+/// Tagged variant of TypedTransaction for deserialization
+#[derive(Deserialize)]
+pub enum TypedTransactionTagged {
+    Legacy(Signed<TxLegacy>),
+    EIP2930(Signed<TxEip2930>),
+    EIP1559(Signed<TxEip1559>),
+    EIP4844(Signed<TxEip4844Variant>),
+    EIP7702(Signed<TxEip7702>),
+    Deposit(TxDeposit),
+}
+
+impl From<TypedTransactionTagged> for TypedTransaction {
+    fn from(value: TypedTransactionTagged) -> Self {
+        match value {
+            TypedTransactionTagged::Legacy(tx) => TypedTransaction::Legacy(tx),
+            TypedTransactionTagged::EIP2930(tx) => TypedTransaction::EIP2930(tx),
+            TypedTransactionTagged::EIP1559(tx) => TypedTransaction::EIP1559(tx),
+            TypedTransactionTagged::EIP4844(tx) => TypedTransaction::EIP4844(tx),
+            TypedTransactionTagged::EIP7702(tx) => TypedTransaction::EIP7702(tx),
+            TypedTransactionTagged::Deposit(tx) => TypedTransaction::Deposit(tx),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum TypedTransactionUntagged {
+    Legacy(Signed<TxLegacy>),
+    EIP2930(Signed<TxEip2930>),
+    EIP1559(Signed<TxEip1559>),
+    EIP4844(Signed<TxEip4844Variant>),
+    EIP7702(Signed<TxEip7702>),
+    Deposit(TxDeposit),
+}
+
+impl From<TypedTransactionUntagged> for TypedTransaction {
+    fn from(value: TypedTransactionUntagged) -> Self {
+        match value {
+            TypedTransactionUntagged::Legacy(tx) => TypedTransaction::Legacy(tx),
+            TypedTransactionUntagged::EIP2930(tx) => TypedTransaction::EIP2930(tx),
+            TypedTransactionUntagged::EIP1559(tx) => TypedTransaction::EIP1559(tx),
+            TypedTransactionUntagged::EIP4844(tx) => TypedTransaction::EIP4844(tx),
+            TypedTransactionUntagged::EIP7702(tx) => TypedTransaction::EIP7702(tx),
+            TypedTransactionUntagged::Deposit(tx) => TypedTransaction::Deposit(tx),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TypedTransaction {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // Try to deserialize as tagged first (old format with tx type as key in the object)
+        if let Ok(tagged) = serde_json::from_value::<TypedTransactionTagged>(value.clone()) {
+            return Ok(TypedTransaction::from(tagged));
+        }
+
+        // Fall back to deserialize as untagged (new format with tx type as key in the object)
+        let untagged = serde_json::from_value::<TypedTransactionUntagged>(value)
+            .map_err(|_| D::Error::custom("Could not deserialize as TypedTransaction - neither tagged nor untagged format matched"))?;
+        Ok(TypedTransaction::from(untagged))
+    }
 }
 
 impl TryFrom<AnyRpcTransaction> for TypedTransaction {
@@ -1540,6 +1609,61 @@ mod tests {
             }
         }"#;
 
-        let _typed_tx: TypedTransaction = serde_json::from_str(tx).unwrap();
+        let typed_tx: TypedTransaction = serde_json::from_str(tx).unwrap();
+        match typed_tx {
+            TypedTransaction::EIP1559(tx) => {
+                // check some fields of the transaction
+                assert_eq!(tx.chain_id().unwrap(), 0x7a69);
+                assert_eq!(tx.nonce(), 0);
+                assert_eq!(tx.gas_limit(), 0x5209);
+                assert_eq!(tx.max_fee_per_gas(), 0x77359401);
+                assert_eq!(tx.max_priority_fee_per_gas().unwrap(), 1);
+                assert_eq!(
+                    tx.to().unwrap(),
+                    "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266".parse::<Address>().unwrap()
+                );
+                assert_eq!(tx.value(), 0);
+            }
+            _ => panic!("expected EIP1559 transaction"),
+        }
+    }
+
+    #[test]
+    fn deser_to_type_tx_untagged() {
+        let tx = r#"
+        {
+            "type": "0x2",
+            "chainId": "0x7a69",
+            "nonce": "0x0",
+            "gas": "0x5209",
+            "maxFeePerGas": "0x77359401",
+            "maxPriorityFeePerGas": "0x1",
+            "to": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+            "value": "0x0",
+            "accessList": [],
+            "input": "0x",
+            "r": "0x85c2794a580da137e24ccc823b45ae5cea99371ae23ee13860fcc6935f8305b0",
+            "s": "0x41de7fa4121dab284af4453d30928241208bafa90cdb701fe9bc7054759fe3cd",
+            "yParity": "0x0",
+            "hash": "0x8c9b68e8947ace33028dba167354fde369ed7bbe34911b772d09b3c64b861515"
+        }"#;
+
+        let typed_tx: TypedTransaction = serde_json::from_str(tx).unwrap();
+        match typed_tx {
+            TypedTransaction::EIP1559(tx) => {
+                // check some fields of the transaction
+                assert_eq!(tx.chain_id().unwrap(), 0x7a69);
+                assert_eq!(tx.nonce(), 0);
+                assert_eq!(tx.gas_limit(), 0x5209);
+                assert_eq!(tx.max_fee_per_gas(), 0x77359401);
+                assert_eq!(tx.max_priority_fee_per_gas().unwrap(), 1);
+                assert_eq!(
+                    tx.to().unwrap(),
+                    "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266".parse::<Address>().unwrap()
+                );
+                assert_eq!(tx.value(), 0);
+            }
+            _ => panic!("expected EIP1559 transaction"),
+        }
     }
 }
