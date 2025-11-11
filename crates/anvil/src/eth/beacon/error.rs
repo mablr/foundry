@@ -50,6 +50,11 @@ impl BeaconError {
         Self::new(BeaconErrorCode::InternalError, format!("Internal server error: {error}"))
     }
 
+    /// Helper function to create a 406 Not Acceptable error
+    pub fn not_acceptable() -> Self {
+        Self::new(BeaconErrorCode::NotAcceptable, "Accepted media type not supported")
+    }
+
     /// Converts to an Axum response
     pub fn into_response(self) -> Response {
         let status =
@@ -86,6 +91,7 @@ impl IntoResponse for BeaconError {
 pub enum BeaconErrorCode {
     BadRequest = 400,
     NotFound = 404,
+    NotAcceptable = 406,
     InternalError = 500,
 }
 
@@ -100,6 +106,7 @@ impl BeaconErrorCode {
         match self {
             Self::BadRequest => "Bad Request",
             Self::NotFound => "Not Found",
+            Self::NotAcceptable => "Not Acceptable",
             Self::InternalError => "Internal Server Error",
         }
     }

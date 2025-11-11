@@ -11,10 +11,31 @@ use alloy_rpc_types_beacon::{
 use axum::{
     Json,
     extract::{Path, Query, State},
+    http::HeaderMap,
     response::{IntoResponse, Response},
 };
 use hyper::StatusCode;
 use std::{collections::HashMap, str::FromStr as _};
+
+/// Check if the Accept header supports JSON responses
+fn accepts_json(headers: &HeaderMap) -> bool {
+    headers
+        .get("Accept")
+        .and_then(|h| h.to_str().ok())
+        .map(|accept| {
+            // Accept JSON if no Accept header, or if it contains application/json or */*
+            accept.contains("application/json") || accept.contains("*/*")
+        })
+        .unwrap_or(true) // Default to JSON if no Accept header
+}
+
+/// Check if client can handle the response format
+fn validate_accept_header(headers: &HeaderMap) -> Result<(), Response> {
+    if !accepts_json(headers) {
+        return Err(BeaconError::not_acceptable().into_response());
+    }
+    Ok(())
+}
 
 /// Handles incoming Beacon API requests for blob sidecars
 ///
@@ -23,7 +44,13 @@ pub async fn handle_get_blob_sidecars(
     State(api): State<EthApi>,
     Path(block_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
 ) -> Response {
+    // Validate Accept header
+    if let Err(response) = validate_accept_header(&headers) {
+        return response;
+    }
+
     // Parse block_id from path parameter
     let Ok(block_id) = BlockId::from_str(&block_id) else {
         return BeaconError::invalid_block_id(block_id).into_response();
@@ -67,7 +94,13 @@ pub async fn handle_get_blobs(
     State(api): State<EthApi>,
     Path(block_id): Path<String>,
     Query(versioned_hashes): Query<HashMap<String, String>>,
+    headers: HeaderMap,
 ) -> Response {
+    // Validate Accept header
+    if let Err(response) = validate_accept_header(&headers) {
+        return response;
+    }
+
     // Parse block_id from path parameter
     let Ok(block_id) = BlockId::from_str(&block_id) else {
         return BeaconError::invalid_block_id(block_id).into_response();
@@ -97,7 +130,12 @@ pub async fn handle_get_blobs(
 /// Only returns the `genesis_time`, other fields are set to zero.
 ///
 /// GET /eth/v1/beacon/genesis
-pub async fn handle_get_genesis(State(api): State<EthApi>) -> Response {
+pub async fn handle_get_genesis(State(api): State<EthApi>, headers: HeaderMap) -> Response {
+    // Validate Accept header
+    if let Err(response) = validate_accept_header(&headers) {
+        return response;
+    }
+
     match api.anvil_get_genesis_time() {
         Ok(genesis_time) => BeaconResponse::new(GenesisDetails {
             genesis_time,
