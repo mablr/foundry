@@ -203,13 +203,8 @@ impl<DB: Db + ?Sized, V: TransactionValidator> TransactionExecutor<'_, DB, V> {
                 }
             };
             if is_cancun {
-                let tx_blob_gas = tx
-                    .transaction
-                    .pending_transaction
-                    .transaction
-                    .transaction
-                    .blob_gas()
-                    .unwrap_or(0);
+                let tx_blob_gas =
+                    tx.transaction.pending_transaction.transaction.as_ref().blob_gas().unwrap_or(0);
                 cumulative_blob_gas_used =
                     Some(cumulative_blob_gas_used.unwrap_or(0u64).saturating_add(tx_blob_gas));
             }
@@ -281,7 +276,7 @@ impl<DB: Db + ?Sized, V: TransactionValidator> TransactionExecutor<'_, DB, V> {
         let mut tx_env: OpTransaction<TxEnv> =
             FromRecoveredTx::from_recovered_tx(&tx.transaction.transaction, *tx.sender());
 
-        if let TypedTransaction::EIP7702(tx_7702) = &tx.transaction.transaction
+        if let TypedTransaction::EIP7702(tx_7702) = tx.transaction.as_ref()
             && self.cheats.has_recover_overrides()
         {
             // Override invalid recovered authorizations with signature overrides from cheat manager
