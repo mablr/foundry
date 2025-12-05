@@ -42,10 +42,9 @@ use foundry_evm_networks::NetworkConfigs;
 use foundry_primitives::{FoundryReceiptEnvelope, FoundryTxEnvelope};
 use op_revm::{L1BlockInfo, OpContext, OpTransaction, precompiles::OpPrecompiles};
 use revm::{
-    Database, DatabaseRef, Inspector, Journal,
+    Database, Inspector, Journal,
     context::{Block as _, Cfg, Evm as RevmEvm, JournalTr, LocalContext, TxEnv},
     context_interface::result::{EVMError, ExecutionResult, Output},
-    database::WrapDatabaseRef,
     handler::{EthPrecompiles, instructions::EthInstructions},
     interpreter::InstructionResult,
     precompile::{PrecompileSpecId, Precompiles},
@@ -561,19 +560,4 @@ where
 
         EitherEvm::Eth(eth)
     }
-}
-
-/// Creates a new EVM with the given inspector and wraps the database in a `WrapDatabaseRef`.
-pub fn new_evm_with_inspector_ref<'db, DB, I>(
-    db: &'db DB,
-    env: &Env,
-    inspector: &'db mut I,
-) -> EitherEvm<WrapDatabaseRef<&'db DB>, &'db mut I, PrecompilesMap>
-where
-    DB: DatabaseRef<Error = DatabaseError> + Debug + 'db + ?Sized,
-    I: Inspector<EthEvmContext<WrapDatabaseRef<&'db DB>>>
-        + Inspector<OpContext<WrapDatabaseRef<&'db DB>>>,
-    WrapDatabaseRef<&'db DB>: Database<Error = DatabaseError>,
-{
-    new_evm_with_inspector(WrapDatabaseRef(db), env, inspector)
 }
