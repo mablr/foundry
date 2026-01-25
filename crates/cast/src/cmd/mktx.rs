@@ -1,7 +1,7 @@
 use crate::tx::{self, CastTxBuilder};
 use alloy_eips::Encodable2718;
 use alloy_ens::NameOrAddress;
-use alloy_network::{EthereumWallet, NetworkWallet, TransactionBuilder};
+use alloy_network::{EthereumWallet, TransactionBuilder};
 use alloy_primitives::{Address, hex};
 use alloy_provider::Provider;
 use alloy_signer::Signer;
@@ -126,8 +126,6 @@ impl MakeTxArgs {
             return Ok(());
         }
 
-        let is_tempo = tx_builder.is_tempo();
-
         if ethsign {
             // Use "eth_signTransaction" to sign the transaction only works if the node/RPC has
             // unlocked accounts.
@@ -145,31 +143,11 @@ impl MakeTxArgs {
 
         tx::validate_from_address(eth.wallet.from, from)?;
 
-        // Handle Tempo transactions separately
-        // TODO(onbjerg): All of this is a side effect of a few things, most notably that we do
-        // not use `FoundryNetwork` and `FoundryTransactionRequest` everywhere, which is
-        // downstream of the fact that we use `EthereumWallet` everywhere.
-        if is_tempo {
-            let (ftx, _) = tx_builder.build(&signer).await?;
+        let (tx_req, _) = tx_builder.build(&signer).await?;
 
-            // Sign using NetworkWallet<FoundryNetwork>
-            let signed_tx = signer.sign_request(ftx).await?;
+        let tx_envelope = tx_req.build(&EthereumWallet::new(signer)).await?;
 
-            // Encode as 2718
-            let mut raw_tx = Vec::with_capacity(signed_tx.encode_2718_len());
-            signed_tx.encode_2718(&mut raw_tx);
-
-            let signed_tx_hex = hex::encode(&raw_tx);
-            sh_println!("0x{signed_tx_hex}")?;
-
-            return Ok(());
-        }
-
-        let (tx, _) = tx_builder.build(&signer).await?;
-
-        let tx = tx.into_inner().build(&EthereumWallet::new(signer)).await?;
-
-        let signed_tx = hex::encode(tx.encoded_2718());
+        let signed_tx = hex::encode(tx_envelope.encoded_2718());
         sh_println!("0x{signed_tx}")?;
 
         Ok(())
