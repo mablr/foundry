@@ -69,13 +69,35 @@ pub struct RpcOpts {
     /// Specify custom headers for RPC requests.
     #[arg(long, alias = "headers", env = "ETH_RPC_HEADERS", value_delimiter(','))]
     pub rpc_headers: Option<Vec<String>>,
+}
+
+impl_figment_convert_cast!(RpcOpts);
+
+/// Wraps [`RpcOpts`] and adds a `--curl` flag.
+///
+/// Use this only in subcommands that actually support `--curl` mode.
+#[derive(Clone, Debug, Default, Parser)]
+#[command(next_help_heading = "Rpc options")]
+pub struct CurlRpcOpts {
+    #[command(flatten)]
+    pub rpc: RpcOpts,
 
     /// Print the equivalent curl command instead of making the RPC request.
     #[arg(long)]
     pub curl: bool,
 }
 
-impl_figment_convert_cast!(RpcOpts);
+impl_figment_convert_cast!(CurlRpcOpts);
+
+impl figment::Provider for CurlRpcOpts {
+    fn metadata(&self) -> Metadata {
+        Metadata::named("CurlRpcOpts")
+    }
+
+    fn data(&self) -> Result<Map<Profile, Dict>, figment::Error> {
+        Ok(Map::from([(Config::selected_profile(), self.rpc.dict())]))
+    }
+}
 
 impl figment::Provider for RpcOpts {
     fn metadata(&self) -> Metadata {

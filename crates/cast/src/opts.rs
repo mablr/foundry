@@ -11,7 +11,7 @@ use alloy_primitives::{Address, B256, Selector, U256};
 use alloy_rpc_types::BlockId;
 use clap::{ArgAction, Parser, Subcommand, ValueHint};
 use eyre::Result;
-use foundry_cli::opts::{EtherscanOpts, GlobalArgs, RpcOpts};
+use foundry_cli::opts::{CurlRpcOpts, EtherscanOpts, GlobalArgs, RpcOpts};
 use foundry_common::version::{LONG_VERSION, SHORT_VERSION};
 use std::{path::PathBuf, str::FromStr};
 /// A Swiss Army knife for interacting with Ethereum applications from the command line.
@@ -398,7 +398,7 @@ pub enum CastSubcommand {
         /// The hash or tag to query. If not specified, the latest number is returned.
         block: Option<BlockId>,
         #[command(flatten)]
-        rpc: RpcOpts,
+        rpc: CurlRpcOpts,
     },
 
     /// Perform a call on an account without publishing a transaction.
@@ -430,7 +430,7 @@ pub enum CastSubcommand {
     #[command(visible_aliases = &["ci", "cid"])]
     ChainId {
         #[command(flatten)]
-        rpc: RpcOpts,
+        rpc: CurlRpcOpts,
     },
 
     /// Get the current client version.
@@ -862,7 +862,7 @@ pub enum CastSubcommand {
     #[command(visible_alias = "g")]
     GasPrice {
         #[command(flatten)]
-        rpc: RpcOpts,
+        rpc: CurlRpcOpts,
     },
 
     /// Generate event signatures from event string.

@@ -50,6 +50,10 @@ pub struct SendTxArgs {
     #[arg(long, requires = "from")]
     unlocked: bool,
 
+    /// Print the equivalent curl command instead of making the RPC request.
+    #[arg(long)]
+    curl: bool,
+
     #[command(flatten)]
     tx: TransactionOpts,
 
@@ -83,7 +87,7 @@ pub enum SendTxSubcommands {
 
 impl SendTxArgs {
     pub async fn run(self) -> eyre::Result<()> {
-        let Self { to, mut sig, mut args, data, send_tx, tx, command, unlocked, path } = self;
+        let Self { to, mut sig, mut args, data, send_tx, curl, tx, command, unlocked, path } = self;
 
         let blob_data = if let Some(path) = path { Some(std::fs::read(path)?) } else { None };
 
@@ -120,7 +124,7 @@ impl SendTxArgs {
         };
 
         let config = send_tx.eth.load_config()?;
-        let provider = get_provider_with_curl(&config, send_tx.eth.rpc.curl)?;
+        let provider = get_provider_with_curl(&config, curl)?;
 
         if let Some(interval) = send_tx.poll_interval {
             provider.client().set_poll_interval(Duration::from_secs(interval))

@@ -15,7 +15,7 @@ use alloy_serde::WithOtherFields;
 use alloy_sol_types::sol;
 use clap::{Args, Parser};
 use foundry_cli::{
-    opts::{RpcOpts, TempoOpts},
+    opts::{CurlRpcOpts, RpcOpts, TempoOpts},
     utils::{LoadConfig, get_chain, get_provider_with_curl},
 };
 #[doc(hidden)]
@@ -163,7 +163,7 @@ pub enum Erc20Subcommand {
         block: Option<BlockId>,
 
         #[command(flatten)]
-        rpc: RpcOpts,
+        rpc: CurlRpcOpts,
     },
 
     /// Transfer ERC20 tokens.
@@ -179,6 +179,10 @@ pub enum Erc20Subcommand {
 
         /// The amount to transfer.
         amount: String,
+
+        /// Print the equivalent curl command instead of making the RPC request.
+        #[arg(long)]
+        curl: bool,
 
         #[command(flatten)]
         send_tx: SendTxOpts,
@@ -200,6 +204,10 @@ pub enum Erc20Subcommand {
 
         /// The amount to approve.
         amount: String,
+
+        /// Print the equivalent curl command instead of making the RPC request.
+        #[arg(long)]
+        curl: bool,
 
         #[command(flatten)]
         send_tx: SendTxOpts,
@@ -228,7 +236,7 @@ pub enum Erc20Subcommand {
         block: Option<BlockId>,
 
         #[command(flatten)]
-        rpc: RpcOpts,
+        rpc: CurlRpcOpts,
     },
 
     /// Query ERC20 token name.
@@ -243,7 +251,7 @@ pub enum Erc20Subcommand {
         block: Option<BlockId>,
 
         #[command(flatten)]
-        rpc: RpcOpts,
+        rpc: CurlRpcOpts,
     },
 
     /// Query ERC20 token symbol.
@@ -258,7 +266,7 @@ pub enum Erc20Subcommand {
         block: Option<BlockId>,
 
         #[command(flatten)]
-        rpc: RpcOpts,
+        rpc: CurlRpcOpts,
     },
 
     /// Query ERC20 token decimals.
@@ -273,7 +281,7 @@ pub enum Erc20Subcommand {
         block: Option<BlockId>,
 
         #[command(flatten)]
-        rpc: RpcOpts,
+        rpc: CurlRpcOpts,
     },
 
     /// Query ERC20 token total supply.
@@ -288,7 +296,7 @@ pub enum Erc20Subcommand {
         block: Option<BlockId>,
 
         #[command(flatten)]
-        rpc: RpcOpts,
+        rpc: CurlRpcOpts,
     },
 
     /// Mint ERC20 tokens (if the token supports minting).
@@ -304,6 +312,10 @@ pub enum Erc20Subcommand {
 
         /// The amount to mint.
         amount: String,
+
+        /// Print the equivalent curl command instead of making the RPC request.
+        #[arg(long)]
+        curl: bool,
 
         #[command(flatten)]
         send_tx: SendTxOpts,
@@ -322,6 +334,10 @@ pub enum Erc20Subcommand {
         /// The amount to burn.
         amount: String,
 
+        /// Print the equivalent curl command instead of making the RPC request.
+        #[arg(long)]
+        curl: bool,
+
         #[command(flatten)]
         send_tx: SendTxOpts,
 
@@ -333,14 +349,14 @@ pub enum Erc20Subcommand {
 impl Erc20Subcommand {
     fn rpc(&self) -> &RpcOpts {
         match self {
-            Self::Allowance { rpc, .. } => rpc,
+            Self::Allowance { rpc, .. } => &rpc.rpc,
             Self::Approve { send_tx, .. } => &send_tx.eth.rpc,
-            Self::Balance { rpc, .. } => rpc,
+            Self::Balance { rpc, .. } => &rpc.rpc,
             Self::Transfer { send_tx, .. } => &send_tx.eth.rpc,
-            Self::Name { rpc, .. } => rpc,
-            Self::Symbol { rpc, .. } => rpc,
-            Self::Decimals { rpc, .. } => rpc,
-            Self::TotalSupply { rpc, .. } => rpc,
+            Self::Name { rpc, .. } => &rpc.rpc,
+            Self::Symbol { rpc, .. } => &rpc.rpc,
+            Self::Decimals { rpc, .. } => &rpc.rpc,
+            Self::TotalSupply { rpc, .. } => &rpc.rpc,
             Self::Mint { send_tx, .. } => &send_tx.eth.rpc,
             Self::Burn { send_tx, .. } => &send_tx.eth.rpc,
         }
@@ -422,8 +438,8 @@ impl Erc20Subcommand {
                 sh_println!("{}", format_uint_exp(total_supply))?
             }
             // State-changing
-            Self::Transfer { token, to, amount, send_tx, tx: tx_opts, .. } => {
-                let provider = signing_provider_with_curl(&send_tx, send_tx.eth.rpc.curl).await?;
+            Self::Transfer { token, to, amount, curl, send_tx, tx: tx_opts, .. } => {
+                let provider = signing_provider_with_curl(&send_tx, curl).await?;
                 let mut tx = IERC20::new(token.resolve(&provider).await?, &provider)
                     .transfer(to.resolve(&provider).await?, U256::from_str(&amount)?)
                     .into_transaction_request();
@@ -443,8 +459,8 @@ impl Erc20Subcommand {
                 )
                 .await?
             }
-            Self::Approve { token, spender, amount, send_tx, tx: tx_opts, .. } => {
-                let provider = signing_provider_with_curl(&send_tx, send_tx.eth.rpc.curl).await?;
+            Self::Approve { token, spender, amount, curl, send_tx, tx: tx_opts, .. } => {
+                let provider = signing_provider_with_curl(&send_tx, curl).await?;
                 let mut tx = IERC20::new(token.resolve(&provider).await?, &provider)
                     .approve(spender.resolve(&provider).await?, U256::from_str(&amount)?)
                     .into_transaction_request();
@@ -464,8 +480,8 @@ impl Erc20Subcommand {
                 )
                 .await?
             }
-            Self::Mint { token, to, amount, send_tx, tx: tx_opts, .. } => {
-                let provider = signing_provider_with_curl(&send_tx, send_tx.eth.rpc.curl).await?;
+            Self::Mint { token, to, amount, curl, send_tx, tx: tx_opts, .. } => {
+                let provider = signing_provider_with_curl(&send_tx, curl).await?;
                 let mut tx = IERC20::new(token.resolve(&provider).await?, &provider)
                     .mint(to.resolve(&provider).await?, U256::from_str(&amount)?)
                     .into_transaction_request();
@@ -485,8 +501,8 @@ impl Erc20Subcommand {
                 )
                 .await?
             }
-            Self::Burn { token, amount, send_tx, tx: tx_opts, .. } => {
-                let provider = signing_provider_with_curl(&send_tx, send_tx.eth.rpc.curl).await?;
+            Self::Burn { token, amount, curl, send_tx, tx: tx_opts, .. } => {
+                let provider = signing_provider_with_curl(&send_tx, curl).await?;
                 let mut tx = IERC20::new(token.resolve(&provider).await?, &provider)
                     .burn(U256::from_str(&amount)?)
                     .into_transaction_request();

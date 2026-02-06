@@ -1,7 +1,7 @@
 use crate::Cast;
 use clap::Parser;
 use eyre::Result;
-use foundry_cli::{opts::RpcOpts, utils, utils::LoadConfig};
+use foundry_cli::{opts::CurlRpcOpts, utils, utils::LoadConfig};
 use foundry_common::shell;
 use itertools::Itertools;
 
@@ -30,7 +30,7 @@ pub struct RpcArgs {
     raw: bool,
 
     #[command(flatten)]
-    rpc: RpcOpts,
+    rpc: CurlRpcOpts,
 }
 
 impl RpcArgs {
