@@ -138,24 +138,17 @@ pub fn get_function<'a>(
 
 /// Configures the env for the given RPC transaction.
 /// Accounts for an impersonated transaction by resetting the `env.tx.caller` field to `tx.from`.
-pub fn configure_tx_env(env: &mut EnvMut<'_>, tx: &Transaction<AnyTxEnvelope>) {
+pub fn configure_tx_env<N: Network>(env: &mut EnvMut<'_>, tx: &<N as Network>::TransactionResponse) {
     let from = tx.from();
-    if let AnyTxEnvelope::Ethereum(tx) = &tx.inner.inner() {
-        configure_tx_req_env(
-            env,
-            &TransactionRequest::from_transaction_with_sender(tx.clone(), from),
-            Some(from),
-        )
-        .expect("cannot fail");
-    }
+    configure_tx_req_env(env, &TransactionRequest::from_transaction_with_sender(tx.clone(), from), Some(from)).expect("cannot fail");
 }
 
 /// Configures the env for the given RPC transaction request.
 /// `impersonated_from` is the address of the impersonated account. This helps account for an
 /// impersonated transaction by resetting the `env.tx.caller` field to `impersonated_from`.
-pub fn configure_tx_req_env(
+pub fn configure_tx_req_env<N: Network>(
     env: &mut EnvMut<'_>,
-    tx: &TransactionRequest,
+    tx: &<N as Network>::TransactionRequest,
     impersonated_from: Option<Address>,
 ) -> eyre::Result<()> {
     // If no transaction type is provided, we need to infer it from the other fields.
