@@ -8,6 +8,9 @@ use alloy_provider::fillers::{
 };
 pub use receipt::*;
 
+pub type FoundryTransactionResponse = op_alloy_rpc_types::Transaction<crate::FoundryTxEnvelope>;
+pub type FoundryBlockResponse = alloy_serde::WithOtherFields<alloy_rpc_types_eth::Block<FoundryTransactionResponse, alloy_rpc_types_eth::Header>>;
+
 /// Foundry network type.
 ///
 /// This network type supports Foundry-specific transaction types, including
@@ -37,14 +40,13 @@ impl Network for FoundryNetwork {
 
     type TransactionRequest = crate::FoundryTransactionRequest;
 
-    type TransactionResponse = op_alloy_rpc_types::Transaction<crate::FoundryTxEnvelope>;
+    type TransactionResponse = FoundryTransactionResponse;
 
     type ReceiptResponse = crate::FoundryTxReceipt;
 
     type HeaderResponse = alloy_rpc_types_eth::Header;
 
-    type BlockResponse =
-        alloy_rpc_types_eth::Block<Self::TransactionResponse, Self::HeaderResponse>;
+    type BlockResponse = FoundryBlockResponse;
 }
 
 impl RecommendedFillers for FoundryNetwork {
