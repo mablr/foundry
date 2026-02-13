@@ -16,14 +16,14 @@ use clap::Args;
 use eyre::{Result, WrapErr};
 use foundry_cli::{
     opts::{CliAuthorizationList, EthereumOpts, TransactionOpts},
-    utils::{self, LoadConfig, get_provider_builder, parse_function_args},
+    utils::{self, parse_function_args},
 };
 use foundry_common::{
     TransactionReceiptWithRevertReason, fmt::*, get_pretty_tx_receipt_attr,
-    provider::RetryProviderWithSigner, shell,
+    shell,
 };
 use foundry_config::{Chain, Config};
-use foundry_primitives::{FoundryTransactionRequest, FoundryTypedTx};
+use foundry_primitives::{FoundryNetwork, FoundryTransactionRequest, FoundryTypedTx};
 use foundry_wallets::{WalletOpts, WalletSigner};
 use itertools::Itertools;
 use serde_json::value::RawValue;
@@ -164,14 +164,14 @@ pub struct CastTxSender<P> {
     provider: P,
 }
 
-impl<P: Provider<AnyNetwork>> CastTxSender<P> {
+impl<P: Provider<FoundryNetwork>> CastTxSender<P> {
     /// Creates a new Cast instance responsible for sending transactions.
     pub fn new(provider: P) -> Self {
         Self { provider }
     }
 
     /// Sends a transaction and waits for receipt synchronously
-    pub async fn send_sync(&self, tx: WithOtherFields<TransactionRequest>) -> Result<String> {
+    pub async fn send_sync(&self, tx: FoundryTransactionRequest) -> Result<String> {
         let mut receipt: TransactionReceiptWithRevertReason =
             self.provider.send_transaction_sync(tx).await?.into();
 
@@ -217,7 +217,7 @@ impl<P: Provider<AnyNetwork>> CastTxSender<P> {
     /// ```
     pub async fn send(
         &self,
-        tx: WithOtherFields<TransactionRequest>,
+        tx: FoundryTransactionRequest,
     ) -> Result<PendingTransactionBuilder<AnyNetwork>> {
         let res = self.provider.send_transaction(tx).await?;
 
@@ -704,20 +704,3 @@ async fn decode_execution_revert(data: &RawValue) -> Result<Option<String>> {
     Ok(None)
 }
 
-/// Creates a provider with wallet for signing transactions locally.
-///
-/// If `curl_mode` is true, the provider will print equivalent curl commands to stdout
-/// instead of executing RPC requests.
-pub(crate) async fn signing_provider_with_curl(
-    tx_opts: &SendTxOpts,
-    curl_mode: bool,
-) -> eyre::Result<RetryProviderWithSigner> {
-    let config = tx_opts.eth.load_config()?;
-    let signer = tx_opts.eth.wallet.signer().await?;
-    let wallet = alloy_network::EthereumWallet::from(signer);
-    let provider = get_provider_builder(&config, curl_mode)?.build_with_wallet(wallet)?;
-    if let Some(interval) = tx_opts.poll_interval {
-        provider.client().set_poll_interval(Duration::from_secs(interval))
-    }
-    Ok(provider)
-}

@@ -39,6 +39,14 @@ impl FoundryTransactionRequest {
         inner.into()
     }
 
+    /// Returns the Tempo transaction request reference if this is a Tempo transaction request.
+    pub fn as_tempo_mut(&mut self) -> Option<&mut TempoTransactionRequest> {
+        match self {
+            Self::Tempo(tx) => Some(tx),
+            _ => None,
+        }
+    }
+
     /// Consume the [`FoundryTransactionRequest`] and return the inner transaction request.
     pub fn into_inner(self) -> TransactionRequest {
         match self {

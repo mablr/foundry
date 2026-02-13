@@ -13,6 +13,7 @@ use foundry_cli::{
     opts::TransactionOpts,
     utils::{LoadConfig, get_provider_with_curl},
 };
+use foundry_primitives::FoundryNetwork;
 use foundry_wallets::WalletSigner;
 
 use crate::tx::{self, CastTxBuilder, CastTxSender, SendTxOpts};
@@ -272,9 +273,9 @@ impl SendTxArgs {
     }
 }
 
-pub(crate) async fn cast_send<P: Provider<AnyNetwork>>(
+pub(crate) async fn cast_send<P: Provider<FoundryNetwork>>(
     provider: P,
-    tx: WithOtherFields<TransactionRequest>,
+    tx: FoundryTransactionRequest,
     cast_async: bool,
     sync: bool,
     confs: u64,

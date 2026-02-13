@@ -1,6 +1,6 @@
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::{Address, U256, map::HashMap};
-use alloy_provider::{Provider, network::AnyNetwork};
+use alloy_provider::{Network, Provider, network::AnyNetwork};
 use eyre::{ContextCompat, Result};
 use foundry_common::{
     provider::{ProviderBuilder, RetryProvider},
@@ -119,9 +119,10 @@ pub fn get_provider_builder(config: &Config, curl_mode: bool) -> Result<Provider
     ProviderBuilder::from_config(config).map(|builder| builder.curl_mode(curl_mode))
 }
 
-pub async fn get_chain<P>(chain: Option<Chain>, provider: P) -> Result<Chain>
+pub async fn get_chain<P, N>(chain: Option<Chain>, provider: P) -> Result<Chain>
 where
-    P: Provider<AnyNetwork>,
+    P: Provider<N>,
+    N: Network,
 {
     match chain {
         Some(chain) => Ok(chain),
