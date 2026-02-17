@@ -12,7 +12,8 @@ use alloy_provider::{
     Provider,
     ext::TraceApi,
     network::{
-        AnyTxEnvelope, TransactionBuilder, TransactionResponse, primitives::BlockTransactions,
+        AnyNetwork, AnyTxEnvelope, TransactionBuilder, TransactionResponse,
+        primitives::BlockTransactions,
     },
 };
 use alloy_rpc_types::{
@@ -490,7 +491,7 @@ impl VerifyBytecodeArgs {
                         break;
                     }
 
-                    configure_tx_env(&mut env.as_env_mut(), &tx.inner);
+                    configure_tx_env::<AnyNetwork>(&mut env.as_env_mut(), tx)?;
 
                     if let TxKind::Call(_) = tx.inner.kind() {
                         executor.transact_with_env(env.clone()).wrap_err_with(|| {
