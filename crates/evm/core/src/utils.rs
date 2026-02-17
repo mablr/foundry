@@ -1,12 +1,12 @@
 use crate::EnvMut;
 use alloy_chains::Chain;
-use alloy_consensus::{BlockHeader, private::alloy_eips::eip7840::BlobParams};
+use alloy_consensus::{BlockHeader, Transaction as _, private::alloy_eips::eip7840::BlobParams};
 use alloy_hardforks::EthereumHardfork;
 use alloy_json_abi::{Function, JsonAbi};
-use alloy_network::{AnyTxEnvelope, TransactionResponse};
+use alloy_network::TransactionResponse;
 use alloy_primitives::{Address, B256, ChainId, Selector, TxKind, U256};
 use alloy_provider::{Network, network::BlockResponse};
-use alloy_rpc_types::{Transaction, TransactionRequest};
+use alloy_rpc_types::TransactionRequest;
 use foundry_config::NamedChain;
 use foundry_evm_networks::NetworkConfigs;
 use revm::primitives::{
@@ -136,18 +136,38 @@ pub fn get_function<'a>(
         .ok_or_else(|| eyre::eyre!("{contract_name} does not have the selector {selector}"))
 }
 
-/// Configures the env for the given RPC transaction.
+/// Configures the env for the given a generic transaction response.
 /// Accounts for an impersonated transaction by resetting the `env.tx.caller` field to `tx.from`.
-pub fn configure_tx_env(env: &mut EnvMut<'_>, tx: &Transaction<AnyTxEnvelope>) {
-    let from = tx.from();
-    if let AnyTxEnvelope::Ethereum(tx) = &tx.inner.inner() {
-        configure_tx_req_env(
-            env,
-            &TransactionRequest::from_transaction_with_sender(tx.clone(), from),
-            Some(from),
-        )
-        .expect("cannot fail");
-    }
+pub fn configure_tx_env<N: Network>(
+    env: &mut EnvMut<'_>,
+    tx: &N::TransactionResponse,
+) -> eyre::Result<()> {
+    env.tx.tx_type = tx.transaction_type().unwrap_or_default();
+    env.tx.kind = tx.kind();
+    env.tx.caller = tx.from();
+    env.tx.gas_limit = tx.gas_limit();
+    env.tx.nonce = tx.nonce();
+    env.tx.value = tx.value();
+    env.tx.data = tx.input().clone();
+    env.tx.chain_id = tx.chain_id();
+
+    // Type 1, EIP-2930
+    env.tx.access_list = tx.access_list().cloned().unwrap_or_default();
+
+    // Type 2, EIP-1559
+    env.tx.gas_price = TransactionResponse::gas_price(tx)
+        .or(TransactionResponse::max_fee_per_gas(tx))
+        .unwrap_or_default();
+    env.tx.gas_priority_fee = tx.max_priority_fee_per_gas();
+
+    // Type 3, EIP-4844
+    env.tx.blob_hashes = tx.blob_versioned_hashes().unwrap_or_default().to_vec();
+    env.tx.max_fee_per_blob_gas = tx.max_fee_per_blob_gas().unwrap_or_default();
+
+    // Type 4, EIP-7702
+    env.tx.set_signed_authorization(tx.authorization_list().unwrap_or_default().to_vec());
+
+    Ok(())
 }
 
 /// Configures the env for the given RPC transaction request.
