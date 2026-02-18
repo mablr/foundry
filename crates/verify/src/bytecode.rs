@@ -260,7 +260,7 @@ impl VerifyBytecodeArgs {
                 gen_tx_req.gas_price = block.header.base_fee_per_gas.map(|g| g as u128);
             }
 
-            configure_tx_req_env(&mut env.as_env_mut(), &gen_tx_req, None)
+            configure_tx_req_env(&mut env.as_env_mut(), &gen_tx_req)
                 .wrap_err("Failed to configure tx request env")?;
 
             // Seed deployer account with funds
@@ -533,8 +533,7 @@ impl VerifyBytecodeArgs {
                 transaction.input = TransactionInput::both(Bytes::from(local_bytecode_vec));
             }
 
-            // configure_req__env(&mut env, &transaction.inner);
-            configure_tx_req_env(&mut env.as_env_mut(), &transaction, None)
+            configure_tx_req_env(&mut env.as_env_mut(), &transaction)
                 .wrap_err("Failed to configure tx request env")?;
 
             let fork_address = crate::utils::deploy_contract(
