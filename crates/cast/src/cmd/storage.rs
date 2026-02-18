@@ -1,6 +1,5 @@
 use crate::{Cast, opts::parse_slot};
 use alloy_ens::NameOrAddress;
-use alloy_network::AnyNetwork;
 use alloy_primitives::{Address, B256, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::BlockId;
@@ -31,6 +30,7 @@ use foundry_config::{
     figment::{self, Metadata, Profile, value::Dict},
     impl_figment_convert_cast,
 };
+use foundry_primitives::FoundryNetwork;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -100,7 +100,7 @@ impl StorageArgs {
         let config = self.load_config()?;
 
         let Self { address, base_slot, offset, block, build, .. } = self;
-        let provider = utils::get_provider(&config)?;
+        let provider = utils::get_foundry_provider(&config)?;
         let address = address.resolve(&provider).await?;
 
         // Slot was provided, perform a simple RPC call
@@ -272,7 +272,7 @@ struct StorageReport {
     values: Vec<B256>,
 }
 
-async fn fetch_and_print_storage<P: Provider<AnyNetwork>>(
+async fn fetch_and_print_storage<P: Provider<FoundryNetwork>>(
     provider: P,
     address: Address,
     block: Option<BlockId>,
@@ -288,7 +288,7 @@ async fn fetch_and_print_storage<P: Provider<AnyNetwork>>(
     }
 }
 
-async fn fetch_storage_slots<P: Provider<AnyNetwork>>(
+async fn fetch_storage_slots<P: Provider<FoundryNetwork>>(
     provider: P,
     address: Address,
     block: Option<BlockId>,

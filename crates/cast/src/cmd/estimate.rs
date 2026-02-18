@@ -81,7 +81,7 @@ impl EstimateArgs {
         let Self { to, mut sig, mut args, mut tx, block, cost, wallet, rpc, command } = self;
 
         let config = rpc.load_config()?;
-        let provider = utils::get_provider(&config)?;
+        let provider = utils::get_foundry_provider(&config)?;
         let sender = SenderKind::from_wallet_opts(wallet).await?;
 
         let code = if let Some(EstimateSubcommands::Create {

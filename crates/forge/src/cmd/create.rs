@@ -155,7 +155,7 @@ impl CreateArgs {
             vec![]
         };
 
-        let provider = utils::get_provider(&config)?;
+        let provider = utils::get_foundry_provider(&config)?;
 
         // respect chain, if set explicitly via cmd args
         let chain_id = if let Some(chain_id) = self.chain_id() {

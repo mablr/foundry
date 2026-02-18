@@ -2,7 +2,7 @@ use super::interface::load_abi_from_file;
 use crate::SimpleCast;
 use alloy_consensus::Transaction;
 use alloy_primitives::{Address, Bytes};
-use alloy_provider::{Provider, ext::TraceApi};
+use alloy_provider::{Provider, RootProvider, ext::TraceApi};
 use alloy_rpc_types::trace::parity::{Action, CreateAction, CreateOutput, TraceOutput};
 use clap::Parser;
 use eyre::{OptionExt, Result, eyre};
@@ -11,8 +11,8 @@ use foundry_cli::{
     opts::{EtherscanOpts, RpcOpts},
     utils::{self, LoadConfig, fetch_abi_from_etherscan},
 };
-use foundry_common::provider::RetryProvider;
 use foundry_config::Config;
+use foundry_primitives::FoundryNetwork;
 
 foundry_config::impl_figment_convert!(CreationCodeArgs, etherscan, rpc);
 
@@ -53,7 +53,7 @@ impl CreationCodeArgs {
         let Self { contract, disassemble, without_args, only_args, abi_path, etherscan: _, rpc: _ } =
             self;
 
-        let provider = utils::get_provider(&config)?;
+        let provider = utils::get_foundry_provider(&config)?;
         let chain = provider.get_chain_id().await?;
         config.chain = Some(chain.into());
 
@@ -136,7 +136,7 @@ pub async fn parse_code_output(
 pub async fn fetch_creation_code_from_etherscan(
     contract: Address,
     config: &Config,
-    provider: RetryProvider,
+    provider: RootProvider<FoundryNetwork>,
 ) -> Result<Bytes> {
     let chain = config.chain.unwrap_or_default();
     let api_key = config.get_etherscan_api_key(Some(chain)).unwrap_or_default();

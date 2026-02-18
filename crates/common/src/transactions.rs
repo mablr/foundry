@@ -2,16 +2,16 @@
 
 use alloy_consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable};
 use alloy_eips::eip7702::SignedAuthorization;
-use alloy_network::AnyTransactionReceipt;
 use alloy_primitives::{Address, Bytes, TxKind, U256};
 use alloy_provider::{
     Provider,
-    network::{AnyNetwork, ReceiptResponse, TransactionBuilder},
+    network::{ReceiptResponse, TransactionBuilder},
 };
 use alloy_rpc_types::{BlockId, TransactionRequest};
 use alloy_serde::WithOtherFields;
 use eyre::Result;
 use foundry_common_fmt::UIfmt;
+use foundry_primitives::{FoundryNetwork, FoundryTransactionRequest, FoundryTxReceipt};
 use serde::{Deserialize, Serialize};
 
 /// Helper type to carry a transaction along with an optional revert reason
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 pub struct TransactionReceiptWithRevertReason {
     /// The underlying transaction receipt
     #[serde(flatten)]
-    pub receipt: AnyTransactionReceipt,
+    pub receipt: FoundryTxReceipt,
 
     /// The revert reason string if the transaction status is failed
     #[serde(skip_serializing_if = "Option::is_none", rename = "revertReason")]
@@ -29,12 +29,12 @@ pub struct TransactionReceiptWithRevertReason {
 impl TransactionReceiptWithRevertReason {
     /// Returns if the status of the transaction is 0 (failure)
     pub fn is_failure(&self) -> bool {
-        !self.receipt.inner.inner.inner.receipt.status.coerce_status()
+        !self.receipt.status()
     }
 
     /// Updates the revert reason field using `eth_call` and returns an Err variant if the revert
     /// reason was not successfully updated
-    pub async fn update_revert_reason<P: Provider<AnyNetwork>>(
+    pub async fn update_revert_reason<P: Provider<FoundryNetwork>>(
         &mut self,
         provider: &P,
     ) -> Result<()> {
@@ -42,7 +42,7 @@ impl TransactionReceiptWithRevertReason {
         Ok(())
     }
 
-    async fn fetch_revert_reason<P: Provider<AnyNetwork>>(
+    async fn fetch_revert_reason<P: Provider<FoundryNetwork>>(
         &self,
         provider: &P,
     ) -> Result<Option<String>> {
@@ -51,14 +51,13 @@ impl TransactionReceiptWithRevertReason {
         }
 
         let transaction = provider
-            .get_transaction_by_hash(self.receipt.transaction_hash)
+            .get_transaction_by_hash(self.receipt.transaction_hash())
             .await
             .map_err(|err| eyre::eyre!("unable to fetch transaction: {err}"))?
             .ok_or_else(|| eyre::eyre!("transaction not found"))?;
 
-        if let Some(block_hash) = self.receipt.block_hash {
-            let mut call_request: WithOtherFields<TransactionRequest> =
-                transaction.inner.inner.clone_inner().into();
+        if let Some(block_hash) = self.receipt.block_hash() {
+            let mut call_request: FoundryTransactionRequest = transaction.inner.inner.clone_inner().into();
             call_request.set_from(transaction.inner.inner.signer());
             match provider.call(call_request).block(BlockId::Hash(block_hash.into())).await {
                 Err(e) => return Ok(extract_revert_reason(e.to_string())),
@@ -69,13 +68,13 @@ impl TransactionReceiptWithRevertReason {
     }
 }
 
-impl From<AnyTransactionReceipt> for TransactionReceiptWithRevertReason {
-    fn from(receipt: AnyTransactionReceipt) -> Self {
+impl From<FoundryTxReceipt> for TransactionReceiptWithRevertReason {
+    fn from(receipt: FoundryTxReceipt) -> Self {
         Self { receipt, revert_reason: None }
     }
 }
 
-impl From<TransactionReceiptWithRevertReason> for AnyTransactionReceipt {
+impl From<TransactionReceiptWithRevertReason> for FoundryTxReceipt {
     fn from(receipt_with_reason: TransactionReceiptWithRevertReason) -> Self {
         receipt_with_reason.receipt
     }
@@ -149,27 +148,27 @@ pub fn get_pretty_tx_receipt_attr(
     attr: &str,
 ) -> Option<String> {
     match attr {
-        "blockHash" | "block_hash" => Some(receipt.receipt.block_hash.pretty()),
-        "blockNumber" | "block_number" => Some(receipt.receipt.block_number.pretty()),
-        "contractAddress" | "contract_address" => Some(receipt.receipt.contract_address.pretty()),
+        "blockHash" | "block_hash" => Some(receipt.receipt.block_hash().pretty()),
+        "blockNumber" | "block_number" => Some(receipt.receipt.block_number().pretty()),
+        "contractAddress" | "contract_address" => Some(receipt.receipt.contract_address().pretty()),
         "cumulativeGasUsed" | "cumulative_gas_used" => {
-            Some(receipt.receipt.inner.inner.inner.receipt.cumulative_gas_used.pretty())
+            Some(receipt.receipt.cumulative_gas_used().pretty())
         }
         "effectiveGasPrice" | "effective_gas_price" => {
-            Some(receipt.receipt.effective_gas_price.to_string())
+            Some(receipt.receipt.effective_gas_price().to_string())
         }
-        "gasUsed" | "gas_used" => Some(receipt.receipt.gas_used.to_string()),
-        "logs" => Some(receipt.receipt.inner.inner.inner.receipt.logs.as_slice().pretty()),
-        "logsBloom" | "logs_bloom" => Some(receipt.receipt.inner.inner.inner.logs_bloom.pretty()),
+        "gasUsed" | "gas_used" => Some(receipt.receipt.gas_used().to_string()),
+        "logs" => Some(receipt.receipt.as_ref().logs().pretty()),
+        "logsBloom" | "logs_bloom" => Some(receipt.receipt.0.inner.inner.logs_bloom().pretty()),
         "root" | "stateRoot" | "state_root" => Some(receipt.receipt.state_root().pretty()),
         "status" | "statusCode" | "status_code" => {
-            Some(receipt.receipt.inner.inner.inner.receipt.status.pretty())
+            Some(receipt.receipt.status().pretty())
         }
-        "transactionHash" | "transaction_hash" => Some(receipt.receipt.transaction_hash.pretty()),
+        "transactionHash" | "transaction_hash" => Some(receipt.receipt.transaction_hash().pretty()),
         "transactionIndex" | "transaction_index" => {
-            Some(receipt.receipt.transaction_index.pretty())
+            Some(receipt.receipt.transaction_index().pretty())
         }
-        "type" | "transaction_type" => Some(receipt.receipt.inner.inner.r#type.to_string()),
+        "type" | "transaction_type" => Some(receipt.receipt.0.inner.inner.tx_type().to_string()),
         "revertReason" | "revert_reason" => Some(receipt.revert_reason.pretty()),
         _ => None,
     }

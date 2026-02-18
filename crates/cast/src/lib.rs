@@ -7,11 +7,11 @@
 extern crate foundry_common;
 #[macro_use]
 extern crate tracing;
-use alloy_consensus::Header;
+use alloy_consensus::BlockHeader;
 use alloy_dyn_abi::{DynSolType, DynSolValue, FunctionExt};
 use alloy_ens::NameOrAddress;
 use alloy_json_abi::Function;
-use alloy_network::{AnyNetwork, AnyRpcTransaction};
+use alloy_network::{BlockResponse, Network, TransactionBuilder, TransactionResponse};
 use alloy_primitives::{
     Address, B256, I256, Keccak256, LogData, Selector, TxHash, TxKind, U64, U256, hex,
     utils::{ParseUnits, Unit, keccak256},
@@ -25,7 +25,6 @@ use alloy_rpc_types::{
     BlockId, BlockNumberOrTag, BlockOverrides, Filter, FilterBlockOption, Log, TransactionRequest,
     state::StateOverride,
 };
-use alloy_serde::WithOtherFields;
 use base::{Base, NumberWithBase, ToBase};
 use chrono::DateTime;
 use eyre::{Context, ContextCompat, OptionExt, Result};
@@ -39,17 +38,12 @@ use foundry_common::{
 };
 use foundry_config::Chain;
 use foundry_evm::core::bytecode::InstIter;
-use foundry_primitives::FoundryTxEnvelope;
+use foundry_primitives::{FoundryNetwork, FoundryTransactionRequest, FoundryTxEnvelope};
 use futures::{FutureExt, StreamExt, future::Either};
 
 use rayon::prelude::*;
 use std::{
-    borrow::Cow,
-    fmt::Write,
-    io,
-    path::PathBuf,
-    str::FromStr,
-    sync::atomic::{AtomicBool, Ordering},
+    borrow::Cow, fmt::Write, io, path::PathBuf, str::FromStr, sync::atomic::{AtomicBool, Ordering}
 };
 use tokio::signal::ctrl_c;
 
@@ -73,7 +67,7 @@ pub struct Cast<P> {
     provider: P,
 }
 
-impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
+impl<P: Provider<FoundryNetwork> + Clone + Unpin> Cast<P> {
     /// Creates a new Cast instance from the provided client
     ///
     /// # Example
@@ -135,7 +129,7 @@ impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
     /// ```
     pub async fn call(
         &self,
-        req: &WithOtherFields<TransactionRequest>,
+        req: &FoundryTransactionRequest,
         func: Option<&Function>,
         block: Option<BlockId>,
         state_override: Option<StateOverride>,
@@ -161,7 +155,7 @@ impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
                     // ensure the address is a contract
                     if res.is_empty() {
                         // check that the recipient is a contract that can be called
-                        if let Some(TxKind::Call(addr)) = req.to {
+                        if let Some(TxKind::Call(addr)) = req.kind() {
                             if let Ok(code) = self
                                 .provider
                                 .get_code_at(addr)
@@ -171,7 +165,7 @@ impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
                             {
                                 eyre::bail!("contract {addr:?} does not have any code")
                             }
-                        } else if Some(TxKind::Create) == req.to {
+                        } else if Some(TxKind::Create) == req.kind() {
                             eyre::bail!("tx req is a contract deployment");
                         } else {
                             eyre::bail!("recipient is None");
@@ -231,7 +225,7 @@ impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
     /// ```
     pub async fn access_list(
         &self,
-        req: &WithOtherFields<TransactionRequest>,
+        req: &FoundryTransactionRequest,
         block: Option<BlockId>,
     ) -> Result<String> {
         let access_list =
@@ -277,7 +271,7 @@ impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn publish(&self, raw_tx: String) -> Result<PendingTransactionBuilder<AnyNetwork>> {
+    pub async fn publish(&self, raw_tx: String) -> Result<PendingTransactionBuilder<FoundryNetwork>> {
         let tx = hex::decode(strip_0x(&raw_tx))?;
         let res = self.provider.send_raw_transaction(&tx).await?;
 
@@ -319,7 +313,7 @@ impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
             .ok_or_else(|| eyre::eyre!("block {:?} not found", block))?;
 
         Ok(if raw {
-            let header: Header = block.into_inner().header.inner.try_into_header()?;
+            let header = block.header().into_consensus();
             format!("0x{}", hex::encode(alloy_rlp::encode(&header)))
         } else if !fields.is_empty() {
             let mut result = String::new();
@@ -737,7 +731,7 @@ impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
             let from = from.resolve(self.provider.root()).await?;
 
             self.provider
-                .raw_request::<_, Option<AnyRpcTransaction>>(
+                .raw_request::<_, Option<<FoundryNetwork as Network>::TransactionResponse>>(
                     "eth_getTransactionBySenderAndNonce".into(),
                     (from, nonce),
                 )
@@ -750,21 +744,16 @@ impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
         };
 
         Ok(if raw {
-            // convert to FoundryTxEnvelope to support all foundry tx types (including opstack
-            // deposit transactions)
-            let foundry_tx = FoundryTxEnvelope::try_from(tx)?;
-            let encoded = foundry_tx.encoded_2718();
+            let encoded = tx.as_ref().encoded_2718();
             format!("0x{}", hex::encode(encoded))
         } else if let Some(ref field) = field {
-            get_pretty_tx_attr(&tx.inner, field.as_str())
+            get_pretty_tx_attr(&tx, field.as_str())
                 .ok_or_else(|| eyre::eyre!("invalid tx field: {}", field.to_string()))?
         } else if shell::is_json() {
             // to_value first to sort json object keys
             serde_json::to_value(&tx)?.to_string()
         } else if to_request {
-            serde_json::to_string_pretty(&TransactionRequest::from_recovered_transaction(
-                tx.into(),
-            ))?
+            serde_json::to_string_pretty(&TransactionRequest::from_transaction(tx.clone()).from(tx.from()))?
         } else {
             tx.pretty()
         })
@@ -1007,7 +996,7 @@ impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
                 BlockId::Number(block_number) => Ok(Some(block_number)),
                 BlockId::Hash(hash) => {
                     let block = self.provider.get_block_by_hash(hash.block_hash).await?;
-                    Ok(block.map(|block| block.header.number).map(BlockNumberOrTag::from))
+                    Ok(block.map(|block| block.header().number()).map(BlockNumberOrTag::from))
                 }
             },
             None => Ok(None),
@@ -1068,7 +1057,7 @@ impl<P: Provider<AnyNetwork> + Clone + Unpin> Cast<P> {
                     Either::Right(futures::future::pending())
                 } => {
                     if let (Some(block), Some(to_block)) = (block, to_block_number)
-                        && block.number  > to_block {
+                        && block.number()  > to_block {
                             break;
                         }
                 },

@@ -6,6 +6,7 @@ use crate::{
     tx::{CastTxBuilder, SenderKind},
 };
 use alloy_ens::NameOrAddress;
+use alloy_network::{TransactionBuilder, TransactionBuilder4844, TransactionBuilder7702};
 use alloy_primitives::{Address, B256, Bytes, TxKind, U256, hex, map::HashMap};
 use alloy_provider::Provider;
 use alloy_rpc_types::{
@@ -16,7 +17,7 @@ use clap::Parser;
 use eyre::Result;
 use foundry_cli::{
     opts::{ChainValueParser, RpcOpts, TransactionOpts},
-    utils::{LoadConfig, TraceResult, get_provider, parse_ether_value},
+    utils::{LoadConfig, TraceResult, get_foundry_provider, parse_ether_value},
 };
 use foundry_common::{
     abi::{encode_function_args, get_func},
@@ -247,7 +248,7 @@ impl CallArgs {
             sig = Some(data);
         }
 
-        let provider = get_provider(&config)?;
+        let provider = get_foundry_provider(&config)?;
         let sender = SenderKind::from_wallet_opts(wallet).await?;
         let from = sender.address();
 
@@ -320,41 +321,41 @@ impl CallArgs {
                 state_overrides,
             )?;
 
-            let value = tx.value.unwrap_or_default();
-            let input = tx.inner.input.into_input().unwrap_or_default();
-            let tx_kind = tx.inner.to.expect("set by builder");
+            let value = tx.value().unwrap_or_default();
+            let input = tx.input().cloned().unwrap_or_default();
+            let tx_kind = tx.kind().expect("set by builder");
             let env_tx = &mut executor.env_mut().tx;
 
             // Set transaction options with --trace
-            if let Some(gas_limit) = tx.inner.gas {
+            if let Some(gas_limit) = tx.gas_limit() {
                 env_tx.gas_limit = gas_limit;
             }
 
-            if let Some(gas_price) = tx.inner.gas_price {
+            if let Some(gas_price) = tx.gas_price() {
                 env_tx.gas_price = gas_price;
             }
 
-            if let Some(max_fee_per_gas) = tx.inner.max_fee_per_gas {
+            if let Some(max_fee_per_gas) = tx.max_fee_per_gas() {
                 env_tx.gas_price = max_fee_per_gas;
             }
 
-            if let Some(max_priority_fee_per_gas) = tx.inner.max_priority_fee_per_gas {
+            if let Some(max_priority_fee_per_gas) = tx.max_priority_fee_per_gas() {
                 env_tx.gas_priority_fee = Some(max_priority_fee_per_gas);
             }
 
-            if let Some(max_fee_per_blob_gas) = tx.inner.max_fee_per_blob_gas {
+            if let Some(max_fee_per_blob_gas) = tx.max_fee_per_blob_gas() {
                 env_tx.max_fee_per_blob_gas = max_fee_per_blob_gas;
             }
 
-            if let Some(nonce) = tx.inner.nonce {
+            if let Some(nonce) = tx.nonce() {
                 env_tx.nonce = nonce;
             }
 
-            if let Some(tx_type) = tx.inner.transaction_type {
-                env_tx.tx_type = tx_type;
+            if let Some(tx_type) = tx.output_tx_type_checked() {
+                env_tx.tx_type = tx_type as u8;
             }
 
-            if let Some(access_list) = tx.inner.access_list {
+            if let Some(access_list) = tx.access_list().cloned() {
                 env_tx.access_list = access_list;
 
                 if env_tx.tx_type == TransactionType::Legacy as u8 {
@@ -362,7 +363,7 @@ impl CallArgs {
                 }
             }
 
-            if let Some(auth) = tx.inner.authorization_list {
+            if let Some(auth) = tx.authorization_list().cloned() {
                 env_tx.authorization_list = auth.into_iter().map(Either::Left).collect();
 
                 env_tx.tx_type = TransactionType::Eip7702 as u8;
@@ -402,7 +403,7 @@ impl CallArgs {
             .await?;
 
         if response == "0x"
-            && let Some(contract_address) = tx.to.and_then(|tx_kind| tx_kind.into_to())
+            && let Some(contract_address) = tx.to()
         {
             let code = provider.get_code_at(contract_address).await?;
             if code.is_empty() {

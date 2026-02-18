@@ -51,7 +51,7 @@ impl ArtifactArgs {
 
         let Self { contract, output: output_location, abi_path, etherscan: _, rpc: _ } = self;
 
-        let provider = utils::get_provider(&config)?;
+        let provider = utils::get_foundry_provider(&config)?;
         let chain = provider.get_chain_id().await?;
         config.chain = Some(chain.into());
 

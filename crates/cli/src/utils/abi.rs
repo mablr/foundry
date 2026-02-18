@@ -2,14 +2,15 @@ use alloy_chains::Chain;
 use alloy_ens::NameOrAddress;
 use alloy_json_abi::Function;
 use alloy_primitives::{Address, hex};
-use alloy_provider::{Provider, network::AnyNetwork};
+use alloy_provider::Provider;
 use eyre::{OptionExt, Result};
 use foundry_common::abi::{
     encode_function_args, encode_function_args_raw, get_func, get_func_etherscan,
 };
+use foundry_primitives::FoundryNetwork;
 use futures::future::join_all;
 
-async fn resolve_name_args<P: Provider<AnyNetwork>>(args: &[String], provider: &P) -> Vec<String> {
+async fn resolve_name_args<P: Provider<FoundryNetwork>>(args: &[String], provider: &P) -> Vec<String> {
     join_all(args.iter().map(|arg| async {
         if arg.contains('.') {
             let addr = NameOrAddress::Name(arg.to_string()).resolve(provider).await;
@@ -24,7 +25,7 @@ async fn resolve_name_args<P: Provider<AnyNetwork>>(args: &[String], provider: &
     .await
 }
 
-pub async fn parse_function_args<P: Provider<AnyNetwork>>(
+pub async fn parse_function_args<P: Provider<FoundryNetwork>>(
     sig: &str,
     args: Vec<String>,
     to: Option<Address>,

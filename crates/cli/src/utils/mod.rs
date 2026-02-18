@@ -1,12 +1,13 @@
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::{Address, U256, map::HashMap};
-use alloy_provider::{Provider, network::AnyNetwork};
+use alloy_provider::{Network, Provider};
 use eyre::{ContextCompat, Result};
 use foundry_common::{
     provider::{ProviderBuilder, RetryProvider},
     shell,
 };
 use foundry_config::{Chain, Config};
+use foundry_primitives::FoundryNetwork;
 use itertools::Itertools;
 use path_slash::PathExt;
 use regex::Regex;
@@ -104,6 +105,11 @@ pub fn get_provider(config: &Config) -> Result<RetryProvider> {
     get_provider_builder(config)?.build()
 }
 
+/// Returns a [RetryProvider] instantiated using [Config]'s RPC settings.
+pub fn get_foundry_provider(config: &Config) -> Result<RetryProvider<FoundryNetwork>> {
+    ProviderBuilder::from_config(config)?.build()
+}
+
 /// Returns a [ProviderBuilder] instantiated using [Config] values.
 ///
 /// Defaults to `http://localhost:8545` and `Mainnet`.
@@ -111,9 +117,10 @@ pub fn get_provider_builder(config: &Config) -> Result<ProviderBuilder> {
     ProviderBuilder::from_config(config)
 }
 
-pub async fn get_chain<P>(chain: Option<Chain>, provider: P) -> Result<Chain>
+pub async fn get_chain<P, N>(chain: Option<Chain>, provider: P) -> Result<Chain>
 where
-    P: Provider<AnyNetwork>,
+    P: Provider<N>,
+    N: Network,
 {
     match chain {
         Some(chain) => Ok(chain),

@@ -301,7 +301,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         CastSubcommand::AccessList(cmd) => cmd.run().await?,
         CastSubcommand::Age { block, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             sh_println!(
                 "{} UTC",
                 Cast::new(provider).age(block.unwrap_or(BlockId::Number(Latest))).await?
@@ -309,7 +309,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::Balance { block, who, ether, rpc, erc20 } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let account_addr = who.resolve(&provider).await?;
 
             match erc20 {
@@ -335,7 +335,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::BaseFee { block, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             sh_println!(
                 "{}",
                 Cast::new(provider).base_fee(block.unwrap_or(BlockId::Number(Latest))).await?
@@ -343,7 +343,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::Block { block, full, fields, raw, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             // Can use either --raw or specify raw as a field
             let raw = raw || fields.contains(&"raw".into());
 
@@ -356,7 +356,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::BlockNumber { rpc, block } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let number = match block {
                 Some(id) => {
                     provider
@@ -372,28 +372,28 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::Chain { rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             sh_println!("{}", Cast::new(provider).chain().await?)?
         }
         CastSubcommand::ChainId { rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             sh_println!("{}", Cast::new(provider).chain_id().await?)?
         }
         CastSubcommand::Client { rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             sh_println!("{}", provider.get_client_version().await?)?
         }
         CastSubcommand::Code { block, who, disassemble, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let who = who.resolve(&provider).await?;
             sh_println!("{}", Cast::new(provider).code(who, block, disassemble).await?)?
         }
         CastSubcommand::Codesize { block, who, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let who = who.resolve(&provider).await?;
             sh_println!("{}", Cast::new(provider).codesize(who, block).await?)?
         }
@@ -408,7 +408,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
                 } else {
                     // For CREATE, rpc is needed to compute the address
                     let config = rpc.load_config()?;
-                    let provider = utils::get_provider(&config)?;
+                    let provider = utils::get_foundry_provider(&config)?;
                     Cast::new(provider).compute_address(address, nonce).await?
                 }
             };
@@ -449,7 +449,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         CastSubcommand::FindBlock(cmd) => cmd.run().await?,
         CastSubcommand::GasPrice { rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             sh_println!("{}", Cast::new(provider).gas_price().await?)?;
         }
         CastSubcommand::Index { key_type, key, slot_number } => {
@@ -462,37 +462,37 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::Implementation { block, beacon, who, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let who = who.resolve(&provider).await?;
             sh_println!("{}", Cast::new(provider).implementation(who, beacon, block).await?)?;
         }
         CastSubcommand::Admin { block, who, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let who = who.resolve(&provider).await?;
             sh_println!("{}", Cast::new(provider).admin(who, block).await?)?;
         }
         CastSubcommand::Nonce { block, who, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let who = who.resolve(&provider).await?;
             sh_println!("{}", Cast::new(provider).nonce(who, block).await?)?;
         }
         CastSubcommand::Codehash { block, who, slots, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let who = who.resolve(&provider).await?;
             sh_println!("{}", Cast::new(provider).codehash(who, slots, block).await?)?;
         }
         CastSubcommand::StorageRoot { block, who, slots, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let who = who.resolve(&provider).await?;
             sh_println!("{}", Cast::new(provider).storage_root(who, slots, block).await?)?;
         }
         CastSubcommand::Proof { address, slots, rpc, block } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let address = address.resolve(&provider).await?;
             let value = provider
                 .get_proof(address, slots.into_iter().collect())
@@ -509,7 +509,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         CastSubcommand::MakeTx(cmd) => cmd.run().await?,
         CastSubcommand::PublishTx { raw_tx, cast_async, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             let cast = Cast::new(&provider);
             let pending_tx = cast.publish(raw_tx).await?;
             let tx_hash = pending_tx.inner().tx_hash();
@@ -523,7 +523,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::Receipt { tx_hash, field, cast_async, confirmations, rpc } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
             sh_println!(
                 "{}",
                 CastTxSender::new(provider)
@@ -535,7 +535,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         CastSubcommand::SendTx(cmd) => cmd.run().await?,
         CastSubcommand::Tx { tx_hash, from, nonce, field, raw, rpc, to_request } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
 
             // Can use either --raw or specify raw as a field
             let raw = raw || field.as_ref().is_some_and(|f| f == "raw");
@@ -620,7 +620,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::LookupAddress { who, rpc, verify } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
 
             let who = stdin::unwrap_line(who)?;
             let name = provider.lookup_address(&who).await?;
@@ -635,7 +635,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::ResolveName { who, rpc, verify } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
+            let provider = utils::get_foundry_provider(&config)?;
 
             let who = stdin::unwrap_line(who)?;
             let address = provider.resolve_name(&who).await?;
