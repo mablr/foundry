@@ -4266,6 +4266,7 @@ dependencies = [
  "foundry-evm",
  "foundry-evm-networks",
  "foundry-linking",
+ "foundry-primitives",
  "foundry-test-utils",
  "foundry-wallets",
  "globset",

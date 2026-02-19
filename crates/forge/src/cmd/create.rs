@@ -2,7 +2,7 @@ use crate::cmd::install;
 use alloy_chains::Chain;
 use alloy_dyn_abi::{DynSolValue, JsonAbiExt, Specifier};
 use alloy_json_abi::{Constructor, JsonAbi};
-use alloy_network::{AnyNetwork, AnyTransactionReceipt, EthereumWallet, TransactionBuilder};
+use alloy_network::{EthereumWallet, ReceiptResponse, TransactionBuilder};
 use alloy_primitives::{Address, Bytes, hex};
 use alloy_provider::{PendingTransactionError, Provider, ProviderBuilder};
 use alloy_rpc_types::TransactionRequest;
@@ -32,6 +32,7 @@ use foundry_config::{
     },
     merge_impl_figment_convert,
 };
+use foundry_primitives::{FoundryNetwork, FoundryTransactionRequest, FoundryTxReceipt};
 use serde_json::json;
 use std::{borrow::Borrow, marker::PhantomData, path::PathBuf, sync::Arc, time::Duration};
 
@@ -186,7 +187,7 @@ impl CreateArgs {
             // Deploy with signer
             let signer = self.eth.wallet.signer().await?;
             let deployer = signer.address();
-            let provider = ProviderBuilder::<_, _, AnyNetwork>::default()
+            let provider = ProviderBuilder::<_, _, FoundryNetwork>::default()
                 .wallet(EthereumWallet::new(signer))
                 .connect_provider(provider);
             self.deploy(
@@ -268,7 +269,7 @@ impl CreateArgs {
 
     /// Deploys the contract
     #[expect(clippy::too_many_arguments)]
-    async fn deploy<P: Provider<AnyNetwork>>(
+    async fn deploy<P: Provider<FoundryNetwork>>(
         self,
         abi: JsonAbi,
         bin: BytecodeObject,
@@ -302,7 +303,7 @@ impl CreateArgs {
         deployer.tx.set_from(deployer_address);
         deployer.tx.set_chain_id(chain);
         // `to` field must be set explicitly, cannot be None.
-        if deployer.tx.to.is_none() {
+        if deployer.tx.to().is_none() {
             deployer.tx.set_create();
         }
         deployer.tx.set_nonce(if let Some(nonce) = self.tx.nonce {
@@ -394,13 +395,13 @@ impl CreateArgs {
             let output = json!({
                 "deployer": deployer_address.to_string(),
                 "deployedTo": address.to_string(),
-                "transactionHash": receipt.transaction_hash
+                "transactionHash": receipt.transaction_hash()
             });
             sh_println!("{}", serde_json::to_string_pretty(&output)?)?;
         } else {
             sh_println!("Deployer: {deployer_address}")?;
             sh_println!("Deployed to: {address}")?;
-            sh_println!("Transaction hash: {:?}", receipt.transaction_hash)?;
+            sh_println!("Transaction hash: {:?}", receipt.transaction_hash())?;
         };
 
         if !self.verify {
@@ -440,7 +441,7 @@ impl CreateArgs {
             guess_constructor_args: false,
             compilation_profile: Some(id.profile.to_string()),
             language: None,
-            creation_transaction_hash: Some(receipt.transaction_hash),
+            creation_transaction_hash: Some(receipt.transaction_hash()),
         };
         sh_println!("Waiting for {} to detect contract deployment...", verify.verifier.verifier)?;
         verify.run().await
@@ -528,19 +529,19 @@ impl<P, C> From<Deployer<P>> for ContractDeploymentTx<P, C> {
 #[must_use = "Deployer does nothing unless you `send` it"]
 pub struct Deployer<P> {
     /// The deployer's transaction, exposed for overriding the defaults
-    pub tx: WithOtherFields<TransactionRequest>,
+    pub tx: FoundryTransactionRequest,
     client: P,
     confs: usize,
     timeout: u64,
 }
 
-impl<P: Provider<AnyNetwork>> Deployer<P> {
+impl<P: Provider<FoundryNetwork>> Deployer<P> {
     /// Broadcasts the contract deployment transaction and after waiting for it to
     /// be sufficiently confirmed (default: 1), it returns a tuple with the [`Address`] at the
     /// deployed contract's address and the corresponding [`AnyTransactionReceipt`].
     pub async fn send_with_receipt(
         self,
-    ) -> Result<(Address, AnyTransactionReceipt), ContractDeploymentError> {
+    ) -> Result<(Address, FoundryTxReceipt), ContractDeploymentError> {
         let receipt = self
             .client
             .borrow()
@@ -552,7 +553,7 @@ impl<P: Provider<AnyNetwork>> Deployer<P> {
             .await?;
 
         let address =
-            receipt.contract_address.ok_or(ContractDeploymentError::ContractNotDeployed)?;
+            receipt.contract_address().ok_or(ContractDeploymentError::ContractNotDeployed)?;
 
         Ok((address, receipt))
     }
@@ -569,7 +570,7 @@ pub struct DeploymentTxFactory<P> {
     timeout: u64,
 }
 
-impl<P: Provider<AnyNetwork> + Clone> DeploymentTxFactory<P> {
+impl<P: Provider<FoundryNetwork> + Clone> DeploymentTxFactory<P> {
     /// Creates a factory for deployment of the Contract with bytecode, and the
     /// constructor defined in the abi. The client will be used to send any deployment
     /// transaction.
@@ -598,7 +599,7 @@ impl<P: Provider<AnyNetwork> + Clone> DeploymentTxFactory<P> {
         };
 
         // create the tx object. Since we're deploying a contract, `to` is `None`
-        let tx = WithOtherFields::new(TransactionRequest::default().input(data.into()));
+        let tx = WithOtherFields::new(TransactionRequest::default().input(data.into())).into();
 
         Ok(Deployer { client: self.client.clone(), tx, confs: 1, timeout: self.timeout })
     }
