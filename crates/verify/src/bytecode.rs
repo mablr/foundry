@@ -34,7 +34,7 @@ use foundry_evm::{
     executors::EvmError,
     utils::{configure_tx_env, configure_tx_req_env},
 };
-use foundry_primitives::FoundryTransactionRequest;
+use foundry_primitives::{FoundryNetwork, FoundryTransactionRequest};
 use revm::state::AccountInfo;
 use std::path::PathBuf;
 
@@ -260,7 +260,7 @@ impl VerifyBytecodeArgs {
                 gen_tx_req.gas_price = block.header.base_fee_per_gas.map(|g| g as u128);
             }
 
-            configure_tx_req_env(&mut env.as_env_mut(), &gen_tx_req, None)
+            configure_tx_req_env(&mut env.as_env_mut(), &gen_tx_req)
                 .wrap_err("Failed to configure tx request env")?;
 
             // Seed deployer account with funds
@@ -488,7 +488,7 @@ impl VerifyBytecodeArgs {
                         break;
                     }
 
-                    configure_tx_env(&mut env.as_env_mut(), &tx.inner);
+                    configure_tx_env::<FoundryNetwork>(&mut env.as_env_mut(), tx)?;
 
                     if let TxKind::Call(_) = tx.inner.kind() {
                         executor.transact_with_env(env.clone()).wrap_err_with(|| {
@@ -517,7 +517,7 @@ impl VerifyBytecodeArgs {
             }
 
             // Replace the `input` with local creation code in the creation tx.
-            if let TxKind::Call(to) = transaction.kind() {
+            if let Some(to) = tx_request.to() {
                 if to == DEFAULT_CREATE2_DEPLOYER {
                     let mut input = tx_request.input().unwrap()[..32].to_vec(); // Salt
                     input.extend_from_slice(&local_bytecode_vec);
@@ -531,8 +531,7 @@ impl VerifyBytecodeArgs {
                     .set_input_kind(Bytes::from(local_bytecode_vec), TransactionInputKind::Both);
             }
 
-            // configure_req__env(&mut env, &transaction.inner);
-            configure_tx_req_env(&mut env.as_env_mut(), &tx_request, None)
+            configure_tx_req_env(&mut env.as_env_mut(), &tx_request)
                 .wrap_err("Failed to configure tx request env")?;
 
             let fork_address = crate::utils::deploy_contract(
