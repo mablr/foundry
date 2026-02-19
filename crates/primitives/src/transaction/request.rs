@@ -1,9 +1,12 @@
-use alloy_consensus::{BlobTransactionSidecar, EthereumTypedTransaction};
+use alloy_consensus::{
+    BlobTransactionSidecar, BlobTransactionSidecarEip7594, EthereumTypedTransaction,
+};
 use alloy_network::{
-    BuildResult, NetworkWallet, TransactionBuilder, TransactionBuilder4844, TransactionBuilderError,
+    BuildResult, NetworkWallet, TransactionBuilder, TransactionBuilder4844, TransactionBuilder7702,
+    TransactionBuilderError,
 };
 use alloy_primitives::{Address, B256, ChainId, TxKind, U256};
-use alloy_rpc_types::{AccessList, TransactionInputKind, TransactionRequest};
+use alloy_rpc_types::{AccessList, SignedAuthorization, TransactionInputKind, TransactionRequest};
 use alloy_serde::{OtherFields, WithOtherFields};
 use op_alloy_consensus::{DEPOSIT_TX_TYPE_ID, TxDeposit};
 use op_revm::transaction::deposit::DepositTransactionParts;
@@ -527,6 +530,37 @@ impl TransactionBuilder4844 for FoundryTransactionRequest {
 
     fn set_blob_sidecar(&mut self, sidecar: BlobTransactionSidecar) {
         self.as_mut().set_blob_sidecar(sidecar);
+    }
+}
+
+impl alloy_network::TransactionBuilder7594 for FoundryTransactionRequest {
+    fn max_fee_per_blob_gas(&self) -> Option<u128> {
+        alloy_network::TransactionBuilder7594::max_fee_per_blob_gas(self.as_ref())
+    }
+
+    fn set_max_fee_per_blob_gas(&mut self, max_fee_per_blob_gas: u128) {
+        alloy_network::TransactionBuilder7594::set_max_fee_per_blob_gas(
+            self.as_mut(),
+            max_fee_per_blob_gas,
+        );
+    }
+
+    fn blob_sidecar_7594(&self) -> Option<&BlobTransactionSidecarEip7594> {
+        alloy_network::TransactionBuilder7594::blob_sidecar_7594(self.as_ref())
+    }
+
+    fn set_blob_sidecar_7594(&mut self, sidecar: BlobTransactionSidecarEip7594) {
+        alloy_network::TransactionBuilder7594::set_blob_sidecar_7594(self.as_mut(), sidecar);
+    }
+}
+
+impl TransactionBuilder7702 for FoundryTransactionRequest {
+    fn authorization_list(&self) -> Option<&Vec<SignedAuthorization>> {
+        self.as_ref().authorization_list()
+    }
+
+    fn set_authorization_list(&mut self, authorization_list: Vec<SignedAuthorization>) {
+        self.as_mut().set_authorization_list(authorization_list);
     }
 }
 

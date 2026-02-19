@@ -52,7 +52,7 @@ impl AccessListArgs {
         let Self { to, sig, args, tx, rpc, wallet, block } = self;
 
         let config = rpc.load_config()?;
-        let provider = utils::get_provider(&config)?;
+        let provider = utils::get_foundry_provider(&config)?;
         let sender = SenderKind::from_wallet_opts(wallet).await?;
 
         let (tx, _) = CastTxBuilder::new(&provider, tx, &config)

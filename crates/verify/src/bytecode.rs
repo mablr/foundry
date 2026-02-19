@@ -12,11 +12,11 @@ use alloy_provider::{
     Provider,
     ext::TraceApi,
     network::{
-        AnyTxEnvelope, TransactionBuilder, TransactionResponse, primitives::BlockTransactions,
+        ReceiptResponse, TransactionBuilder, TransactionResponse, primitives::BlockTransactions,
     },
 };
 use alloy_rpc_types::{
-    BlockId, BlockNumberOrTag, TransactionInput, TransactionRequest, TransactionTrait,
+    BlockId, BlockNumberOrTag, TransactionInputKind, TransactionRequest, TransactionTrait,
     trace::parity::{Action, CreateAction, CreateOutput, TraceOutput},
 };
 use clap::{Parser, ValueHint};
@@ -34,6 +34,7 @@ use foundry_evm::{
     executors::EvmError,
     utils::{configure_tx_env, configure_tx_req_env},
 };
+use foundry_primitives::FoundryTransactionRequest;
 use revm::state::AccountInfo;
 use std::path::PathBuf;
 
@@ -133,7 +134,7 @@ impl VerifyBytecodeArgs {
     pub async fn run(mut self) -> Result<()> {
         // Setup
         let config = self.load_config()?;
-        let provider = utils::get_provider(&config)?;
+        let provider = utils::get_foundry_provider(&config)?;
 
         // If chain is not set, we try to get it from the RPC.
         // If RPC is not set, the default chain is used.
@@ -336,21 +337,18 @@ impl VerifyBytecodeArgs {
         };
 
         let creation_block = transaction.block_number;
-        let mut transaction: TransactionRequest = match transaction.inner.inner.inner() {
-            AnyTxEnvelope::Ethereum(tx) => tx.clone().into(),
-            AnyTxEnvelope::Unknown(_) => unreachable!("Unknown transaction type"),
-        };
+        let mut tx_request: FoundryTransactionRequest = transaction.inner.inner.into_inner().into();
 
         // Extract creation code from creation tx input.
-        let maybe_creation_code = if receipt.to.is_none()
-            && receipt.contract_address == Some(self.address)
+        let maybe_creation_code = if receipt.to().is_none()
+            && receipt.contract_address() == Some(self.address)
         {
-            match &transaction.input.input {
+            match &tx_request.input() {
                 Some(input) => &input[..],
                 None => unreachable!("creation tx input is None"),
             }
-        } else if receipt.to == Some(DEFAULT_CREATE2_DEPLOYER) {
-            match &transaction.input.input {
+        } else if receipt.to() == Some(DEFAULT_CREATE2_DEPLOYER) {
+            match &tx_request.input() {
                 Some(input) => &input[32..],
                 None => unreachable!("creation tx input is None"),
             }
@@ -466,10 +464,10 @@ impl VerifyBytecodeArgs {
             // Use `transaction.from` instead of `creation_data.contract_creator` to resolve
             // blockscout creation data discrepancy in case of CREATE2.
             let prev_block_nonce = provider
-                .get_transaction_count(transaction.from.unwrap())
+                .get_transaction_count(tx_request.from().unwrap())
                 .block_id(prev_block_id)
                 .await?;
-            transaction.set_nonce(prev_block_nonce);
+            tx_request.set_nonce(prev_block_nonce);
 
             if let Some(ref block) = block {
                 configure_env_block(&mut env.as_env_mut(), block, config.networks);
@@ -519,28 +517,29 @@ impl VerifyBytecodeArgs {
             }
 
             // Replace the `input` with local creation code in the creation tx.
-            if let Some(TxKind::Call(to)) = transaction.kind() {
+            if let TxKind::Call(to) = transaction.kind() {
                 if to == DEFAULT_CREATE2_DEPLOYER {
-                    let mut input = transaction.input.input.unwrap()[..32].to_vec(); // Salt
+                    let mut input = tx_request.input().unwrap()[..32].to_vec(); // Salt
                     input.extend_from_slice(&local_bytecode_vec);
-                    transaction.input = TransactionInput::both(Bytes::from(input));
+                    tx_request.set_input_kind(Bytes::from(input), TransactionInputKind::Both);
 
                     // Deploy default CREATE2 deployer
                     executor.deploy_create2_deployer()?;
                 }
             } else {
-                transaction.input = TransactionInput::both(Bytes::from(local_bytecode_vec));
+                tx_request
+                    .set_input_kind(Bytes::from(local_bytecode_vec), TransactionInputKind::Both);
             }
 
             // configure_req__env(&mut env, &transaction.inner);
-            configure_tx_req_env(&mut env.as_env_mut(), &transaction, None)
+            configure_tx_req_env(&mut env.as_env_mut(), &tx_request, None)
                 .wrap_err("Failed to configure tx request env")?;
 
             let fork_address = crate::utils::deploy_contract(
                 &mut executor,
                 &env,
                 config.evm_spec_id(),
-                transaction.to,
+                tx_request.kind(),
             )?;
 
             // State committed using deploy_with_env, now get the runtime bytecode from the db.

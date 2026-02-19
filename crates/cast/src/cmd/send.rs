@@ -2,17 +2,16 @@ use std::{path::PathBuf, str::FromStr, time::Duration};
 
 use alloy_eips::Encodable2718;
 use alloy_ens::NameOrAddress;
-use alloy_network::{AnyNetwork, EthereumWallet, TransactionBuilder};
+use alloy_network::{EthereumWallet, TransactionBuilder};
 use alloy_provider::{Provider, ProviderBuilder};
-use alloy_rpc_types::TransactionRequest;
-use alloy_serde::WithOtherFields;
 use alloy_signer::Signer;
 use clap::Parser;
 use eyre::{Result, eyre};
 use foundry_cli::{
     opts::TransactionOpts,
-    utils::{LoadConfig, get_provider},
+    utils::{LoadConfig, get_foundry_provider},
 };
+use foundry_primitives::{FoundryNetwork, FoundryTransactionRequest};
 use foundry_wallets::WalletSigner;
 
 use crate::tx::{self, CastTxBuilder, CastTxSender, SendTxOpts};
@@ -120,7 +119,7 @@ impl SendTxArgs {
         };
 
         let config = send_tx.eth.load_config()?;
-        let provider = get_provider(&config)?;
+        let provider = get_foundry_provider(&config)?;
 
         if let Some(interval) = send_tx.poll_interval {
             provider.client().set_poll_interval(Duration::from_secs(interval))
@@ -172,7 +171,7 @@ impl SendTxArgs {
 
             cast_send(
                 provider,
-                tx.into_inner().into(),
+                tx,
                 send_tx.cast_async,
                 send_tx.sync,
                 send_tx.confirmations,
@@ -255,13 +254,13 @@ impl SendTxArgs {
             let (tx_request, _) = builder.build(&signer).await?;
 
             let wallet = EthereumWallet::from(signer);
-            let provider = ProviderBuilder::<_, _, AnyNetwork>::default()
+            let provider = ProviderBuilder::<_, _, FoundryNetwork>::default()
                 .wallet(wallet)
                 .connect_provider(&provider);
 
             cast_send(
                 provider,
-                tx_request.into_inner().into(),
+                tx_request,
                 send_tx.cast_async,
                 send_tx.sync,
                 send_tx.confirmations,
@@ -272,9 +271,9 @@ impl SendTxArgs {
     }
 }
 
-pub(crate) async fn cast_send<P: Provider<AnyNetwork>>(
+pub(crate) async fn cast_send<P: Provider<FoundryNetwork>>(
     provider: P,
-    tx: WithOtherFields<TransactionRequest>,
+    tx: FoundryTransactionRequest,
     cast_async: bool,
     sync: bool,
     confs: u64,

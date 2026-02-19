@@ -614,7 +614,7 @@ impl WalletSubcommands {
             }
             Self::SignAuth { rpc, nonce, chain, wallet, address, self_broadcast } => {
                 let wallet = wallet.signer().await?;
-                let provider = utils::get_provider(&rpc.load_config()?)?;
+                let provider = utils::get_foundry_provider(&rpc.load_config()?)?;
                 let nonce = if let Some(nonce) = nonce {
                     nonce
                 } else {

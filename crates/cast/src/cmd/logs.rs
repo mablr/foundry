@@ -2,7 +2,6 @@ use crate::Cast;
 use alloy_dyn_abi::{DynSolType, DynSolValue, Specifier};
 use alloy_ens::NameOrAddress;
 use alloy_json_abi::Event;
-use alloy_network::AnyNetwork;
 use alloy_primitives::{Address, B256, hex::FromHex};
 use alloy_rpc_types::{BlockId, BlockNumberOrTag, Filter, FilterBlockOption, FilterSet, Topic};
 use clap::Parser;
@@ -11,6 +10,7 @@ use foundry_cli::{
     opts::RpcOpts,
     utils::{self, LoadConfig},
 };
+use foundry_primitives::FoundryNetwork;
 use itertools::Itertools;
 use std::{io, str::FromStr};
 
@@ -71,7 +71,7 @@ impl LogsArgs {
         } = self;
 
         let config = rpc.load_config()?;
-        let provider = utils::get_provider(&config)?;
+        let provider = utils::get_foundry_provider(&config)?;
 
         let cast = Cast::new(&provider);
         let addresses = match address {
@@ -102,7 +102,7 @@ impl LogsArgs {
         //  currently the alloy `eth_subscribe` impl does not work with all transports, so we use
         // the builtin transport here for now
         let url = config.get_rpc_url_or_localhost_http()?;
-        let provider = alloy_provider::ProviderBuilder::<_, _, AnyNetwork>::default()
+        let provider = alloy_provider::ProviderBuilder::<_, _, FoundryNetwork>::default()
             .connect(url.as_ref())
             .await?;
         let cast = Cast::new(&provider);

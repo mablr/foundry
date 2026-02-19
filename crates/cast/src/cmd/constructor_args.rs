@@ -36,7 +36,7 @@ impl ConstructorArgsArgs {
 
         let Self { contract, abi_path, etherscan: _, rpc: _ } = self;
 
-        let provider = utils::get_provider(&config)?;
+        let provider = utils::get_foundry_provider(&config)?;
         config.chain = Some(provider.get_chain_id().await?.into());
 
         let bytecode = fetch_creation_code_from_etherscan(contract, &config, provider).await?;

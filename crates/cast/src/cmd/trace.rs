@@ -41,7 +41,7 @@ pub struct TraceArgs {
 impl TraceArgs {
     pub async fn run(self) -> Result<()> {
         let config = self.rpc.load_config()?;
-        let provider = utils::get_provider(&config)?;
+        let provider = utils::get_foundry_provider(&config)?;
         let input = stdin::unwrap_line(self.tx)?;
 
         let trimmed = input.trim();

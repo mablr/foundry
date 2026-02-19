@@ -9,7 +9,7 @@ use clap::Parser;
 use eyre::Result;
 use foundry_cli::{
     opts::{EthereumOpts, TransactionOpts},
-    utils::{LoadConfig, get_provider},
+    utils::{LoadConfig, get_foundry_provider},
 };
 use std::{path::PathBuf, str::FromStr};
 
@@ -97,7 +97,7 @@ impl MakeTxArgs {
 
         let config = eth.load_config()?;
 
-        let provider = get_provider(&config)?;
+        let provider = get_foundry_provider(&config)?;
 
         let tx_builder = CastTxBuilder::new(&provider, tx.clone(), &config)
             .await?
@@ -132,7 +132,7 @@ impl MakeTxArgs {
             // Use "eth_signTransaction" to sign the transaction only works if the node/RPC has
             // unlocked accounts.
             let (tx, _) = tx_builder.build(config.sender).await?;
-            let signed_tx = provider.sign_transaction(tx.into_inner().into()).await?;
+            let signed_tx = provider.sign_transaction(tx).await?;
 
             sh_println!("{signed_tx}")?;
             return Ok(());

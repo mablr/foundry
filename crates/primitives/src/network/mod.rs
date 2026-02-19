@@ -6,24 +6,25 @@ mod wallet;
 use alloy_provider::fillers::{
     BlobGasFiller, ChainIdFiller, GasFiller, JoinFill, NonceFiller, RecommendedFillers,
 };
+use alloy_rpc_types::Block;
+use op_alloy_rpc_types::Transaction;
+
 pub use receipt::*;
+
+/// Re-export Alloy types for convenience.
+pub type FoundryHeader = alloy_consensus::Header;
+pub type FoundryTransactionResponse = Transaction<crate::FoundryTxEnvelope>;
+pub type FoundryHeaderResponse = alloy_rpc_types::Header;
+pub type FoundryBlockResponse = Block<FoundryTransactionResponse, FoundryHeaderResponse>;
 
 /// Foundry network type.
 ///
-/// This network type supports Foundry-specific transaction types, including
-/// op-stack deposit transactions, alongside standard Ethereum transaction types.
-///
-/// Note: This is a basic implementation ("for now") that provides the core Network
-/// trait definitions. Full Foundry-specific RPC types will be implemented in future work.
-/// Currently, this uses Ethereum's Network configuration as a compatibility layer.
+/// This network type supports standard Ethereum transaction types, along with op-stack deposit and
+/// Tempo transaction types.
 #[derive(Debug, Clone, Copy)]
-pub struct FoundryNetwork {
-    _private: (),
-}
+pub struct FoundryNetwork;
 
-// Use Ethereum's Network trait implementation as the basis.
-// This provides compatibility with the alloy-network ecosystem while we build
-// out Foundry-specific RPC types.
+/// The Foundry's specific configuration of [`Network`] schema and consensus primitives.
 impl Network for FoundryNetwork {
     type TxType = crate::FoundryTxType;
 
@@ -33,18 +34,17 @@ impl Network for FoundryNetwork {
 
     type ReceiptEnvelope = crate::FoundryReceiptEnvelope;
 
-    type Header = alloy_consensus::Header;
+    type Header = FoundryHeader;
 
     type TransactionRequest = crate::FoundryTransactionRequest;
 
-    type TransactionResponse = op_alloy_rpc_types::Transaction<crate::FoundryTxEnvelope>;
+    type TransactionResponse = FoundryTransactionResponse;
 
     type ReceiptResponse = crate::FoundryTxReceipt;
 
-    type HeaderResponse = alloy_rpc_types_eth::Header;
+    type HeaderResponse = FoundryHeaderResponse;
 
-    type BlockResponse =
-        alloy_rpc_types_eth::Block<Self::TransactionResponse, Self::HeaderResponse>;
+    type BlockResponse = FoundryBlockResponse;
 }
 
 impl RecommendedFillers for FoundryNetwork {

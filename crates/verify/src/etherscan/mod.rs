@@ -7,7 +7,7 @@ use crate::{
 };
 use alloy_json_abi::Function;
 use alloy_primitives::hex;
-use alloy_provider::Provider;
+use alloy_provider::{Provider, network::ReceiptResponse};
 use alloy_rpc_types::TransactionTrait;
 use eyre::{Context, OptionExt, Result, eyre};
 use foundry_block_explorers::{
@@ -17,7 +17,7 @@ use foundry_block_explorers::{
 };
 use foundry_cli::{
     opts::EtherscanOpts,
-    utils::{LoadConfig, get_provider, read_constructor_args_file},
+    utils::{LoadConfig, get_foundry_provider, read_constructor_args_file},
 };
 use foundry_common::{abi::encode_function_args, retry::RetryError};
 use foundry_compilers::{Artifact, artifacts::BytecodeObject};
@@ -404,7 +404,7 @@ impl EtherscanVerificationProvider {
         args: &VerifyArgs,
         context: &VerificationContext,
     ) -> Result<String> {
-        let provider = get_provider(&context.config)?;
+        let provider = get_foundry_provider(&context.config)?;
         let client = self.client(&args.etherscan, &args.verifier, &context.config)?;
 
         let creation_data = client.contract_creation_data(args.address).await?;
@@ -417,7 +417,7 @@ impl EtherscanVerificationProvider {
             .await?
             .ok_or_eyre("Couldn't fetch transaction receipt from RPC")?;
 
-        let maybe_creation_code = if receipt.contract_address == Some(args.address) {
+        let maybe_creation_code = if receipt.contract_address() == Some(args.address) {
             transaction.inner.inner.input()
         } else if transaction.to() == Some(DEFAULT_CREATE2_DEPLOYER) {
             &transaction.inner.inner.input()[32..]
