@@ -99,22 +99,16 @@ fn apply_tx_opts(tx: &mut FoundryTransactionRequest, tx_opts: &Erc20TxOpts, is_l
     }
 
     // Apply Tempo-specific options
-    if let Some(fee_token) = tx_opts.tempo.fee_token {
-        match tx {
-            FoundryTransactionRequest::Tempo(tx) => {
-                tx.fee_token = Some(fee_token);
-            }
-            _ => (),
-        }
+    if let Some(fee_token) = tx_opts.tempo.fee_token
+        && let FoundryTransactionRequest::Tempo(tx) = tx
+    {
+        tx.fee_token = Some(fee_token);
     }
 
-    if let Some(nonce_key) = tx_opts.tempo.sequence_key {
-        match tx {
-            FoundryTransactionRequest::Tempo(tx) => {
-                tx.set_nonce_key(nonce_key);
-            }
-            _ => (),
-        }
+    if let Some(nonce_key) = tx_opts.tempo.sequence_key
+        && let FoundryTransactionRequest::Tempo(tx) = tx
+    {
+        tx.set_nonce_key(nonce_key);
     }
 }
 
@@ -428,8 +422,7 @@ impl Erc20Subcommand {
                 let provider = get_foundry_provider_with_wallet(&send_tx).await?;
                 let mut tx = IERC20::new(token.resolve(&provider).await?, &provider)
                     .transfer(to.resolve(&provider).await?, U256::from_str(&amount)?)
-                    .into_transaction_request()
-                    .into();
+                    .into_transaction_request();
 
                 // Apply transaction options using helper
                 apply_tx_opts(
@@ -440,7 +433,7 @@ impl Erc20Subcommand {
 
                 cast_send(
                     provider,
-                    tx.into(),
+                    tx,
                     send_tx.cast_async,
                     send_tx.sync,
                     send_tx.confirmations,
@@ -452,8 +445,7 @@ impl Erc20Subcommand {
                 let provider = get_foundry_provider_with_wallet(&send_tx).await?;
                 let mut tx = IERC20::new(token.resolve(&provider).await?, &provider)
                     .approve(spender.resolve(&provider).await?, U256::from_str(&amount)?)
-                    .into_transaction_request()
-                    .into();
+                    .into_transaction_request();
 
                 // Apply transaction options using helper
                 apply_tx_opts(
