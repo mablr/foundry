@@ -1,6 +1,6 @@
 use alloy_consensus::{
-    Sealed, Signed, TransactionEnvelope, TxEip1559, TxEip2930, TxEnvelope, TxLegacy, TxType,
-    Typed2718,
+    Sealed, SignableTransaction, Signed, TransactionEnvelope, TxEip1559, TxEip2930, TxEnvelope,
+    TxLegacy, TxType, Typed2718, TypedTransaction,
     crypto::RecoveryError,
     transaction::{
         TxEip7702,
@@ -8,15 +8,53 @@ use alloy_consensus::{
     },
 };
 use alloy_evm::FromRecoveredTx;
-use alloy_network::{AnyRpcTransaction, AnyTxEnvelope};
+use alloy_network::{AnyRpcTransaction, AnyTxEnvelope, AnyTypedTransaction};
 use alloy_primitives::{Address, B256};
 use alloy_rlp::Encodable;
 use alloy_rpc_types::ConversionError;
 use alloy_serde::WithOtherFields;
+use alloy_signer::Signature;
 use op_alloy_consensus::{DEPOSIT_TX_TYPE_ID, OpTransaction as OpTransactionTrait, TxDeposit};
 use op_revm::OpTransaction;
 use revm::context::TxEnv;
-use tempo_primitives::{AASigned, TempoTransaction};
+use tempo_primitives::{AASigned, TempoTransaction, transaction::TempoTypedTransaction};
+
+pub trait AsSignableTx {
+    fn as_signable_tx(&mut self) -> Option<&mut dyn SignableTransaction<Signature>>;
+}
+
+impl AsSignableTx for TypedTransaction {
+    fn as_signable_tx(&mut self) -> Option<&mut dyn SignableTransaction<Signature>> {
+        match self {
+            TypedTransaction::Legacy(tx) => Some(tx),
+            TypedTransaction::Eip2930(tx) => Some(tx),
+            TypedTransaction::Eip1559(tx) => Some(tx),
+            TypedTransaction::Eip4844(tx) => Some(tx),
+            TypedTransaction::Eip7702(tx) => Some(tx),
+        }
+    }
+}
+
+impl AsSignableTx for AnyTypedTransaction {
+    fn as_signable_tx(&mut self) -> Option<&mut dyn SignableTransaction<Signature>> {
+        match self {
+            AnyTypedTransaction::Ethereum(tx) => tx.as_signable_tx(),
+            AnyTypedTransaction::Unknown(_) => None,
+        }
+    }
+}
+
+impl AsSignableTx for TempoTypedTransaction {
+    fn as_signable_tx(&mut self) -> Option<&mut dyn SignableTransaction<Signature>> {
+        match self {
+            TempoTypedTransaction::Legacy(tx) => Some(tx),
+            TempoTypedTransaction::Eip2930(tx) => Some(tx),
+            TempoTypedTransaction::Eip1559(tx) => Some(tx),
+            TempoTypedTransaction::Eip7702(tx) => Some(tx),
+            TempoTypedTransaction::AA(tx) => Some(tx),
+        }
+    }
+}
 
 //
 /// Container type for signed, typed transactions.
@@ -263,7 +301,7 @@ impl From<FoundryTxEnvelope> for FoundryTypedTx {
 mod tests {
     use std::str::FromStr;
 
-    use alloy_primitives::{Bytes, Signature, TxHash, TxKind, U256, b256, hex};
+    use alloy_primitives::{Bytes, TxHash, TxKind, U256, b256, hex};
     use alloy_rlp::Decodable;
 
     use super::*;

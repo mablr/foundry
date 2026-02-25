@@ -9,6 +9,7 @@ use alloy_provider::fillers::{
 };
 pub use receipt::*;
 pub use transaction::FoundryTransactionBuilder;
+pub use wallet::*;
 
 /// Foundry network type.
 ///

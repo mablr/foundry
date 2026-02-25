@@ -2641,6 +2641,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tempo-alloy",
  "tokio",
  "tracing",
  "yansi",

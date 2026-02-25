@@ -57,7 +57,7 @@ impl NetworkWallet<FoundryNetwork> for EthereumWallet {
 }
 
 /// Helper function to sign a transaction using the wallet's signer for the given sender address.
-async fn sign_with_wallet(
+pub async fn sign_with_wallet(
     wallet: &EthereumWallet,
     sender: Address,
     tx: &mut dyn SignableTransaction<Signature>,
