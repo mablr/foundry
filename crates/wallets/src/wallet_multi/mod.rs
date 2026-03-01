@@ -1,6 +1,7 @@
 use crate::{
     signer::{PendingSigner, WalletSigner},
     utils,
+    wallet_browser::signer::BrowserSigner,
 };
 use alloy_primitives::map::AddressHashMap;
 use alloy_signer::Signer;
@@ -9,7 +10,7 @@ use derive_builder::Builder;
 use eyre::Result;
 use foundry_config::Config;
 use serde::Serialize;
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 /// Container for multiple wallets.
 #[derive(Debug, Default)]
@@ -19,12 +20,18 @@ pub struct MultiWallet {
     pending_signers: Vec<PendingSigner>,
     /// Contains unlocked signers.
     signers: AddressHashMap<WalletSigner>,
+    /// Optional browser signer, stored separately as it does not implement `TxSigner`.
+    browser_signer: Option<BrowserSigner>,
 }
 
 impl MultiWallet {
-    pub fn new(pending_signers: Vec<PendingSigner>, signers: Vec<WalletSigner>) -> Self {
+    pub fn new(
+        pending_signers: Vec<PendingSigner>,
+        signers: Vec<WalletSigner>,
+        browser_signer: Option<BrowserSigner>,
+    ) -> Self {
         let signers = signers.into_iter().map(|signer| (signer.address(), signer)).collect();
-        Self { pending_signers, signers }
+        Self { pending_signers, signers, browser_signer }
     }
 
     fn maybe_unlock_pending(&mut self) -> Result<()> {
@@ -43,6 +50,12 @@ impl MultiWallet {
     pub fn into_signers(mut self) -> Result<AddressHashMap<WalletSigner>> {
         self.maybe_unlock_pending()?;
         Ok(self.signers)
+    }
+
+    /// Consumes the wallet and returns all signers and the optional browser signer separately.
+    pub fn into_parts(mut self) -> Result<(AddressHashMap<WalletSigner>, Option<BrowserSigner>)> {
+        self.maybe_unlock_pending()?;
+        Ok((self.signers, self.browser_signer))
     }
 
     pub fn add_signer(&mut self, signer: WalletSigner) {
@@ -282,9 +295,7 @@ impl MultiWalletOpts {
         if let Some(turnkey_signers) = self.turnkey_signers()? {
             signers.extend(turnkey_signers);
         }
-        if let Some(browser_signer) = self.browser_signer().await? {
-            signers.push(browser_signer);
-        }
+        let browser_signer = self.browser_signer().await?;
         if let Some((pending_keystores, unlocked)) = self.keystores()? {
             pending.extend(pending_keystores);
             signers.extend(unlocked);
@@ -305,7 +316,7 @@ impl MultiWalletOpts {
             ));
         }
 
-        Ok(MultiWallet::new(pending, signers))
+        Ok(MultiWallet::new(pending, signers, browser_signer))
     }
 
     pub fn private_keys(&self) -> Result<Option<Vec<WalletSigner>>> {
@@ -521,14 +532,16 @@ impl MultiWalletOpts {
         None
     }
 
-    pub async fn browser_signer(&self) -> Result<Option<WalletSigner>> {
+    pub async fn browser_signer(&self) -> Result<Option<BrowserSigner>> {
         if self.browser {
-            let browser_signer = WalletSigner::from_browser(
+            let browser_signer = BrowserSigner::new(
                 self.browser_port,
                 !self.browser_disable_open,
+                Duration::from_secs(300),
                 self.browser_development,
             )
-            .await?;
+            .await
+            .map_err(|e| eyre::eyre!(e))?;
             Ok(Some(browser_signer))
         } else {
             Ok(None)

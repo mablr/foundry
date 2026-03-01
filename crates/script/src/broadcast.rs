@@ -12,6 +12,7 @@ use alloy_primitives::{
 use alloy_provider::{Provider, utils::Eip1559Estimation};
 use alloy_rpc_types::TransactionRequest;
 use alloy_serde::WithOtherFields;
+use alloy_signer::Signer;
 use eyre::{Context, Result, bail};
 use forge_verify::provider::VerificationProviderType;
 use foundry_cheatcodes::Wallets;
@@ -22,7 +23,7 @@ use foundry_common::{
     shell,
 };
 use foundry_config::Config;
-use foundry_wallets::{WalletSigner, wallet_browser::signer::BrowserSigner};
+use foundry_wallets::wallet_browser::signer::BrowserSigner;
 use futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered};
 use itertools::Itertools;
 
@@ -188,40 +189,12 @@ impl<'a> SendTransactionKind<'a> {
     }
 }
 
-/// Convenience enum to represent either an Ethereum wallet or a browser signer
-pub enum EitherSigner {
-    Ethereum(EthereumWallet),
-    Browser(BrowserSigner),
-}
-
-impl From<EthereumWallet> for EitherSigner {
-    fn from(wallet: EthereumWallet) -> Self {
-        Self::Ethereum(wallet)
-    }
-}
-
-impl From<WalletSigner> for EitherSigner {
-    fn from(wallet: WalletSigner) -> Self {
-        match wallet {
-            WalletSigner::Browser(wallet) => Self::Browser(wallet),
-            // Convert any other signer to an Ethereum wallet
-            signer => EthereumWallet::new(signer).into(),
-        }
-    }
-}
-
-impl From<BrowserSigner> for EitherSigner {
-    fn from(wallet: BrowserSigner) -> Self {
-        Self::Browser(wallet)
-    }
-}
-
 /// Represents how to send _all_ transactions
 pub enum SendTransactionsKind {
     /// Send via `eth_sendTransaction` and rely on the  `from` address being unlocked.
     Unlocked(AddressHashSet),
     /// Send a signed transaction via `eth_sendRawTransaction`
-    Raw(AddressHashMap<EitherSigner>),
+    Raw { wallets: AddressHashMap<EthereumWallet>, browser: Option<BrowserSigner> },
 }
 
 impl SendTransactionsKind {
@@ -240,14 +213,13 @@ impl SendTransactionsKind {
                 }
                 Ok(SendTransactionKind::Unlocked(tx))
             }
-            Self::Raw(wallets) => {
-                if let Some(wallet) = wallets.get(addr) {
-                    match wallet {
-                        EitherSigner::Ethereum(wallet) => Ok(SendTransactionKind::Raw(tx, wallet)),
-                        EitherSigner::Browser(signer) => {
-                            Ok(SendTransactionKind::Browser(tx, signer))
-                        }
-                    }
+            Self::Raw { wallets, browser } => {
+                if let Some(signer) = browser
+                    && Signer::address(signer) == *addr
+                {
+                    Ok(SendTransactionKind::Browser(tx, signer))
+                } else if let Some(wallet) = wallets.get(addr) {
+                    Ok(SendTransactionKind::Raw(tx, wallet))
                 } else {
                     bail!("No matching signer for {:?} found", addr)
                 }
@@ -324,11 +296,15 @@ impl BundledState {
         let send_kind = if self.args.unlocked {
             SendTransactionsKind::Unlocked(required_addresses.clone())
         } else {
-            let signers = self.script_wallets.into_multi_wallet().into_signers()?;
+            let (signers, browser_signer) = self.script_wallets.into_multi_wallet().into_parts()?;
             let mut missing_addresses = Vec::new();
 
             for addr in &required_addresses {
-                if !signers.contains_key(addr) {
+                let has_signer = signers.contains_key(addr)
+                    || browser_signer
+                        .as_ref()
+                        .is_some_and(|b| alloy_signer::Signer::address(b) == *addr);
+                if !has_signer {
                     missing_addresses.push(addr);
                 }
             }
@@ -341,9 +317,12 @@ impl BundledState {
                 );
             }
 
-            let signers = signers.into_iter().map(|(addr, signer)| (addr, signer.into())).collect();
+            let wallets = signers
+                .into_iter()
+                .map(|(addr, signer)| (addr, EthereumWallet::new(signer)))
+                .collect();
 
-            SendTransactionsKind::Raw(signers)
+            SendTransactionsKind::Raw { wallets, browser: browser_signer }
         };
 
         let progress = ScriptProgress::default();

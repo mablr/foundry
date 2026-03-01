@@ -1,8 +1,11 @@
-use crate::{signer::WalletSigner, utils, wallet_raw::RawWalletOpts};
+use crate::{
+    signer::WalletSigner, utils, wallet_browser::signer::BrowserSigner, wallet_raw::RawWalletOpts,
+};
 use alloy_primitives::Address;
 use clap::Parser;
 use eyre::Result;
 use serde::Serialize;
+use std::time::Duration;
 
 /// The wallet options can either be:
 /// 1. Raw (via private key / mnemonic file, see `RawWallet`)
@@ -135,6 +138,23 @@ pub struct WalletOpts {
 }
 
 impl WalletOpts {
+    /// Returns a [`BrowserSigner`] if `--browser` was specified, otherwise `None`.
+    pub async fn browser_signer(&self) -> Result<Option<BrowserSigner>> {
+        if self.browser {
+            let browser_signer = BrowserSigner::new(
+                self.browser_port,
+                !self.browser_disable_open,
+                Duration::from_secs(300),
+                self.browser_development,
+            )
+            .await
+            .map_err(|e| eyre::eyre!(e))?;
+            Ok(Some(browser_signer))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn signer(&self) -> Result<WalletSigner> {
         trace!("start finding signer");
 
@@ -169,13 +189,6 @@ impl WalletOpts {
                 eyre::eyre!("TURNKEY_ADDRESS could not be parsed as an Ethereum address")
             })?;
             WalletSigner::from_turnkey(api_private_key, organization_id, address)?
-        } else if self.browser {
-            WalletSigner::from_browser(
-                self.browser_port,
-                !self.browser_disable_open,
-                self.browser_development,
-            )
-            .await?
         } else if let Some(raw_wallet) = self.raw.signer()? {
             raw_wallet
         } else if let Some(path) = utils::maybe_get_keystore_path(

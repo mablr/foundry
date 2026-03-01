@@ -6,14 +6,12 @@ use alloy_network::{AnyNetwork, EthereumWallet, TransactionBuilder};
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_rpc_types::TransactionRequest;
 use alloy_serde::WithOtherFields;
-use alloy_signer::Signer;
 use clap::Parser;
 use eyre::{Result, eyre};
 use foundry_cli::{
     opts::TransactionOpts,
     utils::{LoadConfig, get_provider},
 };
-use foundry_wallets::WalletSigner;
 
 use crate::tx::{self, CastTxBuilder, CastTxSender, SendTxOpts};
 
@@ -139,16 +137,37 @@ impl SendTxArgs {
         // Check if this is a Tempo transaction - requires special handling for local signing
         let is_tempo = builder.is_tempo();
 
-        // Tempo transactions with browser wallets are not supported
-        if is_tempo && send_tx.eth.wallet.browser {
-            return Err(eyre!("Tempo transactions are not supported with browser wallets."));
-        }
+        // Case 1: Browser wallet — signs and sends in one step.
+        if let Some(browser_signer) = send_tx.eth.wallet.browser_signer().await? {
+            if is_tempo {
+                return Err(eyre!("Tempo transactions are not supported with browser wallets."));
+            }
 
-        // Case 1:
-        // Default to sending via eth_sendTransaction if the --unlocked flag is passed.
-        // This should be the only way this RPC method is used as it requires a local node
-        // or remote RPC with unlocked accounts.
-        if unlocked && !send_tx.eth.wallet.browser {
+            let from = alloy_signer::Signer::address(&browser_signer);
+            tx::validate_from_address(send_tx.eth.wallet.from, from)?;
+
+            let (tx_request, _) = builder.build(from).await?;
+            let tx_hash =
+                browser_signer.send_transaction_via_browser(tx_request.into_inner()).await?;
+
+            if send_tx.cast_async {
+                sh_println!("{tx_hash:#x}")?;
+            } else {
+                let receipt = CastTxSender::new(&provider)
+                    .receipt(
+                        format!("{tx_hash:#x}"),
+                        None,
+                        send_tx.confirmations,
+                        Some(timeout),
+                        false,
+                    )
+                    .await?;
+                sh_println!("{receipt}")?;
+            }
+
+            Ok(())
+        // Case 2: Unlocked account via eth_sendTransaction.
+        } else if unlocked {
             // only check current chain id if it was specified in the config
             if let Some(config_chain) = config.chain {
                 let current_chain_id = provider.get_chain_id().await?;
@@ -179,42 +198,12 @@ impl SendTxArgs {
                 timeout,
             )
             .await
-        // Case 2:
-        // An option to use a local signer was provided.
-        // If we cannot successfully instantiate a local signer, then we will assume we don't have
-        // enough information to sign and we must bail.
+        // Case 3: Local signer (private key, mnemonic, hardware wallet, etc.).
         } else {
-            // Retrieve the signer, and bail if it can't be constructed.
             let signer = send_tx.eth.wallet.signer().await?;
-            let from = signer.address();
+            let from = alloy_signer::Signer::address(&signer);
 
             tx::validate_from_address(send_tx.eth.wallet.from, from)?;
-
-            // Browser wallets work differently as they sign and send the transaction in one step.
-            if send_tx.eth.wallet.browser
-                && let WalletSigner::Browser(ref browser_signer) = signer
-            {
-                let (tx_request, _) = builder.build(from).await?;
-                let tx_hash =
-                    browser_signer.send_transaction_via_browser(tx_request.into_inner()).await?;
-
-                if send_tx.cast_async {
-                    sh_println!("{tx_hash:#x}")?;
-                } else {
-                    let receipt = CastTxSender::new(&provider)
-                        .receipt(
-                            format!("{tx_hash:#x}"),
-                            None,
-                            send_tx.confirmations,
-                            Some(timeout),
-                            false,
-                        )
-                        .await?;
-                    sh_println!("{receipt}")?;
-                }
-
-                return Ok(());
-            }
 
             // Tempo transactions need to be signed locally and sent as raw transactions
             // because EthereumWallet doesn't understand type 0x76
