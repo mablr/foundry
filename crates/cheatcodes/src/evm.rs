@@ -8,7 +8,7 @@ use crate::{
 use alloy_consensus::TxEnvelope;
 use alloy_evm::{Evm as _, FromRecoveredTx};
 use alloy_genesis::{Genesis, GenesisAccount};
-use alloy_network::eip2718::EIP4844_TX_TYPE_ID;
+use alloy_network::{AnyTxEnvelope, eip2718::EIP4844_TX_TYPE_ID};
 use alloy_primitives::{
     Address, B256, U256, hex, keccak256,
     map::{B256Map, HashMap},
@@ -16,6 +16,7 @@ use alloy_primitives::{
 use alloy_rlp::Decodable;
 use alloy_sol_types::SolValue;
 use foundry_common::{
+    TransactionMaybeSigned,
     fs::{read_json_file, write_json_file},
     slot_identifier::{
         ENCODING_BYTES, ENCODING_DYN_ARRAY, ENCODING_INPLACE, ENCODING_MAPPING, SlotIdentifier,
@@ -1062,7 +1063,7 @@ impl Cheatcode for broadcastRawTransactionCall {
         if ccx.state.broadcast.is_some() {
             ccx.state.broadcastable_transactions.push_back(BroadcastableTransaction {
                 rpc: ccx.ecx.db().active_fork_url(),
-                transaction: tx.try_into()?,
+                transaction: TransactionMaybeSigned::(AnyTxEnvelope::Ethereum(tx)),
             });
         }
 

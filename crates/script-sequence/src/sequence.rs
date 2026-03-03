@@ -1,5 +1,5 @@
 use crate::transaction::TransactionWithMetadata;
-use alloy_network::AnyTransactionReceipt;
+use alloy_network::{AnyNetwork, AnyTransactionReceipt, Ethereum};
 use alloy_primitives::{TxHash, hex, map::HashMap};
 use eyre::{ContextCompat, Result, WrapErr};
 use foundry_common::{SELECTOR_LEN, TransactionMaybeSigned, fs, shell};
@@ -203,7 +203,7 @@ impl ScriptSequence {
     }
 
     /// Returns the list of the transactions without the metadata.
-    pub fn transactions(&self) -> impl Iterator<Item = &TransactionMaybeSigned> {
+    pub fn transactions(&self) -> impl Iterator<Item = &TransactionMaybeSigned<AnyNetwork>> {
         self.transactions.iter().map(|tx| tx.tx())
     }
 

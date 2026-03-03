@@ -22,7 +22,7 @@ use crate::{
 };
 use alloy_consensus::BlobTransactionSidecarVariant;
 use alloy_evm::eth::EthEvmContext;
-use alloy_network::{TransactionBuilder4844, TransactionBuilder7594};
+use alloy_network::{AnyNetwork, Network};
 use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256, hex,
     map::{AddressHashMap, HashMap, HashSet},
@@ -46,6 +46,7 @@ use foundry_evm_core::{
 use foundry_evm_traces::{
     TracingInspector, TracingInspectorConfig, identifier::SignaturesIdentifier,
 };
+use foundry_primitives::FoundryTransactionBuilder;
 use foundry_wallets::wallet_multi::MultiWallet;
 use itertools::Itertools;
 use proptest::test_runner::{RngAlgorithm, TestRng, TestRunner};
@@ -214,11 +215,15 @@ impl TestContext {
 
 /// Helps collecting transactions from different forks.
 #[derive(Clone, Debug)]
-pub struct BroadcastableTransaction {
+pub struct BroadcastableTransaction<N: Network = AnyNetwork>
+where
+    N::TxEnvelope: Clone,
+    N::TransactionRequest: FoundryTransactionBuilder<N>,
+{
     /// The optional RPC URL.
     pub rpc: Option<String>,
     /// The transaction to broadcast.
-    pub transaction: TransactionMaybeSigned,
+    pub transaction: TransactionMaybeSigned<N>,
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -951,11 +956,7 @@ impl Cheatcodes {
                                 precompile_call_logs: vec![],
                             });
                         }
-                        if blob_sidecar.is_eip4844() {
-                            tx_req.set_blob_sidecar(blob_sidecar.into_eip4844().unwrap());
-                        } else if blob_sidecar.is_eip7594() {
-                            tx_req.set_blob_sidecar_7594(blob_sidecar.into_eip7594().unwrap());
-                        }
+                        tx_req.set_blob_sidecar(blob_sidecar);
                     }
 
                     // Apply active EIP-7702 delegations, if any.
@@ -973,8 +974,10 @@ impl Cheatcodes {
                         tx_req.authorization_list = Some(active_delegations);
                     }
 
-                    self.broadcastable_transactions
-                        .push_back(BroadcastableTransaction { rpc, transaction: tx_req.into() });
+                    self.broadcastable_transactions.push_back(BroadcastableTransaction {
+                        rpc,
+                        transaction: TransactionMaybeSigned::Unsigned(tx_req.into()),
+                    });
                     debug!(target: "cheatcodes", tx=?self.broadcastable_transactions.back().unwrap(), "broadcastable call");
 
                     // Explicitly increment nonce if calls are not isolated.
@@ -1721,15 +1724,14 @@ impl Inspector<EthEvmContext<&mut dyn DatabaseExt>> for Cheatcodes {
                 let account = &ecx.journal().evm_state()[&broadcast.new_origin];
                 self.broadcastable_transactions.push_back(BroadcastableTransaction {
                     rpc: ecx.db().active_fork_url(),
-                    transaction: TransactionRequest {
+                    transaction: TransactionMaybeSigned::Unsigned(TransactionRequest {
                         from: Some(broadcast.new_origin),
                         to: None,
                         value: Some(input.value()),
                         input: TransactionInput::new(input.init_code()),
                         nonce: Some(account.info.nonce),
                         ..Default::default()
-                    }
-                    .into(),
+                    }.into()),
                 });
 
                 input.log_debug(self, &input.scheme().unwrap_or(CreateScheme::Create));

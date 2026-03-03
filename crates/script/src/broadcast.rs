@@ -1,9 +1,8 @@
 use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 use alloy_chains::{Chain, NamedChain};
-use alloy_consensus::TxEnvelope;
 use alloy_eips::{BlockId, eip2718::Encodable2718};
-use alloy_network::{AnyNetwork, EthereumWallet, TransactionBuilder};
+use alloy_network::{AnyNetwork, AnyTxEnvelope, EthereumWallet, TransactionBuilder};
 use alloy_primitives::{
     Address, TxHash,
     map::{AddressHashMap, AddressHashSet},
@@ -66,7 +65,7 @@ pub enum SendTransactionKind<'a> {
     Unlocked(WithOtherFields<TransactionRequest>),
     Raw(WithOtherFields<TransactionRequest>, &'a EthereumWallet),
     Browser(WithOtherFields<TransactionRequest>, &'a BrowserSigner),
-    Signed(TxEnvelope),
+    Signed(AnyTxEnvelope),
 }
 
 impl<'a> SendTransactionKind<'a> {
@@ -398,7 +397,7 @@ impl BundledState {
                         let is_fixed_gas_limit = tx_with_metadata.is_fixed_gas_limit;
 
                         let kind = match tx_with_metadata.tx().clone() {
-                            TransactionMaybeSigned::Signed { tx, .. } => {
+                            TransactionMaybeSigned::Signed(tx) => {
                                 SendTransactionKind::Signed(tx)
                             }
                             TransactionMaybeSigned::Unsigned(mut tx) => {
@@ -422,7 +421,7 @@ impl BundledState {
                                     tx.set_max_fee_per_gas(eip1559_fees.max_fee_per_gas);
                                 }
 
-                                send_kind.for_sender(&from, tx)?
+                                send_kind.for_sender(&from, tx.into())?
                             }
                         };
 
