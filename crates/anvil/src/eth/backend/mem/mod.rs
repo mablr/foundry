@@ -49,8 +49,7 @@ use alloy_evm::{
     precompiles::{DynPrecompile, Precompile, PrecompilesMap},
 };
 use alloy_network::{
-    AnyHeader, AnyRpcBlock, AnyRpcHeader, AnyRpcTransaction, AnyTxEnvelope, AnyTxType,
-    ReceiptResponse, TransactionBuilder, UnknownTxEnvelope, UnknownTypedTransaction,
+    AnyHeader, AnyRpcBlock, AnyRpcHeader, AnyRpcTransaction, AnyTxEnvelope, AnyTxType, Network, ReceiptResponse, TransactionBuilder, UnknownTxEnvelope, UnknownTypedTransaction
 };
 use alloy_primitives::{
     Address, B256, Bytes, TxHash, TxKind, U64, U256, hex, keccak256, logs_bloom,
@@ -169,7 +168,7 @@ impl BlockRequest {
 
 /// Gives access to the [revm::Database]
 #[derive(Clone, Debug)]
-pub struct Backend {
+pub struct Backend<N: Network> {
     /// Access to [`revm::Database`] abstraction.
     ///
     /// This will be used in combination with [`alloy_evm::Evm`] and is responsible for feeding
@@ -197,7 +196,7 @@ pub struct Backend {
     /// Env data of the chain
     env: Arc<RwLock<Env>>,
     /// This is set if this is currently forked off another client.
-    fork: Arc<RwLock<Option<ClientFork>>>,
+    fork: Arc<RwLock<Option<ClientFork<N>>>>,
     /// Provides time related info, like timestamp.
     time: TimeManager,
     /// Contains state of custom overrides.
@@ -230,7 +229,7 @@ pub struct Backend {
     disable_pool_balance_checks: bool,
 }
 
-impl Backend {
+impl<N: Network> Backend<N> {
     /// Initialises the balance of the given accounts
     #[expect(clippy::too_many_arguments)]
     pub async fn with_genesis(
@@ -238,7 +237,7 @@ impl Backend {
         env: Arc<RwLock<Env>>,
         genesis: GenesisConfig,
         fees: FeeManager,
-        fork: Arc<RwLock<Option<ClientFork>>>,
+        fork: Arc<RwLock<Option<ClientFork<N>>>>,
         enable_steps_tracing: bool,
         print_logs: bool,
         print_traces: bool,
@@ -432,7 +431,7 @@ impl Backend {
     }
 
     /// Returns the configured fork, if any
-    pub fn get_fork(&self) -> Option<ClientFork> {
+    pub fn get_fork(&self) -> Option<ClientFork<N>> {
         self.fork.read().clone()
     }
 
@@ -511,9 +510,9 @@ impl Backend {
                     env.evm_env.cfg_env.chain_id = fork.chain_id();
                     env.evm_env.block_env = BlockEnv {
                         number: U256::from(fork_block_number),
-                        timestamp: U256::from(fork_block.header.timestamp),
+                        timestamp: U256::from(fork_block.header().timestamp),
                         gas_limit,
-                        difficulty: fork_block.header.difficulty,
+                        difficulty: fork_block.header().difficulty,
                         prevrandao: Some(fork_block.header.mix_hash.unwrap_or_default()),
                         // Keep previous `beneficiary` and `basefee` value
                         beneficiary: env.evm_env.block_env.beneficiary,
@@ -2155,7 +2154,7 @@ impl Backend {
         }
     }
 
-    pub async fn block_by_hash(&self, hash: B256) -> Result<Option<AnyRpcBlock>, BlockchainError> {
+    pub async fn block_by_hash(&self, hash: B256) -> Result<Option<N::BlockResponse>, BlockchainError> {
         trace!(target: "backend", "get block by hash {:?}", hash);
         if let tx @ Some(_) = self.mined_block_by_hash(hash) {
             return Ok(tx);
@@ -2171,7 +2170,7 @@ impl Backend {
     pub async fn block_by_hash_full(
         &self,
         hash: B256,
-    ) -> Result<Option<AnyRpcBlock>, BlockchainError> {
+    ) -> Result<Option<N::BlockResponse>, BlockchainError> {
         trace!(target: "backend", "get block by hash {:?}", hash);
         if let tx @ Some(_) = self.get_full_block(hash) {
             return Ok(tx);
@@ -2184,7 +2183,7 @@ impl Backend {
         Ok(None)
     }
 
-    fn mined_block_by_hash(&self, hash: B256) -> Option<AnyRpcBlock> {
+    fn mined_block_by_hash(&self, hash: B256) -> Option<N::BlockResponse> {
         let block = self.blockchain.get_block_by_hash(&hash)?;
         Some(self.convert_block_with_hash(block, Some(hash)))
     }
@@ -2220,7 +2219,7 @@ impl Backend {
     pub async fn block_by_number(
         &self,
         number: BlockNumber,
-    ) -> Result<Option<AnyRpcBlock>, BlockchainError> {
+    ) -> Result<Option<N::BlockResponse>, BlockchainError> {
         trace!(target: "backend", "get block by number {:?}", number);
         if let tx @ Some(_) = self.mined_block_by_number(number) {
             return Ok(tx);
@@ -2239,7 +2238,7 @@ impl Backend {
     pub async fn block_by_number_full(
         &self,
         number: BlockNumber,
-    ) -> Result<Option<AnyRpcBlock>, BlockchainError> {
+    ) -> Result<Option<N::BlockResponse>, BlockchainError> {
         trace!(target: "backend", "get block by number {:?}", number);
         if let tx @ Some(_) = self.get_full_block(number) {
             return Ok(tx);
@@ -2296,14 +2295,14 @@ impl Backend {
         self.blockchain.get_block_by_hash(&hash)
     }
 
-    pub fn mined_block_by_number(&self, number: BlockNumber) -> Option<AnyRpcBlock> {
+    pub fn mined_block_by_number(&self, number: BlockNumber) -> Option<N::BlockResponse> {
         let (block, hash) = self.get_block_with_hash(number)?;
         let mut block = self.convert_block_with_hash(block, Some(hash));
         block.transactions.convert_to_hashes();
         Some(block)
     }
 
-    pub fn get_full_block(&self, id: impl Into<BlockId>) -> Option<AnyRpcBlock> {
+    pub fn get_full_block(&self, id: impl Into<BlockId>) -> Option<N::BlockResponse> {
         let (block, hash) = self.get_block_with_hash(id)?;
         let transactions = self.mined_transactions_in_block(&block)?;
         let mut block = self.convert_block_with_hash(block, Some(hash));
@@ -2312,13 +2311,13 @@ impl Backend {
     }
 
     /// Takes a block as it's stored internally and returns the eth api conform block format.
-    pub fn convert_block(&self, block: Block) -> AnyRpcBlock {
+    pub fn convert_block(&self, block: Block) -> N::BlockResponse {
         self.convert_block_with_hash(block, None)
     }
 
     /// Takes a block as it's stored internally and returns the eth api conform block format.
     /// If `known_hash` is provided, it will be used instead of computing `hash_slow()`.
-    pub fn convert_block_with_hash(&self, block: Block, known_hash: Option<B256>) -> AnyRpcBlock {
+    pub fn convert_block_with_hash(&self, block: Block, known_hash: Option<B256>) -> N::BlockResponse {
         let size = U256::from(alloy_rlp::encode(&block).len() as u32);
 
         let header = block.header.clone();
@@ -2341,15 +2340,15 @@ impl Backend {
             withdrawals: withdrawals_root.map(|_| Default::default()),
         };
 
-        let mut block = WithOtherFields::new(block);
+        // let mut block = WithOtherFields::new(block);
 
-        // If Arbitrum, apply chain specifics to converted block.
-        if is_arbitrum(self.env.read().evm_env.cfg_env.chain_id) {
-            // Set `l1BlockNumber` field.
-            block.other.insert("l1BlockNumber".to_string(), number.into());
-        }
+        // // If Arbitrum, apply chain specifics to converted block.
+        // if is_arbitrum(self.env.read().evm_env.cfg_env.chain_id) {
+        //     // Set `l1BlockNumber` field.
+        //     block.other.insert("l1BlockNumber".to_string(), number.into());
+        // }
 
-        AnyRpcBlock::from(block)
+        block
     }
 
     /// Converts the `BlockNumber` into a numeric value
