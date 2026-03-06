@@ -5,7 +5,7 @@ use std::{
 
 use alloy_consensus::SignableTransaction;
 use alloy_dyn_abi::TypedData;
-use alloy_network::{Ethereum, Network, TransactionBuilder, TxSigner};
+use alloy_network::{Network, TransactionBuilder, TxSigner};
 use alloy_primitives::{Address, B256, ChainId, hex};
 use alloy_signer::{Result, Signature, Signer, SignerSync};
 use alloy_sol_types::{Eip712Domain, SolStruct};
@@ -19,7 +19,7 @@ use crate::wallet_browser::{
 };
 
 #[derive(Clone, Debug)]
-pub struct BrowserSigner<N: Network = Ethereum> {
+pub struct BrowserSigner<N: Network> {
     server: Arc<Mutex<BrowserWalletServer<N>>>,
     address: Address,
     chain_id: ChainId,

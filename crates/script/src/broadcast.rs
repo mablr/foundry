@@ -1,25 +1,23 @@
 use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 use alloy_chains::{Chain, NamedChain};
-use alloy_consensus::TxEnvelope;
+use alloy_consensus::{SignableTransaction, Signed};
 use alloy_eips::{BlockId, eip2718::Encodable2718};
-use alloy_network::{AnyNetwork, EthereumWallet, TransactionBuilder};
+use alloy_network::{EthereumWallet, Network, TransactionBuilder};
 use alloy_primitives::{
     Address, TxHash,
     map::{AddressHashMap, AddressHashSet},
     utils::format_units,
 };
-use alloy_provider::{Provider, utils::Eip1559Estimation};
-use alloy_rpc_types::TransactionRequest;
-use alloy_serde::WithOtherFields;
-use alloy_signer::Signer;
+use alloy_provider::{Provider, RootProvider, utils::Eip1559Estimation};
+use alloy_signer::{Signature, Signer};
 use eyre::{Context, Result, bail};
 use forge_verify::provider::VerificationProviderType;
 use foundry_cheatcodes::Wallets;
 use foundry_cli::utils::{has_batch_support, has_different_gas_calc};
 use foundry_common::{
     TransactionMaybeSigned,
-    provider::{RetryProvider, get_http_provider, try_get_http_provider},
+    provider::{get_http_provider, try_get_http_provider},
     shell,
 };
 use foundry_config::Config;
@@ -32,14 +30,16 @@ use crate::{
     sequence::ScriptSequenceKind, verify::BroadcastedState,
 };
 
-pub async fn estimate_gas<P: Provider<AnyNetwork>>(
-    tx: &mut WithOtherFields<TransactionRequest>,
+pub async fn estimate_gas<N: Network, P: Provider<N>>(
+    tx: &mut N::TransactionRequest,
     provider: &P,
     estimate_multiplier: u64,
 ) -> Result<()> {
     // if already set, some RPC endpoints might simply return the gas value that is already
     // set in the request and omit the estimate altogether, so we remove it here
-    tx.gas = None;
+
+    // TODO add this to FoundryTransactionBuilder trait
+    // tx.gas = None;
 
     tx.set_gas_limit(
         provider.estimate_gas(tx.clone()).await.wrap_err("Failed to estimate gas for tx")?
@@ -63,14 +63,19 @@ pub async fn next_nonce(
 
 /// Represents how to send a single transaction.
 #[derive(Clone)]
-pub enum SendTransactionKind<'a> {
-    Unlocked(WithOtherFields<TransactionRequest>),
-    Raw(WithOtherFields<TransactionRequest>, &'a EthereumWallet),
-    Browser(WithOtherFields<TransactionRequest>, &'a BrowserSigner),
-    Signed(TxEnvelope),
+pub enum SendTransactionKind<'a, N: Network> {
+    Unlocked(N::TransactionRequest),
+    Raw(N::TransactionRequest, &'a EthereumWallet),
+    Browser(N::TransactionRequest, &'a BrowserSigner<N>),
+    Signed(N::TxEnvelope),
 }
 
-impl<'a> SendTransactionKind<'a> {
+impl<'a, N> SendTransactionKind<'a, N> 
+where 
+    N: Network,
+    N::TxEnvelope: From<Signed<N::UnsignedTx>>,
+    N::UnsignedTx: SignableTransaction<Signature>,
+{
     /// Prepares the transaction for broadcasting by synchronizing nonce and estimating gas.
     ///
     /// This method performs two key operations:
@@ -79,7 +84,7 @@ impl<'a> SendTransactionKind<'a> {
     /// 2. Gas estimation: Re-estimates gas right before broadcasting for chains that require it
     pub async fn prepare(
         &mut self,
-        provider: &RetryProvider,
+        provider: &RootProvider<N>,
         sequential_broadcast: bool,
         is_fixed_gas_limit: bool,
         estimate_via_rpc: bool,
@@ -87,9 +92,9 @@ impl<'a> SendTransactionKind<'a> {
     ) -> Result<()> {
         if let Self::Raw(tx, _) | Self::Unlocked(tx) | Self::Browser(tx, _) = self {
             if sequential_broadcast {
-                let from = tx.from.expect("no sender");
+                let from = tx.from().expect("no sender");
 
-                let tx_nonce = tx.nonce.expect("no nonce");
+                let tx_nonce = tx.nonce().expect("no nonce");
                 for attempt in 0..5 {
                     let nonce = provider.get_transaction_count(from).await?;
                     match nonce.cmp(&tx_nonce) {
@@ -133,7 +138,7 @@ impl<'a> SendTransactionKind<'a> {
     /// - Submit via `eth_sendTransaction` for unlocked accounts
     /// - Sign and submit via `eth_sendRawTransaction` for raw transactions
     /// - Submit pre-signed transaction via `eth_sendRawTransaction`
-    pub async fn send(self, provider: Arc<RetryProvider>) -> Result<TxHash> {
+    pub async fn send(self, provider: Arc<RootProvider<N>>) -> Result<TxHash> {
         match self {
             Self::Unlocked(tx) => {
                 debug!("sending transaction from unlocked account {:?}", tx);
@@ -159,7 +164,7 @@ impl<'a> SendTransactionKind<'a> {
                 debug!("sending transaction: {:?}", tx);
 
                 // Sign and send the transaction via the browser wallet
-                Ok(signer.send_transaction_via_browser(tx.into_inner()).await?)
+                Ok(signer.send_transaction_via_browser(tx).await?)
             }
         }
     }
@@ -170,7 +175,7 @@ impl<'a> SendTransactionKind<'a> {
     /// [`send`](Self::send) into a single call.
     pub async fn prepare_and_send(
         mut self,
-        provider: Arc<RetryProvider>,
+        provider: Arc<RootProvider<N>>,
         sequential_broadcast: bool,
         is_fixed_gas_limit: bool,
         estimate_via_rpc: bool,
@@ -190,22 +195,22 @@ impl<'a> SendTransactionKind<'a> {
 }
 
 /// Represents how to send _all_ transactions
-pub enum SendTransactionsKind {
+pub enum SendTransactionsKind<N: Network> {
     /// Send via `eth_sendTransaction` and rely on the  `from` address being unlocked.
     Unlocked(AddressHashSet),
     /// Send a signed transaction via `eth_sendRawTransaction`, or via browser
-    Raw { eth_wallets: AddressHashMap<EthereumWallet>, browser: Option<BrowserSigner> },
+    Raw { eth_wallets: AddressHashMap<EthereumWallet>, browser: Option<BrowserSigner<N>> },
 }
 
-impl SendTransactionsKind {
+impl<N: Network> SendTransactionsKind<N> {
     /// Returns the [`SendTransactionKind`] for the given address
     ///
     /// Returns an error if no matching signer is found or the address is not unlocked
     pub fn for_sender(
         &self,
         addr: &Address,
-        tx: WithOtherFields<TransactionRequest>,
-    ) -> Result<SendTransactionKind<'_>> {
+        tx: N::TransactionRequest,
+    ) -> Result<SendTransactionKind<'_, N>> {
         match self {
             Self::Unlocked(unlocked) => {
                 if !unlocked.contains(addr) {
