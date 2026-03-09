@@ -1,5 +1,5 @@
 use alloy_chains::{Chain, NamedChain};
-use alloy_network::{AnyTransactionReceipt, ReceiptResponse};
+use alloy_network::{AnyTransactionReceipt, Network, ReceiptResponse};
 use alloy_primitives::{TxHash, U256, utils::format_units};
 use alloy_provider::{PendingTransactionBuilder, PendingTransactionError, Provider, WatchTxError};
 use eyre::{Result, eyre};
@@ -86,10 +86,10 @@ pub async fn check_tx_status(
 }
 
 /// Prints parts of the receipt to stdout
-pub fn format_receipt(
+pub fn format_receipt<N: Network>(
     chain: Chain,
     receipt: &AnyTransactionReceipt,
-    sequence: Option<&ScriptSequence>,
+    sequence: Option<&ScriptSequence<N>>,
 ) -> String {
     let gas_used = receipt.gas_used;
     let gas_price = receipt.effective_gas_price;

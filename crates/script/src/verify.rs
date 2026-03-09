@@ -3,6 +3,7 @@ use crate::{
     build::LinkedBuildData,
     sequence::{ScriptSequenceKind, get_commit_hash},
 };
+use alloy_network::Network;
 use alloy_primitives::{Address, hex};
 use eyre::{Result, eyre};
 use forge_script_sequence::{AdditionalContract, ScriptSequence};
@@ -16,14 +17,22 @@ use semver::Version;
 /// State after we have broadcasted the script.
 /// It is assumed that at this point [BroadcastedState::sequence] contains receipts for all
 /// broadcasted transactions.
-pub struct BroadcastedState {
+pub struct BroadcastedState<N: Network>
+where
+    N::TxEnvelope: serde::Serialize + serde::de::DeserializeOwned,
+    N::TransactionRequest: serde::Serialize + serde::de::DeserializeOwned,
+{
     pub args: ScriptArgs,
     pub script_config: ScriptConfig,
     pub build_data: LinkedBuildData,
-    pub sequence: ScriptSequenceKind,
+    pub sequence: ScriptSequenceKind<N>,
 }
 
-impl BroadcastedState {
+impl<N: Network> BroadcastedState<N>
+where
+    N::TxEnvelope: serde::Serialize + serde::de::DeserializeOwned,
+    N::TransactionRequest: serde::Serialize + serde::de::DeserializeOwned,
+{
     pub async fn verify(self) -> Result<()> {
         let Self { args, script_config, build_data, mut sequence, .. } = self;
 
@@ -178,8 +187,8 @@ impl VerifyBundle {
 
 /// Given the broadcast log, it matches transactions with receipts, and tries to verify any
 /// created contract on etherscan.
-async fn verify_contracts(
-    sequence: &mut ScriptSequence,
+async fn verify_contracts<N: Network>(
+    sequence: &mut ScriptSequence<N>,
     config: &Config,
     mut verify: VerifyBundle,
 ) -> Result<()> {
@@ -265,8 +274,8 @@ async fn verify_contracts(
     Ok(())
 }
 
-fn check_unverified(
-    sequence: &ScriptSequence,
+fn check_unverified<N: Network>(
+    sequence: &ScriptSequence<N>,
     unverifiable_contracts: Vec<Address>,
     verify: VerifyBundle,
 ) {
