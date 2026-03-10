@@ -2,6 +2,7 @@ use crate::{
     Env,
     executors::{Executor, ExecutorBuilder},
 };
+use alloy_evm::EvmEnv;
 use alloy_primitives::{Address, U256, map::HashMap};
 use alloy_rpc_types::state::StateOverride;
 use eyre::Context;
@@ -10,7 +11,7 @@ use foundry_config::{Chain, Config, utils::evm_spec_id};
 use foundry_evm_core::{backend::Backend, fork::CreateFork, opts::EvmOpts};
 use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::TraceMode;
-use revm::{primitives::hardfork::SpecId, state::Bytecode};
+use revm::{context::TxEnv, primitives::hardfork::SpecId, state::Bytecode};
 use std::ops::{Deref, DerefMut};
 
 /// A default executor with tracing enabled
@@ -20,7 +21,8 @@ pub struct TracingExecutor {
 
 impl TracingExecutor {
     pub fn new(
-        env: Env,
+        evm_env: EvmEnv,
+        tx_env: TxEnv,
         fork: CreateFork,
         version: Option<EvmVersion>,
         trace_mode: TraceMode,
@@ -36,7 +38,7 @@ impl TracingExecutor {
                 stack.trace_mode(trace_mode).networks(networks).create2_deployer(create2_deployer)
             })
             .spec_id(evm_spec_id(version.unwrap_or_default()))
-            .build(env, db);
+            .build(evm_env, tx_env, db);
 
         // Apply the state overrides.
         if let Some(state_overrides) = state_overrides {
@@ -79,18 +81,18 @@ impl TracingExecutor {
     pub async fn get_fork_material(
         config: &mut Config,
         mut evm_opts: EvmOpts,
-    ) -> eyre::Result<(Env, CreateFork, Chain, NetworkConfigs)> {
+    ) -> eyre::Result<(EvmEnv, TxEnv, CreateFork, Chain, NetworkConfigs)> {
         evm_opts.fork_url = Some(config.get_rpc_url_or_localhost_http()?.into_owned());
         evm_opts.fork_block_number = config.fork_block_number;
 
-        let env = evm_opts.evm_env().await?;
+        let (evm_env, tx_env) = evm_opts.evm_env().await?;
 
-        let fork = evm_opts.get_fork(config, env.clone()).unwrap();
-        let networks = evm_opts.networks.with_chain_id(env.evm_env.cfg_env.chain_id);
+        let fork = evm_opts.get_fork(config, evm_env.clone(), tx_env.clone()).unwrap();
+        let networks = evm_opts.networks.with_chain_id(evm_env.cfg_env.chain_id);
         config.labels.extend(networks.precompiles_label());
 
-        let chain = env.tx.chain_id.unwrap().into();
-        Ok((env, fork, chain, networks))
+        let chain = tx_env.chain_id.unwrap().into();
+        Ok((evm_env, tx_env, fork, chain, networks))
     }
 }
 

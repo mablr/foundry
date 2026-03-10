@@ -1,6 +1,7 @@
 use crate::{executors::Executor, inspectors::InspectorStackBuilder};
+use alloy_evm::EvmEnv;
 use foundry_evm_core::{Env, backend::Backend};
-use revm::primitives::hardfork::SpecId;
+use revm::{context::TxEnv, primitives::hardfork::SpecId};
 
 /// The builder that allows to configure an evm [`Executor`] which a stack of optional
 /// [`revm::Inspector`]s, such as [`Cheatcodes`].
@@ -73,19 +74,19 @@ impl ExecutorBuilder {
 
     /// Builds the executor as configured.
     #[inline]
-    pub fn build(self, env: Env, db: Backend) -> Executor {
+    pub fn build(self, evm_env: EvmEnv, tx_env: TxEnv, db: Backend) -> Executor {
         let Self { mut stack, gas_limit, spec_id, legacy_assertions } = self;
         if stack.block.is_none() {
-            stack.block = Some(env.evm_env.block_env.clone());
+            stack.block = Some(evm_env.block_env.clone());
         }
         if stack.gas_price.is_none() {
-            stack.gas_price = Some(env.tx.gas_price);
+            stack.gas_price = Some(tx_env.gas_price);
         }
-        let gas_limit = gas_limit.unwrap_or(env.evm_env.block_env.gas_limit);
+        let gas_limit = gas_limit.unwrap_or(evm_env.block_env.gas_limit);
         let env = Env::new_with_spec_id(
-            env.evm_env.cfg_env.clone(),
-            env.evm_env.block_env.clone(),
-            env.tx,
+            evm_env.cfg_env.clone(),
+            evm_env.block_env.clone(),
+            tx_env,
             spec_id,
         );
         Executor::new(db, env, stack.build(), gas_limit, legacy_assertions)

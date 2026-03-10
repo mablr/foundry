@@ -541,7 +541,7 @@ impl Backend {
         };
 
         if let Some(fork) = fork {
-            let (fork_id, fork, _) = backend.forks.create_fork(fork)?;
+            let (fork_id, fork, .. ) = backend.forks.create_fork(fork)?;
             let fork_db = ForkDB::new(fork);
             let fork_ids = backend.inner.insert_new_fork(
                 fork_id.clone(),
@@ -1054,7 +1054,7 @@ impl DatabaseExt for Backend {
 
     fn create_fork(&mut self, create_fork: CreateFork) -> eyre::Result<LocalForkId> {
         trace!("create fork");
-        let (fork_id, fork, _) = self.forks.create_fork(create_fork)?;
+        let (fork_id, fork, ..) = self.forks.create_fork(create_fork)?;
 
         let fork_db = ForkDB::new(fork);
         let (id, _) =
@@ -1070,7 +1070,7 @@ impl DatabaseExt for Backend {
         trace!(?transaction, "create fork at transaction");
         let id = self.create_fork(fork)?;
         let fork_id = self.ensure_fork_id(id).cloned()?;
-        let mut env = self
+        let (mut evm_env, mut tx_env) = self
             .forks
             .get_env(fork_id)?
             .ok_or_else(|| eyre::eyre!("Requested fork `{}` does not exist", id))?;
@@ -1080,8 +1080,8 @@ impl DatabaseExt for Backend {
         self.roll_fork_to_transaction(
             Some(id),
             transaction,
-            &mut env.evm_env,
-            &mut env.tx,
+            &mut evm_env,
+            &mut tx_env,
             &mut self.inner.new_journaled_state(),
         )?;
 
@@ -1115,7 +1115,7 @@ impl DatabaseExt for Backend {
 
         let fork_id = self.ensure_fork_id(id).cloned()?;
         let idx = self.inner.ensure_fork_index(&fork_id)?;
-        let fork_env = self
+        let (fork_evm_env, fork_tx_env) = self
             .forks
             .get_env(fork_id)?
             .ok_or_else(|| eyre::eyre!("Requested fork `{}` does not exist", id))?;
@@ -1214,7 +1214,7 @@ impl DatabaseExt for Backend {
 
         self.active_fork_ids = Some((id, idx));
         // Update current environment with environment of newly selected fork.
-        update_current_env_with_fork_env(evm_env, tx_env, fork_env.evm_env, fork_env.tx);
+        update_current_env_with_fork_env(evm_env, tx_env, fork_evm_env, fork_tx_env);
 
         Ok(())
     }
@@ -1231,7 +1231,7 @@ impl DatabaseExt for Backend {
     ) -> eyre::Result<()> {
         trace!(?id, ?block_number, "roll fork");
         let id = self.ensure_fork(id)?;
-        let (fork_id, backend, fork_env) =
+        let (fork_id, backend, fork_evm_env, fork_tx_env) =
             self.forks.roll_fork(self.inner.ensure_fork_id(id).cloned()?, block_number)?;
         // this will update the local mapping
         self.inner.roll_fork(id, fork_id, backend)?;
@@ -1241,7 +1241,7 @@ impl DatabaseExt for Backend {
             if active_id == id {
                 // need to update the block's env settings right away, which is otherwise set when
                 // forks are selected `select_fork`
-                update_current_env_with_fork_env(evm_env, tx_env, fork_env.evm_env, fork_env.tx);
+                update_current_env_with_fork_env(evm_env, tx_env, fork_evm_env, fork_tx_env);
 
                 // we also need to update the journaled_state right away, this has essentially the
                 // same effect as selecting (`select_fork`) by discarding
@@ -2107,12 +2107,13 @@ mod tests {
         let mut evm_opts = config.extract::<EvmOpts>().unwrap();
         evm_opts.fork_block_number = Some(block_num);
 
-        let (env, _block) = evm_opts.fork_evm_env(endpoint).await.unwrap();
+        let (evm_env, tx_env, _block) = evm_opts.fork_evm_env(endpoint).await.unwrap();
 
         let fork = CreateFork {
             enable_caching: true,
             url: endpoint.to_string(),
-            env: env.clone(),
+            evm_env: evm_env.clone(),
+            tx_env,
             evm_opts,
         };
 
@@ -2130,7 +2131,7 @@ mod tests {
 
         let meta = BlockchainDbMeta {
             chain: None,
-            block_env: env.evm_env.block_env,
+            block_env: evm_env.block_env,
             hosts: Default::default(),
         };
 

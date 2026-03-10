@@ -1,4 +1,4 @@
-use crate::{Env, EvmEnv};
+use crate::{EvmEnv};
 use alloy_chains::Chain;
 use alloy_consensus::{BlockHeader, private::alloy_eips::eip7840::BlobParams};
 use alloy_hardforks::EthereumHardfork;
@@ -9,10 +9,10 @@ use alloy_provider::{Network, network::BlockResponse};
 use alloy_rpc_types::TransactionRequest;
 use foundry_config::NamedChain;
 use foundry_evm_networks::NetworkConfigs;
-use revm::primitives::{
+use revm::{context::TxEnv, primitives::{
     eip4844::{BLOB_BASE_FEE_UPDATE_FRACTION_CANCUN, BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE},
     hardfork::SpecId,
-};
+}};
 pub use revm::state::EvmState as StateChangeset;
 
 /// Hints to the compiler that this is a cold path, i.e. unlikely to be taken.
@@ -139,12 +139,12 @@ pub fn get_function<'a>(
 }
 
 /// Configures the env for the given RPC transaction.
-/// Accounts for an impersonated transaction by resetting the `env.tx.caller` field to `tx.from`.
-pub fn configure_tx_env(env: &mut Env, tx: &AnyRpcTransaction) {
+/// Accounts for an impersonated transaction by resetting the `tx_env.caller` field to `tx.from`.
+pub fn configure_tx_env(tx_env: &mut TxEnv, tx: &AnyRpcTransaction) {
     let from = tx.from();
     if let Some(tx) = tx.as_envelope() {
         configure_tx_req_env(
-            env,
+            tx_env,
             &TransactionRequest::from_transaction_with_sender(tx.clone(), from),
         )
         .expect("cannot fail");
@@ -152,10 +152,10 @@ pub fn configure_tx_env(env: &mut Env, tx: &AnyRpcTransaction) {
 }
 
 /// Configures the env for the given RPC transaction request.
-pub fn configure_tx_req_env(env: &mut Env, tx: &TransactionRequest) -> eyre::Result<()> {
+pub fn configure_tx_req_env(tx_env: &mut TxEnv, tx: &TransactionRequest) -> eyre::Result<()> {
     // If no transaction type is provided, we need to infer it from the other fields.
     let tx_type = tx.transaction_type.unwrap_or_else(|| tx.minimal_tx_type() as u8);
-    env.tx.tx_type = tx_type;
+    tx_env.tx_type = tx_type;
 
     let TransactionRequest {
         nonce,
@@ -177,27 +177,27 @@ pub fn configure_tx_req_env(env: &mut Env, tx: &TransactionRequest) -> eyre::Res
     } = *tx;
 
     // If no `to` field then set create kind: https://eips.ethereum.org/EIPS/eip-2470#deployment-transaction
-    env.tx.kind = to.unwrap_or(TxKind::Create);
-    env.tx.caller = from.ok_or_else(|| eyre::eyre!("missing `from` field"))?;
-    env.tx.gas_limit = gas.ok_or_else(|| eyre::eyre!("missing `gas` field"))?;
-    env.tx.nonce = nonce.unwrap_or_default();
-    env.tx.value = value.unwrap_or_default();
-    env.tx.data = input.input().cloned().unwrap_or_default();
-    env.tx.chain_id = chain_id;
+    tx_env.kind = to.unwrap_or(TxKind::Create);
+    tx_env.caller = from.ok_or_else(|| eyre::eyre!("missing `from` field"))?;
+    tx_env.gas_limit = gas.ok_or_else(|| eyre::eyre!("missing `gas` field"))?;
+    tx_env.nonce = nonce.unwrap_or_default();
+    tx_env.value = value.unwrap_or_default();
+    tx_env.data = input.input().cloned().unwrap_or_default();
+    tx_env.chain_id = chain_id;
 
     // Type 1, EIP-2930
-    env.tx.access_list = access_list.clone().unwrap_or_default();
+    tx_env.access_list = access_list.clone().unwrap_or_default();
 
     // Type 2, EIP-1559
-    env.tx.gas_price = gas_price.or(max_fee_per_gas).unwrap_or_default();
-    env.tx.gas_priority_fee = max_priority_fee_per_gas;
+    tx_env.gas_price = gas_price.or(max_fee_per_gas).unwrap_or_default();
+    tx_env.gas_priority_fee = max_priority_fee_per_gas;
 
     // Type 3, EIP-4844
-    env.tx.blob_hashes = blob_versioned_hashes.clone().unwrap_or_default();
-    env.tx.max_fee_per_blob_gas = max_fee_per_blob_gas.unwrap_or_default();
+    tx_env.blob_hashes = blob_versioned_hashes.clone().unwrap_or_default();
+    tx_env.max_fee_per_blob_gas = max_fee_per_blob_gas.unwrap_or_default();
 
     // Type 4, EIP-7702
-    env.tx.set_signed_authorization(authorization_list.clone().unwrap_or_default());
+    tx_env.set_signed_authorization(authorization_list.clone().unwrap_or_default());
 
     Ok(())
 }

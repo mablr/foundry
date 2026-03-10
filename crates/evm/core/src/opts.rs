@@ -131,9 +131,10 @@ impl EvmOpts {
     ///
     /// If a `fork_url` is set, it gets configured with settings fetched from the endpoint (chain
     /// id, )
-    pub async fn evm_env(&self) -> eyre::Result<crate::Env> {
+    pub async fn evm_env(&self) -> eyre::Result<(EvmEnv, TxEnv)> {
         if let Some(ref fork_url) = self.fork_url {
-            Ok(self.fork_evm_env(fork_url).await?.0)
+            let fork_env = self.fork_evm_env(fork_url).await?;
+            Ok((fork_env.0, fork_env.1))
         } else {
             Ok(self.local_evm_env())
         }
@@ -141,7 +142,7 @@ impl EvmOpts {
 
     /// Returns the `revm::Env` that is configured with settings retrieved from the endpoint,
     /// and the block that was used to configure the environment.
-    pub async fn fork_evm_env(&self, fork_url: &str) -> eyre::Result<(crate::Env, AnyRpcBlock)> {
+    pub async fn fork_evm_env(&self, fork_url: &str) -> eyre::Result<(EvmEnv, TxEnv, AnyRpcBlock)> {
         let provider = self.fork_provider_with_url::<AnyNetwork>(fork_url)?;
         self.fork_evm_env_with_provider(fork_url, &provider).await
     }
@@ -152,7 +153,7 @@ impl EvmOpts {
         &self,
         fork_url: &str,
         provider: &P,
-    ) -> eyre::Result<(crate::Env, N::BlockResponse)> {
+    ) -> eyre::Result<(EvmEnv, TxEnv, N::BlockResponse)> {
         environment(
             provider,
             self.memory_limit,
@@ -177,7 +178,7 @@ impl EvmOpts {
     }
 
     /// Returns the `revm::Env` configured with only local settings
-    fn local_evm_env(&self) -> crate::Env {
+    fn local_evm_env(&self) -> (EvmEnv, TxEnv) {
         let cfg = configure_env(
             self.env.chain_id.unwrap_or(foundry_common::DEV_CHAIN_ID),
             self.memory_limit,
@@ -185,8 +186,7 @@ impl EvmOpts {
             self.enable_tx_gas_limit,
         );
 
-        crate::Env {
-            evm_env: EvmEnv {
+        (EvmEnv {
                 cfg_env: cfg,
                 block_env: BlockEnv {
                     number: self.env.block_number,
@@ -199,13 +199,12 @@ impl EvmOpts {
                     ..Default::default()
                 },
             },
-            tx: TxEnv {
+            TxEnv {
                 gas_price: self.env.gas_price.unwrap_or_default().into(),
                 gas_limit: self.gas_limit(),
                 caller: self.sender,
                 ..Default::default()
-            },
-        }
+            })
     }
 
     /// Helper function that returns the [CreateFork] to use, if any.
@@ -221,19 +220,19 @@ impl EvmOpts {
     ///
     /// for `mainnet` and `--fork-block-number 14435000` on mac the corresponding storage cache will
     /// be at `~/.foundry/cache/mainnet/14435000/storage.json`.
-    pub fn get_fork(&self, config: &Config, env: crate::Env) -> Option<CreateFork> {
+    pub fn get_fork(&self, config: &Config, evm_env: EvmEnv, tx_env: TxEnv) -> Option<CreateFork> {
         let url = self.fork_url.clone()?;
-        let enable_caching = config.enable_caching(&url, env.evm_env.cfg_env.chain_id);
+        let enable_caching = config.enable_caching(&url, evm_env.cfg_env.chain_id);
 
         // Pin fork_block_number to the block that was already fetched in env, so subsequent
         // fork operations use the same block. This prevents inconsistencies when forking at
         // "latest" where the chain could advance between calls.
         let mut evm_opts = self.clone();
         if evm_opts.fork_block_number.is_none() {
-            evm_opts.fork_block_number = Some(env.evm_env.block_env.number.to());
+            evm_opts.fork_block_number = Some(evm_env.block_env.number.to());
         }
 
-        Some(CreateFork { url, enable_caching, env, evm_opts })
+        Some(CreateFork { url, enable_caching, evm_env, tx_env, evm_opts })
     }
 
     /// Returns the gas limit to use
@@ -347,12 +346,12 @@ mod tests {
         assert!(evm_opts.fork_block_number.is_none());
 
         // Fetch the environment (this resolves "latest" to an actual block number)
-        let env = evm_opts.evm_env().await.unwrap();
-        let resolved_block = env.evm_env.block_env.number;
+        let (evm_env, tx_env) = evm_opts.evm_env().await.unwrap();
+        let resolved_block = evm_env.block_env.number;
         assert!(resolved_block > U256::ZERO, "should have resolved to a real block number");
 
         // Create the fork - this should pin the block number
-        let fork = evm_opts.get_fork(&Config::default(), env).unwrap();
+        let fork = evm_opts.get_fork(&Config::default(), evm_env, tx_env).unwrap();
 
         // The fork's evm_opts should now have fork_block_number set to the resolved block
         assert_eq!(
@@ -372,9 +371,9 @@ mod tests {
         // Set an explicit block number
         evm_opts.fork_block_number = Some(12345678);
 
-        let env = evm_opts.evm_env().await.unwrap();
+        let (evm_env, tx_env) = evm_opts.evm_env().await.unwrap();
 
-        let fork = evm_opts.get_fork(&Config::default(), env).unwrap();
+        let fork = evm_opts.get_fork(&Config::default(), evm_env, tx_env).unwrap();
 
         // Should preserve the explicit block number, not override it
         assert_eq!(

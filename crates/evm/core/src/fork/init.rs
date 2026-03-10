@@ -1,4 +1,4 @@
-use crate::{Env, EvmEnv, utils::apply_chain_and_block_specific_env_changes};
+use crate::{EvmEnv, utils::apply_chain_and_block_specific_env_changes};
 use alloy_consensus::BlockHeader;
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Network, Provider, network::BlockResponse};
@@ -20,7 +20,7 @@ pub async fn environment<N: Network, P: Provider<N>>(
     disable_block_gas_limit: bool,
     enable_tx_gas_limit: bool,
     configs: NetworkConfigs,
-) -> eyre::Result<(Env, N::BlockResponse)> {
+) -> eyre::Result<(EvmEnv, TxEnv, N::BlockResponse)> {
     trace!(
         %memory_limit,
         ?override_gas_price,
@@ -64,8 +64,7 @@ pub async fn environment<N: Network, P: Provider<N>>(
 
     let cfg = configure_env(chain_id, memory_limit, disable_block_gas_limit, enable_tx_gas_limit);
 
-    let mut env = Env {
-        evm_env: EvmEnv {
+    let mut evm_env = EvmEnv {
             cfg_env: cfg,
             block_env: BlockEnv {
                 number: U256::from(block.header().number()),
@@ -77,19 +76,18 @@ pub async fn environment<N: Network, P: Provider<N>>(
                 gas_limit: block.header().gas_limit(),
                 ..Default::default()
             },
-        },
-        tx: TxEnv {
+        };
+    let tx_env = TxEnv {
             caller: origin,
             gas_price,
             chain_id: Some(chain_id),
             gas_limit: block.header().gas_limit(),
             ..Default::default()
-        },
     };
 
-    apply_chain_and_block_specific_env_changes::<N>(&mut env.evm_env, &block, configs);
+    apply_chain_and_block_specific_env_changes::<N>(&mut evm_env, &block, configs);
 
-    Ok((env, block))
+    Ok((evm_env, tx_env, block))
 }
 
 async fn option_try_or_else<T, E>(
