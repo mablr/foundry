@@ -1,3 +1,4 @@
+use alloy_network::Network;
 use eyre::{ContextCompat, Result, WrapErr};
 use forge_script_sequence::{
     DRY_RUN_DIR, ScriptSequence, SensitiveScriptSequence, now, sig_to_file_name,
@@ -10,8 +11,12 @@ use std::path::PathBuf;
 
 /// Holds the sequences of multiple chain deployments.
 #[derive(Clone, Default, Serialize, Deserialize)]
-pub struct MultiChainSequence {
-    pub deployments: Vec<ScriptSequence>,
+#[serde(bound(
+    serialize = "N::TxEnvelope: Serialize, N::TransactionRequest: Serialize",
+    deserialize = "N::TxEnvelope: Deserialize<'de>, N::TransactionRequest: Deserialize<'de>",
+))]
+pub struct MultiChainSequence<N: Network> {
+    pub deployments: Vec<ScriptSequence<N>>,
     #[serde(skip)]
     pub path: PathBuf,
     #[serde(skip)]
@@ -26,16 +31,20 @@ pub struct SensitiveMultiChainSequence {
 }
 
 impl SensitiveMultiChainSequence {
-    fn from_multi_sequence(sequence: &MultiChainSequence) -> Self {
+    fn from_multi_sequence<N: Network>(sequence: &MultiChainSequence<N>) -> Self {
         Self {
             deployments: sequence.deployments.iter().map(SensitiveScriptSequence::from).collect(),
         }
     }
 }
 
-impl MultiChainSequence {
+impl<N: Network> MultiChainSequence<N>
+where
+    N::TxEnvelope: serde::Serialize + serde::de::DeserializeOwned,
+    N::TransactionRequest: serde::Serialize + serde::de::DeserializeOwned,
+{
     pub fn new(
-        deployments: Vec<ScriptSequence>,
+        deployments: Vec<ScriptSequence<N>>,
         sig: &str,
         target: &ArtifactId,
         config: &Config,

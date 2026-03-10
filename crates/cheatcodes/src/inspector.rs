@@ -21,7 +21,7 @@ use crate::{
     utils::IgnoredTraces,
 };
 use alloy_consensus::BlobTransactionSidecarVariant;
-use alloy_network::TransactionBuilder4844;
+use alloy_network::{Ethereum, Network, TransactionBuilder4844};
 use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256, hex,
     map::{AddressHashMap, HashMap, HashSet},
@@ -284,11 +284,11 @@ impl TestContext {
 
 /// Helps collecting transactions from different forks.
 #[derive(Clone, Debug)]
-pub struct BroadcastableTransaction {
+pub struct BroadcastableTransaction<N: Network> {
     /// The optional RPC URL.
     pub rpc: Option<String>,
     /// The transaction to broadcast.
-    pub transaction: TransactionMaybeSigned,
+    pub transaction: TransactionMaybeSigned<N>,
 }
 
 #[derive(Clone, Debug, Copy)]
@@ -441,7 +441,7 @@ impl ArbitraryStorage {
 }
 
 /// List of transactions that can be broadcasted.
-pub type BroadcastableTransactions = VecDeque<BroadcastableTransaction>;
+pub type BroadcastableTransactions = VecDeque<BroadcastableTransaction<Ethereum>>;
 
 /// An EVM inspector that handles calls to various cheatcodes, each with their own behavior.
 ///
@@ -1052,7 +1052,7 @@ impl Cheatcodes {
                     }
 
                     self.broadcastable_transactions
-                        .push_back(BroadcastableTransaction { rpc, transaction: tx_req.into() });
+                        .push_back(BroadcastableTransaction { rpc, transaction: TransactionMaybeSigned::new(tx_req) });
                     debug!(target: "cheatcodes", tx=?self.broadcastable_transactions.back().unwrap(), "broadcastable call");
 
                     // Explicitly increment nonce if calls are not isolated.
@@ -1796,15 +1796,14 @@ impl<CTX: CheatsCtxExt> Inspector<CTX> for Cheatcodes {
                 let account = &ecx.journal().evm_state()[&broadcast.new_origin];
                 self.broadcastable_transactions.push_back(BroadcastableTransaction {
                     rpc,
-                    transaction: TransactionRequest {
+                    transaction: TransactionMaybeSigned::new(TransactionRequest {
                         from: Some(broadcast.new_origin),
                         to: None,
                         value: Some(input.value()),
                         input: TransactionInput::new(input.init_code()),
                         nonce: Some(account.info.nonce),
                         ..Default::default()
-                    }
-                    .into(),
+                    }),
                 });
 
                 input.log_debug(self, &input.scheme().unwrap_or(CreateScheme::Create));

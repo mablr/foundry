@@ -1,5 +1,5 @@
 use alloy_chains::{Chain, NamedChain};
-use alloy_network::{Ethereum, ReceiptResponse};
+use alloy_network::{AnyTransactionReceipt, Network, ReceiptResponse};
 use alloy_primitives::{TxHash, U256, utils::format_units};
 use alloy_provider::{
     PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider, WatchTxError,
@@ -20,16 +20,10 @@ pub struct PendingReceiptError {
 }
 
 /// Convenience enum for internal signalling of transaction status
-pub enum TxStatus {
+pub enum TxStatus<Receipt> {
     Dropped,
-    Success(TransactionReceipt),
-    Revert(TransactionReceipt),
-}
-
-impl From<TransactionReceipt> for TxStatus {
-    fn from(receipt: TransactionReceipt) -> Self {
-        if !receipt.status() { Self::Revert(receipt) } else { Self::Success(receipt) }
-    }
+    Success(Receipt),
+    Revert(Receipt),
 }
 
 /// Checks the status of a txhash by first polling for a receipt, then for
@@ -89,10 +83,10 @@ pub async fn check_tx_status(
 }
 
 /// Prints parts of the receipt to stdout
-pub fn format_receipt(
+pub fn format_receipt<N: Network>(
     chain: Chain,
-    receipt: &TransactionReceipt,
-    sequence: Option<&ScriptSequence>,
+    receipt: &N::ReceiptResponse,
+    sequence: Option<&ScriptSequence<N>>,
 ) -> String {
     let gas_used = receipt.gas_used();
     let gas_price = receipt.effective_gas_price();

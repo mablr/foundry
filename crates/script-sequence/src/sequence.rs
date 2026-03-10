@@ -1,7 +1,6 @@
 use crate::transaction::TransactionWithMetadata;
-use alloy_network::ReceiptResponse;
+use alloy_network::{Network, ReceiptResponse};
 use alloy_primitives::{TxHash, hex, map::HashMap};
-use alloy_rpc_types_eth::TransactionReceipt;
 use eyre::{ContextCompat, Result, WrapErr};
 use foundry_common::{SELECTOR_LEN, TransactionMaybeSigned, fs, shell};
 use foundry_compilers::ArtifactId;
@@ -24,9 +23,13 @@ pub struct NestedValue {
 /// Helper that saves the transactions sequence and its state on which transactions have been
 /// broadcasted
 #[derive(Clone, Default, Serialize, Deserialize)]
-pub struct ScriptSequence {
-    pub transactions: VecDeque<TransactionWithMetadata>,
-    pub receipts: Vec<TransactionReceipt>,
+#[serde(bound(
+    serialize = "N::TxEnvelope: Serialize, N::TransactionRequest: Serialize",
+    deserialize = "N::TxEnvelope: Deserialize<'de>, N::TransactionRequest: Deserialize<'de>",
+))]
+pub struct ScriptSequence<N: Network> {
+    pub transactions: VecDeque<TransactionWithMetadata<N>>,
+    pub receipts: Vec<N::ReceiptResponse>,
     pub libraries: Vec<String>,
     pub pending: Vec<TxHash>,
     #[serde(skip)]
@@ -51,8 +54,8 @@ pub struct SensitiveScriptSequence {
     pub transactions: VecDeque<SensitiveTransactionMetadata>,
 }
 
-impl From<&ScriptSequence> for SensitiveScriptSequence {
-    fn from(sequence: &ScriptSequence) -> Self {
+impl<N: Network> From<&ScriptSequence<N>> for SensitiveScriptSequence {
+    fn from(sequence: &ScriptSequence<N>) -> Self {
         Self {
             transactions: sequence
                 .transactions
@@ -63,7 +66,11 @@ impl From<&ScriptSequence> for SensitiveScriptSequence {
     }
 }
 
-impl ScriptSequence {
+impl<N: Network> ScriptSequence<N>
+where
+    N::TxEnvelope: Serialize + serde::de::DeserializeOwned,
+    N::TransactionRequest: Serialize + serde::de::DeserializeOwned,
+{
     /// Loads The sequence for the corresponding json file
     pub fn load(
         config: &Config,
@@ -140,8 +147,10 @@ impl ScriptSequence {
 
         Ok(())
     }
+}
 
-    pub fn add_receipt(&mut self, receipt: TransactionReceipt) {
+impl<N: Network> ScriptSequence<N> {
+    pub fn add_receipt(&mut self, receipt: N::ReceiptResponse) {
         self.receipts.push(receipt);
     }
 
@@ -204,7 +213,7 @@ impl ScriptSequence {
     }
 
     /// Returns the list of the transactions without the metadata.
-    pub fn transactions(&self) -> impl Iterator<Item = &TransactionMaybeSigned> {
+    pub fn transactions(&self) -> impl Iterator<Item = &TransactionMaybeSigned<N>> {
         self.transactions.iter().map(|tx| tx.tx())
     }
 

@@ -10,7 +10,7 @@ use crate::{
     sequence::get_commit_hash,
 };
 use alloy_chains::NamedChain;
-use alloy_network::TransactionBuilder;
+use alloy_network::{Ethereum, TransactionBuilder};
 use alloy_primitives::{Address, TxKind, U256, map::HashMap, utils::format_units};
 use dialoguer::Confirm;
 use eyre::{Context, Result};
@@ -275,7 +275,7 @@ impl FilledTransactionsState {
 
         // Batches sequence of transactions from different rpcs.
         let mut new_sequence = VecDeque::new();
-        let mut manager = ProvidersManager::default();
+        let mut manager = ProvidersManager::<Ethereum>::default();
         let mut sequences = vec![];
 
         // Peeking is used to check if the next rpc url is different. If so, it creates a
@@ -431,7 +431,7 @@ impl FilledTransactionsState {
         let paths = if multi {
             None
         } else {
-            Some(ScriptSequence::get_paths(
+            Some(<ScriptSequence>::get_paths(
                 &self.script_config.config,
                 &self.args.sig,
                 &self.build_data.build_data.target,

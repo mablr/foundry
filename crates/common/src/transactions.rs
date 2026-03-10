@@ -1,18 +1,19 @@
 //! Wrappers for transactions.
 
-use alloy_consensus::{Transaction, TxEnvelope, transaction::SignerRecoverable};
+use alloy_consensus::{Transaction, transaction::SignerRecoverable};
 use alloy_eips::eip7702::SignedAuthorization;
 use alloy_network::{
-    AnyTransactionReceipt, Ethereum, Network, TransactionBuilder7702, TransactionResponse,
+    AnyTransactionReceipt, Network, TransactionBuilder7702, TransactionResponse,
 };
 use alloy_primitives::{Address, Bytes, TxKind, U256};
 use alloy_provider::{
     Provider,
     network::{AnyNetwork, ReceiptResponse, TransactionBuilder},
 };
-use alloy_rpc_types::{BlockId, TransactionRequest};
+use alloy_rpc_types::BlockId;
 use eyre::Result;
 use foundry_common_fmt::{UIfmt, UIfmtReceiptExt, get_pretty_receipt_attr};
+use foundry_primitives::FoundryTransactionBuilder;
 use serde::{Deserialize, Serialize};
 
 /// Helper type to carry a transaction along with an optional revert reason
@@ -93,7 +94,12 @@ revertReason         {}",
     }
 }
 
-impl UIfmt for TransactionMaybeSigned {
+impl<N> UIfmt for TransactionMaybeSigned<N>
+where
+    N: Network,
+    N::TxEnvelope: UIfmt,
+    N::TransactionRequest: foundry_primitives::FoundryTransactionBuilder<N>,
+{
     fn pretty(&self) -> String {
         match self {
             Self::Signed { tx, .. } => tx.pretty(),
@@ -111,22 +117,18 @@ nonce                {}
 to                   {}
 type                 {}
 value                {}",
-                tx.access_list
-                    .as_ref()
-                    .map(|a| a.iter().collect::<Vec<_>>())
-                    .unwrap_or_default()
-                    .pretty(),
-                tx.chain_id.pretty(),
+                tx.access_list().map(|a| a.pretty()).unwrap_or_default(),
+                tx.chain_id().pretty(),
                 tx.gas_limit().unwrap_or_default(),
-                tx.gas_price.pretty(),
-                tx.input.input.pretty(),
-                tx.max_fee_per_blob_gas.pretty(),
-                tx.max_fee_per_gas.pretty(),
-                tx.max_priority_fee_per_gas.pretty(),
-                tx.nonce.pretty(),
-                tx.to.as_ref().map(|a| a.to()).unwrap_or_default().pretty(),
-                tx.transaction_type.unwrap_or_default(),
-                tx.value.pretty(),
+                tx.gas_price().pretty(),
+                tx.input().pretty(),
+                tx.max_fee_per_blob_gas().pretty(),
+                tx.max_fee_per_gas().pretty(),
+                tx.max_priority_fee_per_gas().pretty(),
+                tx.nonce().pretty(),
+                tx.to().pretty(),
+                tx.output_tx_type().into(),
+                tx.value().pretty(),
             ),
         }
     }
@@ -161,7 +163,11 @@ where
 /// or a [`TxEnvelope`], already signed
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum TransactionMaybeSigned<N: Network = Ethereum> {
+#[serde(bound(
+    serialize = "N::TxEnvelope: Serialize, N::TransactionRequest: Serialize",
+    deserialize = "N::TxEnvelope: Deserialize<'de>, N::TransactionRequest: Deserialize<'de>",
+))]
+pub enum TransactionMaybeSigned<N: Network> {
     Signed {
         #[serde(flatten)]
         tx: N::TxEnvelope,
@@ -249,20 +255,6 @@ impl<N: Network> TransactionMaybeSigned<N> {
             Self::Unsigned(tx) => tx.authorization_list().map(|auths| auths.to_vec()),
         }
         .filter(|auths| !auths.is_empty())
-    }
-}
-
-impl From<TransactionRequest> for TransactionMaybeSigned {
-    fn from(tx: TransactionRequest) -> Self {
-        Self::new(tx)
-    }
-}
-
-impl TryFrom<TxEnvelope> for TransactionMaybeSigned {
-    type Error = alloy_consensus::crypto::RecoveryError;
-
-    fn try_from(tx: TxEnvelope) -> core::result::Result<Self, Self::Error> {
-        Self::new_signed(tx)
     }
 }
 

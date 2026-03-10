@@ -15,11 +15,10 @@ use alloy_primitives::{
 use alloy_rlp::Decodable;
 use alloy_sol_types::SolValue;
 use foundry_common::{
-    fs::{read_json_file, write_json_file},
-    slot_identifier::{
+    TransactionMaybeSigned, fs::{read_json_file, write_json_file}, slot_identifier::{
         ENCODING_BYTES, ENCODING_DYN_ARRAY, ENCODING_INPLACE, ENCODING_MAPPING, SlotIdentifier,
         SlotInfo,
-    },
+    }
 };
 use foundry_compilers::artifacts::EvmVersion;
 use foundry_evm_core::{
@@ -1059,7 +1058,7 @@ impl Cheatcode for broadcastRawTransactionCall {
         if ccx.state.broadcast.is_some() {
             ccx.state.broadcastable_transactions.push_back(BroadcastableTransaction {
                 rpc: ccx.ecx.db().active_fork_url(),
-                transaction: tx.try_into()?,
+                transaction: TransactionMaybeSigned::new_signed(tx)?,
             });
         }
 
