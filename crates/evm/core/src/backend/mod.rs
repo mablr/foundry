@@ -1075,7 +1075,7 @@ impl DatabaseExt for Backend {
         trace!(?transaction, "create fork at transaction");
         let id = self.create_fork(fork)?;
         let fork_id = self.ensure_fork_id(id).cloned()?;
-        let mut env = self
+        let (mut evm_env, mut tx_env) = self
             .forks
             .get_env(fork_id)?
             .ok_or_else(|| eyre::eyre!("Requested fork `{}` does not exist", id))?;
@@ -1085,8 +1085,8 @@ impl DatabaseExt for Backend {
         self.roll_fork_to_transaction(
             Some(id),
             transaction,
-            &mut env.evm_env,
-            &mut env.tx,
+            &mut evm_env,
+            &mut tx_env,
             &mut self.inner.new_journaled_state(),
         )?;
 
@@ -1120,7 +1120,7 @@ impl DatabaseExt for Backend {
 
         let fork_id = self.ensure_fork_id(id).cloned()?;
         let idx = self.inner.ensure_fork_index(&fork_id)?;
-        let fork_env = self
+        let (fork_evm_env, fork_tx_env) = self
             .forks
             .get_env(fork_id)?
             .ok_or_else(|| eyre::eyre!("Requested fork `{}` does not exist", id))?;
@@ -1219,7 +1219,7 @@ impl DatabaseExt for Backend {
 
         self.active_fork_ids = Some((id, idx));
         // Update current environment with environment of newly selected fork.
-        update_current_env_with_fork_env(evm_env, tx_env, fork_env.evm_env, fork_env.tx);
+        update_current_env_with_fork_env(evm_env, tx_env, fork_evm_env, fork_tx_env);
 
         Ok(())
     }

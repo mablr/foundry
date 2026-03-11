@@ -4,7 +4,7 @@
 //! concurrently active pairs at once.
 
 use super::CreateFork;
-use crate::Env;
+use crate::{Env, EvmEnv};
 use alloy_consensus::BlockHeader;
 use alloy_network::Network;
 use alloy_primitives::{U256, map::HashMap};
@@ -17,7 +17,7 @@ use futures::{
     stream::Fuse,
     task::{Context, Poll},
 };
-use revm::context::BlockEnv;
+use revm::context::{BlockEnv, TxEnv};
 use std::{
     fmt::{self, Write},
     pin::Pin,
@@ -149,8 +149,8 @@ impl<N: Network> MultiFork<N> {
         rx.recv()?
     }
 
-    /// Returns the `Env` of the given fork, if any.
-    pub fn get_env(&self, fork: ForkId) -> eyre::Result<Option<Env>> {
+    /// Returns the `EvmEnv` and `TxEnv` of the given fork, if any.
+    pub fn get_env(&self, fork: ForkId) -> eyre::Result<Option<(EvmEnv, TxEnv)>> {
         trace!(?fork, "getting env config");
         let (sender, rx) = oneshot_channel();
         let req = Request::GetEnv(fork, sender);
@@ -205,7 +205,7 @@ impl<N: Network> MultiFork<N> {
 type CreateFuture<N> =
     Pin<Box<dyn Future<Output = eyre::Result<(ForkId, CreatedFork<N>, BackendHandler<N>)>> + Send>>;
 type CreateSender<N> = OneshotSender<eyre::Result<(ForkId, SharedBackend<N>, Env)>>;
-type GetEnvSender = OneshotSender<Option<Env>>;
+type GetEnvSender = OneshotSender<Option<(EvmEnv, TxEnv)>>;
 
 /// Request that's send to the handler.
 #[derive(Debug)]
@@ -352,7 +352,11 @@ impl<N: Network> MultiForkHandler<N> {
                 }
             }
             Request::GetEnv(fork_id, sender) => {
-                let _ = sender.send(self.forks.get(&fork_id).map(|fork| fork.opts.env.clone()));
+                let _ = sender.send(
+                    self.forks
+                        .get(&fork_id)
+                        .map(|fork| (fork.opts.env.evm_env.clone(), fork.opts.env.tx.clone())),
+                );
             }
             Request::UpdateBlock(fork_id, block_number, block_timestamp) => {
                 self.update_block(fork_id, block_number, block_timestamp);
