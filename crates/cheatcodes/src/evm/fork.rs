@@ -10,7 +10,7 @@ use alloy_rpc_types::Filter;
 use alloy_sol_types::SolValue;
 use foundry_common::provider::ProviderBuilder;
 use foundry_evm_core::{Env, FoundryContextExt, backend::FoundryJournalExt, fork::CreateFork};
-use revm::context::ContextTr;
+use revm::context::{BlockEnv, CfgEnv, ContextTr, TxEnv};
 
 impl Cheatcode for activeForkCall {
     fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
@@ -301,7 +301,8 @@ impl Cheatcode for getRawBlockHeaderCall {
 
 /// Creates and then also selects the new fork
 fn create_select_fork<
-    CTX: FoundryContextExt + ContextTr<Db: DatabaseExt, Journal: FoundryJournalExt>,
+    CTX: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv>
+        + ContextTr<Db: DatabaseExt, Journal: FoundryJournalExt>,
 >(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
@@ -318,7 +319,9 @@ fn create_select_fork<
 }
 
 /// Creates a new fork
-fn create_fork<CTX: FoundryContextExt + ContextTr<Db: DatabaseExt>>(
+fn create_fork<
+    CTX: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv> + ContextTr<Db: DatabaseExt>,
+>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
     block: Option<u64>,
@@ -330,7 +333,8 @@ fn create_fork<CTX: FoundryContextExt + ContextTr<Db: DatabaseExt>>(
 
 /// Creates and then also selects the new fork at the given transaction
 fn create_select_fork_at_transaction<
-    CTX: FoundryContextExt + ContextTr<Db: DatabaseExt, Journal: FoundryJournalExt>,
+    CTX: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv>
+        + ContextTr<Db: DatabaseExt, Journal: FoundryJournalExt>,
 >(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
@@ -348,7 +352,9 @@ fn create_select_fork_at_transaction<
 }
 
 /// Creates a new fork at the given transaction
-fn create_fork_at_transaction<CTX: FoundryContextExt + ContextTr<Db: DatabaseExt>>(
+fn create_fork_at_transaction<
+    CTX: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv> + ContextTr<Db: DatabaseExt>,
+>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
     transaction: &B256,
@@ -359,7 +365,9 @@ fn create_fork_at_transaction<CTX: FoundryContextExt + ContextTr<Db: DatabaseExt
 }
 
 /// Creates the request object for a new fork request
-fn create_fork_request<CTX: FoundryContextExt + ContextTr<Db: DatabaseExt>>(
+fn create_fork_request<
+    CTX: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv> + ContextTr<Db: DatabaseExt>,
+>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
     block: Option<u64>,

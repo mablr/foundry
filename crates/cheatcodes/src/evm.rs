@@ -35,7 +35,10 @@ use itertools::Itertools;
 use rand::Rng;
 use revm::{
     bytecode::Bytecode,
-    context::{Block, Cfg, ContextTr, JournalTr, Transaction, TxEnv, result::ExecutionResult},
+    context::{
+        Block, BlockEnv, Cfg, CfgEnv, ContextTr, JournalTr, Transaction, TxEnv,
+        result::ExecutionResult,
+    },
     inspector::JournalExt,
     primitives::{KECCAK_EMPTY, hardfork::SpecId},
     state::{Account, AccountStatus},
@@ -497,7 +500,7 @@ impl Cheatcode for difficultyCall {
     fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { newDifficulty } = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() < SpecId::MERGE,
+            *ccx.ecx.cfg().spec() < SpecId::MERGE,
             "`difficulty` is not supported after the Paris hard fork, use `prevrandao` instead; \
              see EIP-4399: https://eips.ethereum.org/EIPS/eip-4399"
         );
@@ -519,7 +522,7 @@ impl Cheatcode for prevrandao_0Call {
     fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { newPrevrandao } = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() >= SpecId::MERGE,
+            *ccx.ecx.cfg().spec() >= SpecId::MERGE,
             "`prevrandao` is not supported before the Paris hard fork, use `difficulty` instead; \
              see EIP-4399: https://eips.ethereum.org/EIPS/eip-4399"
         );
@@ -532,7 +535,7 @@ impl Cheatcode for prevrandao_1Call {
     fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { newPrevrandao } = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() >= SpecId::MERGE,
+            *ccx.ecx.cfg().spec() >= SpecId::MERGE,
             "`prevrandao` is not supported before the Paris hard fork, use `difficulty` instead; \
              see EIP-4399: https://eips.ethereum.org/EIPS/eip-4399"
         );
@@ -545,7 +548,7 @@ impl Cheatcode for blobhashesCall {
     fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { hashes } = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() >= SpecId::CANCUN,
+            *ccx.ecx.cfg().spec() >= SpecId::CANCUN,
             "`blobhashes` is not supported before the Cancun hard fork; \
              see EIP-4844: https://eips.ethereum.org/EIPS/eip-4844"
         );
@@ -560,7 +563,7 @@ impl Cheatcode for getBlobhashesCall {
     fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self {} = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() >= SpecId::CANCUN,
+            *ccx.ecx.cfg().spec() >= SpecId::CANCUN,
             "`getBlobhashes` is not supported before the Cancun hard fork; \
              see EIP-4844: https://eips.ethereum.org/EIPS/eip-4844"
         );
@@ -611,12 +614,12 @@ impl Cheatcode for blobBaseFeeCall {
     fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { newBlobBaseFee } = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() >= SpecId::CANCUN,
+            *ccx.ecx.cfg().spec() >= SpecId::CANCUN,
             "`blobBaseFee` is not supported before the Cancun hard fork; \
              see EIP-4844: https://eips.ethereum.org/EIPS/eip-4844"
         );
 
-        let spec: SpecId = ccx.ecx.cfg().spec().into();
+        let spec: SpecId = *ccx.ecx.cfg().spec();
         ccx.ecx.block_mut().set_blob_excess_gas_and_price(
             (*newBlobBaseFee).to(),
             get_blob_base_fee_update_fraction_by_spec_id(spec),
@@ -1322,7 +1325,7 @@ impl Cheatcode for setEvmVersionCall {
 
 impl Cheatcode for getEvmVersionCall {
     fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
-        let spec: SpecId = ccx.ecx.cfg().spec().into();
+        let spec: SpecId = *ccx.ecx.cfg().spec();
         Ok(spec.to_string().to_lowercase().abi_encode())
     }
 }
@@ -1335,7 +1338,10 @@ pub(super) fn get_nonce<CTX: ContextTr<Db: DatabaseExt>>(
     Ok(account.data.info.nonce.abi_encode())
 }
 
-fn inner_snapshot_state<CTX: FoundryContextExt + ContextTr<Journal: FoundryJournalExt>>(
+fn inner_snapshot_state<
+    CTX: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv>
+        + ContextTr<Journal: FoundryJournalExt>,
+>(
     ccx: &mut CheatsCtxt<'_, CTX>,
 ) -> Result {
     let (evm_env, tx_env) = Env::clone_evm_and_tx(ccx.ecx);
@@ -1344,7 +1350,10 @@ fn inner_snapshot_state<CTX: FoundryContextExt + ContextTr<Journal: FoundryJourn
     Ok(id.abi_encode())
 }
 
-fn inner_revert_to_state<CTX: FoundryContextExt + ContextTr<Journal: FoundryJournalExt>>(
+fn inner_revert_to_state<
+    CTX: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv>
+        + ContextTr<Journal: FoundryJournalExt>,
+>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     snapshot_id: U256,
 ) -> Result {
@@ -1366,7 +1375,8 @@ fn inner_revert_to_state<CTX: FoundryContextExt + ContextTr<Journal: FoundryJour
 }
 
 fn inner_revert_to_state_and_delete<
-    CTX: FoundryContextExt + ContextTr<Journal: FoundryJournalExt>,
+    CTX: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv>
+        + ContextTr<Journal: FoundryJournalExt>,
 >(
     ccx: &mut CheatsCtxt<'_, CTX>,
     snapshot_id: U256,

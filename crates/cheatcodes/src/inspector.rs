@@ -54,7 +54,8 @@ use revm::{
     Inspector,
     bytecode::opcode as op,
     context::{
-        BlockEnv, Cfg, ContextTr, JournalTr, Transaction, TransactionType, TxEnv, result::EVMError,
+        BlockEnv, Cfg, CfgEnv, ContextTr, JournalTr, Transaction, TransactionType, TxEnv,
+        result::EVMError,
     },
     context_interface::{CreateScheme, transaction::SignedAuthorization},
     handler::FrameResult,
@@ -88,11 +89,23 @@ pub use analysis::CheatcodeAnalysis;
 /// Any `EthEvmContext<&mut dyn DatabaseExt>` satisfies these bounds, so all
 /// existing call-sites (e.g. `InspectorStackRefMut`) keep working unchanged.
 pub trait CheatsCtxExt:
-    FoundryContextExt<Journal: JournalExt + FoundryJournalExt, Db: DatabaseExt>
+    FoundryContextExt<
+        Block = BlockEnv,
+        Tx = TxEnv,
+        Cfg = CfgEnv,
+        Journal: JournalExt + FoundryJournalExt,
+        Db: DatabaseExt,
+    >
 {
 }
 impl<CTX> CheatsCtxExt for CTX where
-    CTX: FoundryContextExt<Journal: JournalExt + FoundryJournalExt, Db: DatabaseExt>
+    CTX: FoundryContextExt<
+            Block = BlockEnv,
+            Tx = TxEnv,
+            Cfg = CfgEnv,
+            Journal: JournalExt + FoundryJournalExt,
+            Db: DatabaseExt,
+        >
 {
 }
 

@@ -28,7 +28,10 @@ impl Env {
     }
 
     /// Clones the evm env and tx env separately from a [`FoundryContextExt`] context.
-    pub fn clone_evm_and_tx(ecx: &mut impl FoundryContextExt) -> (EvmEnv, TxEnv) {
+    pub fn clone_evm_and_tx<C>(ecx: &mut C) -> (EvmEnv, TxEnv)
+    where
+        C: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv>,
+    {
         (
             EvmEnv { cfg_env: ecx.cfg_mut().clone(), block_env: ecx.block_mut().clone() },
             ecx.tx_mut().clone(),
@@ -36,7 +39,10 @@ impl Env {
     }
 
     /// Writes the split evm env and tx env back into a [`FoundryContextExt`] context.
-    pub fn apply_evm_and_tx(ecx: &mut impl FoundryContextExt, evm_env: EvmEnv, tx_env: TxEnv) {
+    pub fn apply_evm_and_tx<C>(ecx: &mut C, evm_env: EvmEnv, tx_env: TxEnv)
+    where
+        C: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv>,
+    {
         *ecx.block_mut() = evm_env.block_env;
         *ecx.cfg_mut() = evm_env.cfg_env;
         *ecx.tx_mut() = tx_env;
@@ -279,11 +285,11 @@ pub trait FoundryContextExt:
     ContextTr<Block: FoundryBlock + Clone, Tx: FoundryTransaction + Clone, Cfg: FoundryCfg + Clone>
 {
     /// Mutable reference to the block environment.
-    fn block_mut(&mut self) -> &mut BlockEnv;
+    fn block_mut(&mut self) -> &mut Self::Block;
     /// Mutable reference to the transaction environment.
-    fn tx_mut(&mut self) -> &mut TxEnv;
+    fn tx_mut(&mut self) -> &mut Self::Tx;
     /// Mutable reference to the configuration environment.
-    fn cfg_mut(&mut self) -> &mut CfgEnv;
+    fn cfg_mut(&mut self) -> &mut Self::Cfg;
 }
 
 impl<DB: Database, J: JournalTr<Database = DB>, C> FoundryContextExt

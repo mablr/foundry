@@ -285,7 +285,7 @@ impl<I: InspectorExt> NestedEvm for FoundryEvm<'_, I> {
 /// and cloned journal inner to the callback. The callback builds whatever EVM it
 /// needs, runs its operations, and returns `(result, modified_env, modified_journal)`.
 /// Modified state is written back after the callback returns.
-pub fn with_cloned_context<CTX: FoundryContextExt, R>(
+pub fn with_cloned_context<CTX, R>(
     ecx: &mut CTX,
     f: impl FnOnce(
         &mut dyn DatabaseExt,
@@ -295,6 +295,7 @@ pub fn with_cloned_context<CTX: FoundryContextExt, R>(
     ) -> Result<(R, EvmEnv, TxEnv, JournaledState), EVMError<DatabaseError>>,
 ) -> Result<R, EVMError<DatabaseError>>
 where
+    CTX: FoundryContextExt<Block = BlockEnv, Tx = TxEnv, Cfg = CfgEnv>,
     CTX::Journal: FoundryJournalExt,
 {
     let (evm_env, tx_env) = Env::clone_evm_and_tx(ecx);
