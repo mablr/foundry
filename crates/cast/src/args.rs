@@ -9,6 +9,7 @@ use alloy_consensus::transaction::Recovered;
 use alloy_dyn_abi::{DynSolValue, ErrorExt, EventExt};
 use alloy_eips::eip7702::SignedAuthorization;
 use alloy_ens::{ProviderEnsExt, namehash};
+use alloy_network::Ethereum;
 use alloy_primitives::{Address, B256, eip191_hash_message, hex, keccak256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{BlockId, BlockNumberOrTag::Latest};
@@ -20,6 +21,7 @@ use foundry_common::{
     abi::{get_error, get_event},
     fmt::{format_tokens, format_uint_exp, serialize_value_as_json},
     fs,
+    provider::ProviderBuilder,
     selectors::{
         ParsedSignatures, SelectorImportData, SelectorKind, decode_calldata, decode_event_topic,
         decode_function_selector, decode_selectors, import_selectors, parse_signatures,
@@ -27,7 +29,9 @@ use foundry_common::{
     },
     shell, stdin,
 };
+use op_alloy_network::Optimism;
 use std::time::Instant;
+use tempo_alloy::TempoNetwork;
 
 /// Run the `cast` command-line interface.
 pub fn run() -> Result<()> {
@@ -533,19 +537,30 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::Run(cmd) => cmd.run().await?,
         CastSubcommand::SendTx(cmd) => cmd.run().await?,
-        CastSubcommand::Tx { tx_hash, from, nonce, field, raw, rpc, to_request } => {
+        CastSubcommand::Tx { tx_hash, from, nonce, field, raw, rpc, to_request, network } => {
             let config = rpc.load_config()?;
-            let provider = utils::get_provider(&config)?;
 
             // Can use either --raw or specify raw as a field
             let raw = raw || field.as_ref().is_some_and(|f| f == "raw");
 
-            sh_println!(
-                "{}",
+            let result = if network.optimism {
+                let provider = ProviderBuilder::<Optimism>::from_config(&config)?.build()?;
                 Cast::new(&provider)
                     .transaction(tx_hash, from, nonce, field, raw, to_request)
                     .await?
-            )?
+            } else if network.tempo {
+                let provider = ProviderBuilder::<TempoNetwork>::from_config(&config)?.build()?;
+                Cast::new(&provider)
+                    .transaction(tx_hash, from, nonce, field, raw, to_request)
+                    .await?
+            } else {
+                let provider = ProviderBuilder::<Ethereum>::from_config(&config)?.build()?;
+                Cast::new(&provider)
+                    .transaction(tx_hash, from, nonce, field, raw, to_request)
+                    .await?
+            };
+
+            sh_println!("{}", result)?
         }
 
         // 4Byte

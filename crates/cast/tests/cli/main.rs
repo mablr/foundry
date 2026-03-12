@@ -3978,6 +3978,7 @@ casttest!(tx_raw_opstack_deposit, |_prj, cmd| {
         "tx",
         "0xf403cba612d1c01c027455c0d97427ccd5f7f99aac30017e065f81d1e30244ea",
         "--raw",
+        "--optimism",
         "--rpc-url",
         "https://sepolia.base.org",
     ]).assert_success()
