@@ -9,6 +9,7 @@ use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolValue;
 use foundry_common::provider::ProviderBuilder;
+use foundry_config::Config;
 use foundry_evm_core::{Env, FoundryContextExt, backend::FoundryJournalExt, fork::CreateFork};
 use revm::context::ContextTr;
 
@@ -416,16 +417,17 @@ fn create_fork_request<CTX: FoundryContextExt<Db: DatabaseExt>>(
     if let Some(Ok(auth)) = rpc_endpoint.auth {
         evm_opts.fork_headers = Some(vec![format!("Authorization: {auth}")]);
     }
-    let fork = CreateFork {
-        enable_caching: !ccx.state.config.no_storage_caching
-            && ccx.state.config.rpc_storage_caching.enable_for_endpoint(&url),
-        url,
-        env: {
-            let (evm_env, tx_env) = Env::clone_evm_and_tx(ccx.ecx);
-            Env { evm_env, tx: tx_env }
-        },
-        evm_opts,
+    evm_opts.fork_url = Some(url);
+    let env = {
+        let (evm_env, tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+        Env { evm_env, tx: tx_env }
     };
+    let config = Config {
+        no_storage_caching: ccx.state.config.no_storage_caching,
+        rpc_storage_caching: ccx.state.config.rpc_storage_caching.clone(),
+        ..Default::default()
+    };
+    let fork = evm_opts.get_fork(&config, env).expect("fork_url is set");
     Ok(fork)
 }
 
