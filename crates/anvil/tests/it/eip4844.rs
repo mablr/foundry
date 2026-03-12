@@ -102,26 +102,38 @@ async fn can_send_eip4844_transaction_eth_send_transaction() {
 }
 
 // <https://github.com/foundry-rs/foundry/issues/13217>
-#[tokio::test(flavor = "multi_thread")]
-async fn can_send_eip4844_transaction_with_eip7594_sidecar_format() {
-    let node_config = NodeConfig::test().with_hardfork(Some(EthereumHardfork::Osaka.into()));
-    let (api, handle) = spawn(node_config).await;
-    let provider = ProviderBuilder::new().connect(handle.http_endpoint().as_str()).await.unwrap();
-    let accounts = provider.get_accounts().await.unwrap();
-    let alice = accounts[0];
-    let bob = accounts[1];
+#[test]
+fn can_send_eip4844_transaction_with_eip7594_sidecar_format() {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(32 * 1024 * 1024)
+        .build()
+        .unwrap()
+        .block_on(async {
+            let node_config =
+                NodeConfig::test().with_hardfork(Some(EthereumHardfork::Osaka.into()));
+            let (api, handle) = spawn(node_config).await;
+            let provider =
+                ProviderBuilder::new().connect(handle.http_endpoint().as_str()).await.unwrap();
+            let accounts = provider.get_accounts().await.unwrap();
+            let alice = accounts[0];
+            let bob = accounts[1];
 
-    let sidecar: SidecarBuilder<SimpleCoder> = SidecarBuilder::from_slice(b"Blobs are fun!");
-    let sidecar = sidecar.build_7594().unwrap();
+            let sidecar: SidecarBuilder<SimpleCoder> =
+                SidecarBuilder::from_slice(b"Blobs are fun!");
+            let sidecar = sidecar.build_7594().unwrap();
 
-    let tx =
-        TransactionRequest::default().with_from(alice).with_to(bob).with_blob_sidecar_7594(sidecar);
+            let tx = TransactionRequest::default()
+                .with_from(alice)
+                .with_to(bob)
+                .with_blob_sidecar_7594(sidecar);
 
-    let pending_tx = provider.send_transaction(tx).await.unwrap();
-    let receipt = pending_tx.get_receipt().await.unwrap();
-    let tx_hash = receipt.transaction_hash;
+            let pending_tx = provider.send_transaction(tx).await.unwrap();
+            let receipt = pending_tx.get_receipt().await.unwrap();
+            let tx_hash = receipt.transaction_hash;
 
-    let _blobs = api.anvil_get_blob_by_tx_hash(tx_hash).unwrap().unwrap();
+            let _blobs = api.anvil_get_blob_by_tx_hash(tx_hash).unwrap().unwrap();
+        });
 }
 
 #[tokio::test(flavor = "multi_thread")]
