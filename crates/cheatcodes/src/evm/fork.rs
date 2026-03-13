@@ -268,7 +268,7 @@ impl Cheatcode for rpc_0Call {
 }
 
 impl Cheatcode for rpc_1Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { urlOrAlias, method, params } = self;
         let url = state.config.rpc_endpoint(urlOrAlias)?.url()?;
         rpc_call(&url, method, params)
@@ -430,7 +430,7 @@ fn create_fork_request<CTX: FoundryContextExt<Db: DatabaseExt>>(
     Ok(fork)
 }
 
-fn check_broadcast(state: &Cheatcodes) -> Result<()> {
+fn check_broadcast<BLOCK>(state: &Cheatcodes<BLOCK>) -> Result<()> {
     if state.broadcast.is_none() {
         Ok(())
     } else {

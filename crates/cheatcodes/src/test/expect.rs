@@ -11,6 +11,7 @@ use alloy_primitives::{
     map::{AddressHashMap, HashMap, hash_map::Entry},
 };
 use foundry_common::{abi::get_indexed_event, fmt::format_token};
+use foundry_evm_core::FoundryBlock;
 use foundry_evm_traces::DecodedCallLog;
 use revm::{
     context::{ContextTr, JournalTr},
@@ -163,28 +164,28 @@ impl CreateScheme {
 }
 
 impl Cheatcode for expectCall_0Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { callee, data } = self;
         expect_call(state, callee, data, None, None, None, 1, ExpectedCallType::NonCount)
     }
 }
 
 impl Cheatcode for expectCall_1Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { callee, data, count } = self;
         expect_call(state, callee, data, None, None, None, *count, ExpectedCallType::Count)
     }
 }
 
 impl Cheatcode for expectCall_2Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { callee, msgValue, data } = self;
         expect_call(state, callee, data, Some(msgValue), None, None, 1, ExpectedCallType::NonCount)
     }
 }
 
 impl Cheatcode for expectCall_3Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { callee, msgValue, data, count } = self;
         expect_call(
             state,
@@ -200,7 +201,7 @@ impl Cheatcode for expectCall_3Call {
 }
 
 impl Cheatcode for expectCall_4Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { callee, msgValue, gas, data } = self;
         expect_call(
             state,
@@ -216,7 +217,7 @@ impl Cheatcode for expectCall_4Call {
 }
 
 impl Cheatcode for expectCall_5Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { callee, msgValue, gas, data, count } = self;
         expect_call(
             state,
@@ -232,7 +233,7 @@ impl Cheatcode for expectCall_5Call {
 }
 
 impl Cheatcode for expectCallMinGas_0Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { callee, msgValue, minGas, data } = self;
         expect_call(
             state,
@@ -248,7 +249,7 @@ impl Cheatcode for expectCallMinGas_0Call {
 }
 
 impl Cheatcode for expectCallMinGas_1Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { callee, msgValue, minGas, data, count } = self;
         expect_call(
             state,
@@ -390,14 +391,14 @@ impl Cheatcode for expectEmitAnonymous_3Call {
 }
 
 impl Cheatcode for expectCreateCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { bytecode, deployer } = self;
         expect_create(state, bytecode.clone(), *deployer, CreateScheme::Create)
     }
 }
 
 impl Cheatcode for expectCreate2Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { bytecode, deployer } = self;
         expect_create(state, bytecode.clone(), *deployer, CreateScheme::Create2)
     }
@@ -662,8 +663,8 @@ impl RevertParameters for ExpectedRevert {
 ///   address(0xc4f3) and selector `0xd34db33f` to be made at least once. If the amount of calls is
 ///   0, the test will fail. If the call is made more than once, the test will pass.
 #[expect(clippy::too_many_arguments)] // It is what it is
-fn expect_call(
-    state: &mut Cheatcodes,
+fn expect_call<BLOCK>(
+    state: &mut Cheatcodes<BLOCK>,
     target: &Address,
     calldata: &Bytes,
     value: Option<&U256>,
@@ -729,8 +730,8 @@ fn expect_call(
     Ok(Default::default())
 }
 
-fn expect_emit(
-    state: &mut Cheatcodes,
+fn expect_emit<BLOCK>(
+    state: &mut Cheatcodes<BLOCK>,
     depth: usize,
     checks: [bool; 5],
     address: Option<Address>,
@@ -759,8 +760,8 @@ fn expect_emit(
     Ok(Default::default())
 }
 
-pub(crate) fn handle_expect_emit(
-    state: &mut Cheatcodes,
+pub(crate) fn handle_expect_emit<BLOCK: FoundryBlock>(
+    state: &mut Cheatcodes<BLOCK>,
     log: &alloy_primitives::Log,
     mut interpreter: Option<&mut Interpreter>,
 ) -> Option<&'static str> {
@@ -998,8 +999,8 @@ impl LogCountMap {
     }
 }
 
-fn expect_create(
-    state: &mut Cheatcodes,
+fn expect_create<BLOCK>(
+    state: &mut Cheatcodes<BLOCK>,
     bytecode: Bytes,
     deployer: Address,
     create_scheme: CreateScheme,
@@ -1010,8 +1011,8 @@ fn expect_create(
     Ok(Default::default())
 }
 
-fn expect_revert(
-    state: &mut Cheatcodes,
+fn expect_revert<BLOCK>(
+    state: &mut Cheatcodes<BLOCK>,
     reason: Option<&[u8]>,
     depth: usize,
     cheatcode: bool,
@@ -1273,7 +1274,7 @@ fn name_mismatched_logs(
     format!("{actual_name} != expected {expected_name}")
 }
 
-fn expect_safe_memory(state: &mut Cheatcodes, start: u64, end: u64, depth: u64) -> Result {
+fn expect_safe_memory<BLOCK>(state: &mut Cheatcodes<BLOCK>, start: u64, end: u64, depth: u64) -> Result {
     ensure!(start < end, "memory range start ({start}) is greater than end ({end})");
     #[expect(clippy::single_range_in_vec_init)] // Wanted behaviour
     let offsets = state.allowed_mem_writes.entry(depth).or_insert_with(|| vec![0..0x60]);

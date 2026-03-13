@@ -245,7 +245,7 @@ impl Display for AccountStateDiffs {
 }
 
 impl Cheatcode for addrCall {
-    fn apply(&self, _state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, _state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { privateKey } = self;
         let wallet = super::crypto::parse_wallet(privateKey)?;
         Ok(wallet.address().abi_encode())
@@ -273,7 +273,7 @@ impl Cheatcode for getNonce_1Call {
 }
 
 impl Cheatcode for loadCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
+    fn apply_stateful<CTX: ContextTr<Block: FoundryBlock, Db: DatabaseExt>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -396,7 +396,7 @@ impl Cheatcode for dumpStateCall {
 }
 
 impl Cheatcode for recordCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         state.recording_accesses = true;
         state.accesses.clear();
@@ -405,14 +405,14 @@ impl Cheatcode for recordCall {
 }
 
 impl Cheatcode for stopRecordCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         state.recording_accesses = false;
         Ok(Default::default())
     }
 }
 
 impl Cheatcode for accessesCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { target } = *self;
         let result = (
             state.accesses.reads.entry(target).or_default().as_slice(),
@@ -423,7 +423,7 @@ impl Cheatcode for accessesCall {
 }
 
 impl Cheatcode for recordLogsCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         state.recorded_logs = Some(Default::default());
         Ok(Default::default())
@@ -431,14 +431,14 @@ impl Cheatcode for recordLogsCall {
 }
 
 impl Cheatcode for getRecordedLogsCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         Ok(state.recorded_logs.replace(Default::default()).unwrap_or_default().abi_encode())
     }
 }
 
 impl Cheatcode for getRecordedLogsJsonCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         let logs = state.recorded_logs.replace(Default::default()).unwrap_or_default();
         let json_logs: Vec<_> = logs
@@ -454,7 +454,7 @@ impl Cheatcode for getRecordedLogsJsonCall {
 }
 
 impl Cheatcode for pauseGasMeteringCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         state.gas_metering.paused = true;
         Ok(Default::default())
@@ -462,7 +462,7 @@ impl Cheatcode for pauseGasMeteringCall {
 }
 
 impl Cheatcode for resumeGasMeteringCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         state.gas_metering.resume();
         Ok(Default::default())
@@ -470,7 +470,7 @@ impl Cheatcode for resumeGasMeteringCall {
 }
 
 impl Cheatcode for resetGasMeteringCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         state.gas_metering.reset();
         Ok(Default::default())
@@ -478,7 +478,7 @@ impl Cheatcode for resetGasMeteringCall {
 }
 
 impl Cheatcode for lastCallGasCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         let Some(last_call_gas) = &state.gas_metering.last_call_gas else {
             bail!("no external call was made yet");
@@ -759,7 +759,7 @@ impl Cheatcode for coolCall {
 }
 
 impl Cheatcode for accessListCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { access } = self;
         let access_list = access
             .iter()
@@ -774,7 +774,7 @@ impl Cheatcode for accessListCall {
 }
 
 impl Cheatcode for noAccessListCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         // Set to empty option in order to override previous applied access list.
         if state.access_list.is_some() {
@@ -807,28 +807,28 @@ impl Cheatcode for coolSlotCall {
 }
 
 impl Cheatcode for readCallersCall {
-    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr<Block: FoundryBlock>>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self {} = self;
         read_callers(ccx.state, &ccx.ecx.tx().caller(), ccx.ecx.journal().depth())
     }
 }
 
 impl Cheatcode for snapshotValue_0Call {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { name, value } = self;
         inner_value_snapshot(ccx, None, Some(name.clone()), value.to_string())
     }
 }
 
 impl Cheatcode for snapshotValue_1Call {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { group, name, value } = self;
         inner_value_snapshot(ccx, Some(group.clone()), Some(name.clone()), value.to_string())
     }
 }
 
 impl Cheatcode for snapshotGasLastCall_0Call {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { name } = self;
         let Some(last_call_gas) = &ccx.state.gas_metering.last_call_gas else {
             bail!("no external call was made yet");
@@ -838,7 +838,7 @@ impl Cheatcode for snapshotGasLastCall_0Call {
 }
 
 impl Cheatcode for snapshotGasLastCall_1Call {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { name, group } = self;
         let Some(last_call_gas) = &ccx.state.gas_metering.last_call_gas else {
             bail!("no external call was made yet");
@@ -867,21 +867,21 @@ impl Cheatcode for startSnapshotGas_1Call {
 }
 
 impl Cheatcode for stopSnapshotGas_0Call {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self {} = self;
         inner_stop_gas_snapshot(ccx, None, None)
     }
 }
 
 impl Cheatcode for stopSnapshotGas_1Call {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { name } = self;
         inner_stop_gas_snapshot(ccx, None, Some(name.clone()))
     }
 }
 
 impl Cheatcode for stopSnapshotGas_2Call {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { group, name } = self;
         inner_stop_gas_snapshot(ccx, Some(group.clone()), Some(name.clone()))
     }
@@ -993,7 +993,7 @@ impl Cheatcode for deleteStateSnapshotsCall {
 }
 
 impl Cheatcode for startStateDiffRecordingCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         state.recorded_account_diffs_stack = Some(Default::default());
         // Enable mapping recording to track mapping slot accesses
@@ -1003,7 +1003,7 @@ impl Cheatcode for startStateDiffRecordingCall {
 }
 
 impl Cheatcode for stopAndReturnStateDiffCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         get_state_diff(state)
     }
@@ -1116,7 +1116,7 @@ impl Cheatcode for getStorageSlotsCall {
 }
 
 impl Cheatcode for getStorageAccessesCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let mut storage_accesses = Vec::new();
 
         if let Some(recorded_diffs) = &state.recorded_account_diffs_stack {
@@ -1327,7 +1327,7 @@ impl Cheatcode for executeTransactionCall {
 }
 
 impl Cheatcode for startDebugTraceRecordingCall {
-    fn apply_full<CTX>(
+    fn apply_full<CTX: ContextTr>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
         executor: &mut dyn CheatcodesExecutor<CTX>,
@@ -1357,7 +1357,7 @@ impl Cheatcode for startDebugTraceRecordingCall {
 }
 
 impl Cheatcode for stopAndReturnDebugTraceRecordingCall {
-    fn apply_full<CTX>(
+    fn apply_full<CTX: ContextTr>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
         executor: &mut dyn CheatcodesExecutor<CTX>,
@@ -1396,7 +1396,7 @@ impl Cheatcode for stopAndReturnDebugTraceRecordingCall {
 }
 
 impl Cheatcode for setEvmVersionCall {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { evm } = self;
         let spec_id = evm_spec_id(
             EvmVersion::from_str(evm)
@@ -1488,7 +1488,7 @@ fn inner_delete_state_snapshots<CTX: ContextTr<Db: DatabaseExt>>(
     Ok(Default::default())
 }
 
-fn inner_value_snapshot<CTX>(
+fn inner_value_snapshot<CTX: ContextTr>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     group: Option<String>,
     name: Option<String>,
@@ -1501,7 +1501,7 @@ fn inner_value_snapshot<CTX>(
     Ok(Default::default())
 }
 
-fn inner_last_gas_snapshot<CTX>(
+fn inner_last_gas_snapshot<CTX: ContextTr>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     group: Option<String>,
     name: Option<String>,
@@ -1540,7 +1540,7 @@ fn inner_start_gas_snapshot<CTX: ContextTr>(
     Ok(Default::default())
 }
 
-fn inner_stop_gas_snapshot<CTX>(
+fn inner_stop_gas_snapshot<CTX: ContextTr>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     group: Option<String>,
     name: Option<String>,
@@ -1592,7 +1592,7 @@ fn inner_stop_gas_snapshot<CTX>(
 }
 
 // Derives the snapshot group and name from the provided group and name or the running contract.
-fn derive_snapshot_name<CTX>(
+fn derive_snapshot_name<CTX: ContextTr>(
     ccx: &CheatsCtxt<'_, CTX>,
     group: Option<String>,
     name: Option<String>,
@@ -1627,7 +1627,7 @@ fn derive_snapshot_name<CTX>(
 /// - If no caller modification is active:
 ///     - caller_mode will be equal to [CallerMode::None],
 ///     - `msg.sender` and `tx.origin` will be equal to the default sender address.
-fn read_callers(state: &Cheatcodes, default_sender: &Address, call_depth: usize) -> Result {
+fn read_callers<BLOCK: FoundryBlock>(state: &Cheatcodes<BLOCK>, default_sender: &Address, call_depth: usize) -> Result {
     let mut mode = CallerMode::None;
     let mut new_caller = default_sender;
     let mut new_origin = default_sender;
@@ -1675,7 +1675,7 @@ pub(super) fn ensure_loaded_account<CTX: ContextTr<Db: DatabaseExt>>(
 /// In the case where `stopAndReturnStateDiff` is called at a lower
 /// depth than `startStateDiffRecording`, multiple `Vec<RecordedAccountAccesses>`
 /// will be flattened, preserving the order of the accesses.
-fn get_state_diff(state: &mut Cheatcodes) -> Result {
+fn get_state_diff<BLOCK>(state: &mut Cheatcodes<BLOCK>) -> Result {
     let res = state
         .recorded_account_diffs_stack
         .replace(Default::default())

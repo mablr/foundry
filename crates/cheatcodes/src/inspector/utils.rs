@@ -1,6 +1,6 @@
 use crate::inspector::Cheatcodes;
 use alloy_primitives::{Address, Bytes, U256};
-use foundry_evm_core::backend::DatabaseExt;
+use foundry_evm_core::{FoundryBlock, backend::DatabaseExt};
 use revm::{
     context::ContextTr,
     inspector::JournalExt,
@@ -15,10 +15,10 @@ pub(crate) trait CommonCreateInput {
     fn init_code(&self) -> Bytes;
     fn scheme(&self) -> Option<CreateScheme>;
     fn set_caller(&mut self, caller: Address);
-    fn log_debug(&self, cheatcode: &mut Cheatcodes, scheme: &CreateScheme);
-    fn allow_cheatcodes<CTX: ContextTr<Journal: JournalExt, Db: DatabaseExt>>(
+    fn log_debug<BLOCK>(&self, cheatcode: &mut Cheatcodes<BLOCK>, scheme: &CreateScheme);
+    fn allow_cheatcodes<CTX: ContextTr<Block: FoundryBlock, Journal: JournalExt, Db: DatabaseExt>>(
         &self,
-        cheatcodes: &mut Cheatcodes,
+        cheatcodes: &mut Cheatcodes<CTX::Block>,
         ecx: &mut CTX,
     ) -> Address;
 }
@@ -42,7 +42,7 @@ impl CommonCreateInput for &mut CreateInputs {
     fn set_caller(&mut self, caller: Address) {
         CreateInputs::set_call(self, caller);
     }
-    fn log_debug(&self, cheatcode: &mut Cheatcodes, scheme: &CreateScheme) {
+    fn log_debug<BLOCK>(&self, cheatcode: &mut Cheatcodes<BLOCK>, scheme: &CreateScheme) {
         let kind = match scheme {
             CreateScheme::Create => "create",
             CreateScheme::Create2 { .. } => "create2",
@@ -50,9 +50,9 @@ impl CommonCreateInput for &mut CreateInputs {
         };
         debug!(target: "cheatcodes", tx=?cheatcode.broadcastable_transactions.back().unwrap(), "broadcastable {kind}");
     }
-    fn allow_cheatcodes<CTX: ContextTr<Journal: JournalExt, Db: DatabaseExt>>(
+    fn allow_cheatcodes<CTX: ContextTr<Block: FoundryBlock, Journal: JournalExt, Db: DatabaseExt>>(
         &self,
-        cheatcodes: &mut Cheatcodes,
+        cheatcodes: &mut Cheatcodes<CTX::Block>,
         ecx: &mut CTX,
     ) -> Address {
         let caller = CreateInputs::caller(self);

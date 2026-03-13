@@ -16,7 +16,7 @@ pub extern crate foundry_cheatcodes_spec as spec;
 extern crate tracing;
 
 use alloy_primitives::Address;
-use foundry_evm_core::backend::DatabaseExt;
+use foundry_evm_core::{FoundryBlock, backend::DatabaseExt};
 use revm::context::{ContextTr, JournalTr};
 
 pub use Vm::ForgeContext;
@@ -68,7 +68,7 @@ pub(crate) trait Cheatcode: CheatcodeDef {
     /// Applies this cheatcode to the given state.
     ///
     /// Implement this function if you don't need access to the EVM data.
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let _ = state;
         unimplemented!("{}", Self::CHEATCODE.func.id)
     }
@@ -78,7 +78,7 @@ pub(crate) trait Cheatcode: CheatcodeDef {
     /// Implement this function if you need access to the EVM data.
     #[inline(always)]
     fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
-        self.apply(ccx.state)
+        self.apply::<CTX::Block>(ccx.state)
     }
 
     /// Applies this cheatcode to the given context and executor.
@@ -96,9 +96,9 @@ pub(crate) trait Cheatcode: CheatcodeDef {
 }
 
 /// The cheatcode context.
-pub struct CheatsCtxt<'a, CTX> {
+pub struct CheatsCtxt<'a, CTX: ContextTr> {
     /// The cheatcodes inspector state.
-    pub(crate) state: &'a mut Cheatcodes,
+    pub(crate) state: &'a mut Cheatcodes::<CTX::Block>,
     /// The EVM context.
     pub(crate) ecx: &'a mut CTX,
     /// The original `msg.sender`.
@@ -107,7 +107,7 @@ pub struct CheatsCtxt<'a, CTX> {
     pub(crate) gas_limit: u64,
 }
 
-impl<CTX> std::ops::Deref for CheatsCtxt<'_, CTX> {
+impl<CTX: ContextTr> std::ops::Deref for CheatsCtxt<'_, CTX> {
     type Target = CTX;
 
     #[inline(always)]
@@ -116,7 +116,7 @@ impl<CTX> std::ops::Deref for CheatsCtxt<'_, CTX> {
     }
 }
 
-impl<CTX> std::ops::DerefMut for CheatsCtxt<'_, CTX> {
+impl<CTX: ContextTr> std::ops::DerefMut for CheatsCtxt<'_, CTX> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.ecx

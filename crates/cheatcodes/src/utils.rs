@@ -8,7 +8,7 @@ use alloy_rlp::{Decodable, Encodable};
 use alloy_sol_types::SolValue;
 use foundry_common::{TYPE_BINDING_PREFIX, fs};
 use foundry_config::fs_permissions::FsAccessKind;
-use foundry_evm_core::constants::DEFAULT_CREATE2_DEPLOYER;
+use foundry_evm_core::{FoundryBlock, constants::DEFAULT_CREATE2_DEPLOYER};
 use foundry_evm_fuzz::strategies::BoundMutator;
 use proptest::prelude::Strategy;
 use rand::{Rng, RngCore, seq::SliceRandom};
@@ -33,7 +33,7 @@ pub struct IgnoredTraces {
 }
 
 impl Cheatcode for labelCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { account, newLabel } = self;
         state.labels.insert(*account, newLabel.clone());
         Ok(Default::default())
@@ -41,7 +41,7 @@ impl Cheatcode for labelCall {
 }
 
 impl Cheatcode for getLabelCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { account } = self;
         Ok(match state.labels.get(account) {
             Some(label) => label.abi_encode(),
@@ -51,7 +51,7 @@ impl Cheatcode for getLabelCall {
 }
 
 impl Cheatcode for computeCreateAddressCall {
-    fn apply(&self, _state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, _state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { nonce, deployer } = self;
         ensure!(*nonce <= U256::from(u64::MAX), "nonce must be less than 2^64");
         Ok(deployer.create(nonce.to()).abi_encode())
@@ -59,28 +59,28 @@ impl Cheatcode for computeCreateAddressCall {
 }
 
 impl Cheatcode for computeCreate2Address_0Call {
-    fn apply(&self, _state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, _state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { salt, initCodeHash, deployer } = self;
         Ok(deployer.create2(salt, initCodeHash).abi_encode())
     }
 }
 
 impl Cheatcode for computeCreate2Address_1Call {
-    fn apply(&self, _state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, _state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { salt, initCodeHash } = self;
         Ok(DEFAULT_CREATE2_DEPLOYER.create2(salt, initCodeHash).abi_encode())
     }
 }
 
 impl Cheatcode for ensNamehashCall {
-    fn apply(&self, _state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, _state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { name } = self;
         Ok(namehash(name).abi_encode())
     }
 }
 
 impl Cheatcode for bound_0Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { current, min, max } = *self;
         let Some(mutated) = U256::bound(current, min, max, state.test_runner()) else {
             bail!("cannot bound {current} in [{min}, {max}] range")
@@ -90,7 +90,7 @@ impl Cheatcode for bound_0Call {
 }
 
 impl Cheatcode for bound_1Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { current, min, max } = *self;
         let Some(mutated) = I256::bound(current, min, max, state.test_runner()) else {
             bail!("cannot bound {current} in [{min}, {max}] range")
@@ -100,27 +100,27 @@ impl Cheatcode for bound_1Call {
 }
 
 impl Cheatcode for randomUint_0Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         random_uint(state, None, None)
     }
 }
 
 impl Cheatcode for randomUint_1Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { min, max } = *self;
         random_uint(state, None, Some((min, max)))
     }
 }
 
 impl Cheatcode for randomUint_2Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { bits } = *self;
         random_uint(state, Some(bits), None)
     }
 }
 
 impl Cheatcode for randomAddressCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         Ok(DynSolValue::type_strategy(&DynSolType::Address)
             .new_tree(state.test_runner())
             .unwrap()
@@ -130,27 +130,27 @@ impl Cheatcode for randomAddressCall {
 }
 
 impl Cheatcode for randomInt_0Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         random_int(state, None)
     }
 }
 
 impl Cheatcode for randomInt_1Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { bits } = *self;
         random_int(state, Some(bits))
     }
 }
 
 impl Cheatcode for randomBoolCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let rand_bool: bool = state.rng().random();
         Ok(rand_bool.abi_encode())
     }
 }
 
 impl Cheatcode for randomBytesCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { len } = *self;
         ensure!(
             len <= U256::from(usize::MAX),
@@ -163,21 +163,21 @@ impl Cheatcode for randomBytesCall {
 }
 
 impl Cheatcode for randomBytes4Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let rand_u32 = state.rng().next_u32();
         Ok(B32::from(rand_u32).abi_encode())
     }
 }
 
 impl Cheatcode for randomBytes8Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let rand_u64 = state.rng().next_u64();
         Ok(B64::from(rand_u64).abi_encode())
     }
 }
 
 impl Cheatcode for pauseTracingCall {
-    fn apply_full<CTX>(
+    fn apply_full<CTX: ContextTr>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
         executor: &mut dyn CheatcodesExecutor<CTX>,
@@ -200,7 +200,7 @@ impl Cheatcode for pauseTracingCall {
 }
 
 impl Cheatcode for resumeTracingCall {
-    fn apply_full<CTX>(
+    fn apply_full<CTX: ContextTr>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
         executor: &mut dyn CheatcodesExecutor<CTX>,
@@ -223,7 +223,7 @@ impl Cheatcode for resumeTracingCall {
 }
 
 impl Cheatcode for interceptInitcodeCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         if !state.intercept_next_create_call {
             state.intercept_next_create_call = true;
@@ -235,7 +235,7 @@ impl Cheatcode for interceptInitcodeCall {
 }
 
 impl Cheatcode for setArbitraryStorage_0Call {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr<Block: FoundryBlock>>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { target } = self;
         ccx.state.arbitrary_storage().mark_arbitrary(target, false);
 
@@ -244,7 +244,7 @@ impl Cheatcode for setArbitraryStorage_0Call {
 }
 
 impl Cheatcode for setArbitraryStorage_1Call {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr<Block: FoundryBlock>>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { target, overwrite } = self;
         ccx.state.arbitrary_storage().mark_arbitrary(target, *overwrite);
 
@@ -253,7 +253,7 @@ impl Cheatcode for setArbitraryStorage_1Call {
 }
 
 impl Cheatcode for copyStorageCall {
-    fn apply_stateful<CTX: ContextTr<Journal: JournalExt>>(
+    fn apply_stateful<CTX: ContextTr<Block: FoundryBlock, Journal: JournalExt>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -280,7 +280,7 @@ impl Cheatcode for copyStorageCall {
 }
 
 impl Cheatcode for sortCall {
-    fn apply(&self, _state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, _state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { array } = self;
 
         let mut sorted_values = array.clone();
@@ -291,7 +291,7 @@ impl Cheatcode for sortCall {
 }
 
 impl Cheatcode for shuffleCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK: FoundryBlock>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { array } = self;
 
         let mut shuffled_values = array.clone();
@@ -303,7 +303,7 @@ impl Cheatcode for shuffleCall {
 }
 
 impl Cheatcode for setSeedCall {
-    fn apply_stateful<CTX>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr<Block: FoundryBlock>>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { seed } = self;
         ccx.state.set_seed(*seed);
         Ok(Default::default())
@@ -312,7 +312,7 @@ impl Cheatcode for setSeedCall {
 
 /// Helper to generate a random `uint` value (with given bits or bounded if specified)
 /// from type strategy.
-fn random_uint(state: &mut Cheatcodes, bits: Option<U256>, bounds: Option<(U256, U256)>) -> Result {
+fn random_uint<BLOCK: FoundryBlock>(state: &mut Cheatcodes<BLOCK>, bits: Option<U256>, bounds: Option<(U256, U256)>) -> Result {
     if let Some(bits) = bits {
         // Generate random with specified bits.
         ensure!(bits <= U256::from(256), "number of bits cannot exceed 256");
@@ -345,7 +345,7 @@ fn random_uint(state: &mut Cheatcodes, bits: Option<U256>, bounds: Option<(U256,
 }
 
 /// Helper to generate a random `int` value (with given bits if specified) from type strategy.
-fn random_int(state: &mut Cheatcodes, bits: Option<U256>) -> Result {
+fn random_int<BLOCK: FoundryBlock>(state: &mut Cheatcodes<BLOCK>, bits: Option<U256>) -> Result {
     let no_bits = bits.unwrap_or(U256::from(256));
     ensure!(no_bits <= U256::from(256), "number of bits cannot exceed 256");
     Ok(DynSolValue::type_strategy(&DynSolType::Int(no_bits.to::<usize>()))
@@ -356,7 +356,7 @@ fn random_int(state: &mut Cheatcodes, bits: Option<U256>) -> Result {
 }
 
 impl Cheatcode for eip712HashType_0Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { typeNameOrDefinition } = self;
 
         let type_def = get_canonical_type_def(typeNameOrDefinition, state, None)?;
@@ -366,7 +366,7 @@ impl Cheatcode for eip712HashType_0Call {
 }
 
 impl Cheatcode for eip712HashType_1Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { bindingsPath, typeName } = self;
 
         let path = state.config.ensure_path_allowed(bindingsPath, FsAccessKind::Read)?;
@@ -377,7 +377,7 @@ impl Cheatcode for eip712HashType_1Call {
 }
 
 impl Cheatcode for eip712HashStruct_0Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { typeNameOrDefinition, abiEncodedData } = self;
 
         let type_def = get_canonical_type_def(typeNameOrDefinition, state, None)?;
@@ -388,7 +388,7 @@ impl Cheatcode for eip712HashStruct_0Call {
 }
 
 impl Cheatcode for eip712HashStruct_1Call {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { bindingsPath, typeName, abiEncodedData } = self;
 
         let path = state.config.ensure_path_allowed(bindingsPath, FsAccessKind::Read)?;
@@ -399,7 +399,7 @@ impl Cheatcode for eip712HashStruct_1Call {
 }
 
 impl Cheatcode for eip712HashTypedDataCall {
-    fn apply(&self, _state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, _state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { jsonData } = self;
         let typed_data: TypedData = serde_json::from_str(jsonData)?;
         let digest = typed_data.eip712_signing_hash()?;
@@ -410,9 +410,9 @@ impl Cheatcode for eip712HashTypedDataCall {
 
 /// Returns EIP-712 canonical type definition from the provided string type representation or type
 /// name. If type name provided, then it looks up bindings from file generated by `forge bind-json`.
-fn get_canonical_type_def(
+fn get_canonical_type_def<BLOCK>(
     name_or_def: &String,
-    state: &mut Cheatcodes,
+    state: &mut Cheatcodes<BLOCK>,
     path: Option<PathBuf>,
 ) -> Result<String> {
     let type_def = if name_or_def.contains('(') {
@@ -501,7 +501,7 @@ fn get_struct_hash(primary: &str, type_def: &String, abi_encoded_data: &Bytes) -
 }
 
 impl Cheatcode for toRlpCall {
-    fn apply(&self, _state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, _state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { data } = self;
 
         let mut buf = Vec::new();
@@ -512,7 +512,7 @@ impl Cheatcode for toRlpCall {
 }
 
 impl Cheatcode for fromRlpCall {
-    fn apply(&self, _state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, _state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { rlp } = self;
 
         let decoded: Vec<Bytes> = Vec::<Bytes>::decode(&mut rlp.as_ref())

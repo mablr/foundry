@@ -45,7 +45,7 @@ impl AcceptableRevertParameters {
 }
 
 impl Cheatcode for assumeCall {
-    fn apply(&self, _state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, _state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { condition } = self;
         if *condition { Ok(Default::default()) } else { Err(Error::from(MAGIC_ASSUME)) }
     }
@@ -79,8 +79,8 @@ impl Cheatcode for assumeNoRevert_2Call {
     }
 }
 
-fn assume_no_revert(
-    state: &mut Cheatcodes,
+fn assume_no_revert<BLOCK>(
+    state: &mut Cheatcodes<BLOCK>,
     depth: usize,
     parameters: Vec<AcceptableRevertParameters>,
 ) -> Result {

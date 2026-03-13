@@ -44,7 +44,7 @@ impl Ord for MockCallDataContext {
 }
 
 impl Cheatcode for clearMockedCallsCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self {} = self;
         state.mocked_calls = Default::default();
         Ok(Default::default())
@@ -210,7 +210,7 @@ impl Cheatcode for mockCallRevert_3Call {
 }
 
 impl Cheatcode for mockFunctionCall {
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<BLOCK>(&self, state: &mut Cheatcodes<BLOCK>) -> Result {
         let Self { callee, target, data } = self;
         state.mocked_functions.entry(*callee).or_default().insert(data.clone(), *target);
 
@@ -218,8 +218,8 @@ impl Cheatcode for mockFunctionCall {
     }
 }
 
-fn mock_call(
-    state: &mut Cheatcodes,
+fn mock_call<BLOCK>(
+    state: &mut Cheatcodes<BLOCK>,
     callee: &Address,
     cdata: &Bytes,
     value: Option<&U256>,
@@ -229,8 +229,8 @@ fn mock_call(
     mock_calls(state, callee, cdata, value, std::slice::from_ref(rdata), ret_type)
 }
 
-fn mock_calls(
-    state: &mut Cheatcodes,
+fn mock_calls<BLOCK>(
+    state: &mut Cheatcodes<BLOCK>,
     callee: &Address,
     cdata: &Bytes,
     value: Option<&U256>,
