@@ -921,7 +921,7 @@ where
     pub fn replay_until(
         &mut self,
         id: LocalForkId,
-        mut env: Env,
+        evm_env: EvmEnv,
         tx_hash: B256,
         journaled_state: &mut JournaledState,
     ) -> eyre::Result<Option<N::TransactionResponse>> {
@@ -932,7 +932,7 @@ where
 
         let fork = self.inner.get_fork_by_id_mut(id)?;
         let full_block =
-            fork.db.db.get_full_block(env.evm_env.block_env.number.saturating_to::<u64>())?;
+            fork.db.db.get_full_block(evm_env.block_env.number.saturating_to::<u64>())?;
 
         for tx in full_block.transactions().txns() {
             // System transactions such as on L2s don't contain any pricing info so we skip them
@@ -950,7 +950,7 @@ where
 
             commit_transaction(
                 tx,
-                &mut env,
+                evm_env.clone(),
                 journaled_state,
                 fork,
                 &fork_id,
@@ -1233,7 +1233,7 @@ where
         id: Option<LocalForkId>,
         block_number: u64,
         evm_env: &mut EvmEnv,
-        tx_env: &mut TxEnv,
+        _tx_env: &mut TxEnv,
         journaled_state: &mut JournaledState,
     ) -> eyre::Result<()> {
         trace!(?id, ?block_number, "roll fork");
@@ -1248,7 +1248,7 @@ where
             if active_id == id {
                 // need to update the block's env settings right away, which is otherwise set when
                 // forks are selected `select_fork`
-                update_current_env_with_fork_env(evm_env, tx_env, fork_env);
+                *evm_env = fork_env;
 
                 // we also need to update the journaled_state right away, this has essentially the
                 // same effect as selecting (`select_fork`) by discarding
@@ -1321,10 +1321,8 @@ where
             .forks
             .update_block_env(self.inner.ensure_fork_id(id).cloned()?, evm_env.block_env.clone());
 
-        let env = Env { evm_env: evm_env.clone(), tx: tx_env.clone() };
-
         // replay all transactions that came before
-        self.replay_until(id, env, transaction, journaled_state)?;
+        self.replay_until(id, evm_env.clone(), transaction, journaled_state)?;
 
         Ok(())
     }
@@ -1334,7 +1332,7 @@ where
         maybe_id: Option<LocalForkId>,
         transaction: B256,
         mut evm_env: EvmEnv,
-        tx_env: TxEnv,
+        _tx_env: TxEnv,
         journaled_state: &mut JournaledState,
         inspector: &mut dyn InspectorExt,
     ) -> eyre::Result<()> {
@@ -1358,11 +1356,10 @@ where
             self.get_block_number_and_block_for_transaction(id, transaction)?;
         update_env_block::<N>(&mut evm_env, &block);
 
-        let mut env = Env { evm_env, tx: tx_env };
         let fork = self.inner.get_fork_by_id_mut(id)?;
         commit_transaction(
             &tx,
-            &mut env,
+            evm_env,
             journaled_state,
             fork,
             &fork_id,
@@ -2043,7 +2040,7 @@ fn update_env_block<N: Network>(evm_env: &mut EvmEnv, block: &N::BlockResponse) 
 /// state, with an inspector.
 fn commit_transaction<N: Network>(
     tx: &N::TransactionResponse,
-    env: &mut Env,
+    evm_env: EvmEnv,
     journaled_state: &mut JournaledState,
     fork: &mut Fork<N>,
     fork_id: &ForkId,
@@ -2053,7 +2050,7 @@ fn commit_transaction<N: Network>(
 where
     TxEnv: FromRecoveredTx<N::TxEnvelope>,
 {
-    env.tx = TxEnv::from_recovered_tx(tx.as_ref(), tx.from());
+    let tx_env = TxEnv::from_recovered_tx(tx.as_ref(), tx.from());
 
     let now = Instant::now();
     let res = {
@@ -2064,13 +2061,13 @@ where
 
         let mut evm = crate::evm::new_evm_with_inspector(
             &mut db as _,
-            env.evm_env.to_owned(),
-            env.tx.to_owned(),
+            evm_env,
+            tx_env.clone(),
             inspector,
         );
         // Adjust inner EVM depth to ensure that inspectors receive accurate data.
         evm.journaled_state.depth = depth + 1;
-        evm.transact(env.tx.clone()).wrap_err("backend: failed committing transaction")?
+        evm.transact(tx_env).wrap_err("backend: failed committing transaction")?
     };
     trace!(elapsed = ?now.elapsed(), "transacted transaction");
 
