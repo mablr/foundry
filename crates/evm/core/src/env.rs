@@ -3,7 +3,12 @@ use alloy_primitives::{Address, B256, Bytes, U256};
 use revm::{
     Context, Database,
     context::{Block, BlockEnv, Cfg, CfgEnv, JournalTr, Transaction, TxEnv},
-    context_interface::{ContextTr, transaction::AccessList},
+    context_interface::{
+        ContextTr,
+        block::blob::BlobExcessGasAndPrice,
+        either::Either,
+        transaction::{AccessList, AccessListItem, RecoveredAuthorization, SignedAuthorization},
+    },
     primitives::{TxKind, hardfork::SpecId},
 };
 
@@ -66,12 +71,23 @@ pub trait FoundryBlock: Block {
     /// Sets the prevrandao value.
     fn set_prevrandao(&mut self, prevrandao: Option<B256>);
 
-    /// Sets the excess blob gas and blob gasprice.
+    /// Sets the blob excess gas and price from an [`Option<BlobExcessGasAndPrice>`].
     fn set_blob_excess_gas_and_price(
         &mut self,
-        _excess_blob_gas: u64,
-        _base_fee_update_fraction: u64,
+        blob_excess_gas_and_price: Option<BlobExcessGasAndPrice>,
     );
+
+    /// Sets all block fields from another [`FoundryBlock`] implementation.
+    fn set_all(&mut self, block: &impl FoundryBlock) {
+        self.set_number(block.number());
+        self.set_beneficiary(block.beneficiary());
+        self.set_timestamp(block.timestamp());
+        self.set_gas_limit(block.gas_limit());
+        self.set_basefee(block.basefee());
+        self.set_difficulty(block.difficulty());
+        self.set_prevrandao(block.prevrandao());
+        self.set_blob_excess_gas_and_price(block.blob_excess_gas_and_price());
+    }
 }
 
 impl FoundryBlock for BlockEnv {
@@ -105,10 +121,9 @@ impl FoundryBlock for BlockEnv {
 
     fn set_blob_excess_gas_and_price(
         &mut self,
-        excess_blob_gas: u64,
-        base_fee_update_fraction: u64,
+        blob_excess_gas_and_price: Option<BlobExcessGasAndPrice>,
     ) {
-        self.set_blob_excess_gas_and_price(excess_blob_gas, base_fee_update_fraction);
+        self.blob_excess_gas_and_price = blob_excess_gas_and_price;
     }
 }
 
@@ -142,8 +157,21 @@ pub trait FoundryTransaction: Transaction {
     /// Sets the chain ID.
     fn set_chain_id(&mut self, chain_id: Option<u64>);
 
-    /// Sets the access list.
-    fn set_access_list(&mut self, access_list: AccessList);
+    /// Sets the access list from an iterator of [`Self::AccessListItem`], aligned with
+    /// [`Transaction::access_list`].
+    fn set_access_list<'a>(
+        &mut self,
+        access_list: impl IntoIterator<Item = Self::AccessListItem<'a>>,
+    ) where
+        Self: 'a;
+
+    /// Sets the EIP-7702 authorization list from an iterator of [`Self::Authorization`], aligned
+    /// with [`Transaction::authorization_list`].
+    fn set_authorization_list<'a>(
+        &mut self,
+        authorization_list: impl IntoIterator<Item = Self::Authorization<'a>>,
+    ) where
+        Self: 'a;
 
     /// Sets the max priority fee per gas.
     fn set_gas_priority_fee(&mut self, gas_priority_fee: Option<u128>);
@@ -153,6 +181,9 @@ pub trait FoundryTransaction: Transaction {
 
     /// Sets the max fee per blob gas.
     fn set_max_fee_per_blob_gas(&mut self, max_fee_per_blob_gas: u128);
+
+    /// Sets all transaction fields from another instance of the same type.
+    fn set_all(&mut self, tx: &Self);
 }
 
 impl FoundryTransaction for TxEnv {
@@ -192,8 +223,22 @@ impl FoundryTransaction for TxEnv {
         self.chain_id = chain_id;
     }
 
-    fn set_access_list(&mut self, access_list: AccessList) {
-        self.access_list = access_list;
+    fn set_access_list<'a>(&mut self, access_list: impl IntoIterator<Item = &'a AccessListItem>)
+    where
+        Self: 'a,
+    {
+        self.access_list = AccessList(access_list.into_iter().cloned().collect());
+    }
+
+    fn set_authorization_list<'a>(
+        &mut self,
+        authorization_list: impl IntoIterator<
+            Item = &'a Either<SignedAuthorization, RecoveredAuthorization>,
+        >,
+    ) where
+        Self: 'a,
+    {
+        self.authorization_list = authorization_list.into_iter().cloned().collect();
     }
 
     fn set_gas_priority_fee(&mut self, gas_priority_fee: Option<u128>) {
@@ -207,13 +252,30 @@ impl FoundryTransaction for TxEnv {
     fn set_max_fee_per_blob_gas(&mut self, max_fee_per_blob_gas: u128) {
         self.max_fee_per_blob_gas = max_fee_per_blob_gas;
     }
+
+    fn set_all(&mut self, tx: &Self) {
+        self.set_tx_type(tx.tx_type);
+        self.set_caller(tx.caller);
+        self.set_gas_limit(tx.gas_limit);
+        self.set_gas_price(tx.gas_price);
+        self.set_kind(tx.kind);
+        self.set_value(tx.value);
+        self.set_data(tx.data.clone());
+        self.set_nonce(tx.nonce);
+        self.set_chain_id(tx.chain_id);
+        self.set_access_list(tx.access_list.0.iter());
+        self.set_gas_priority_fee(tx.gas_priority_fee);
+        self.set_blob_hashes(tx.blob_hashes.clone());
+        self.set_max_fee_per_blob_gas(tx.max_fee_per_blob_gas);
+        self.set_authorization_list(tx.authorization_list.iter());
+    }
 }
 
 /// Extension of [`Cfg`] with mutable setters, allowing EVM-agnostic mutation of EVM configuration
 /// fields.
 pub trait FoundryCfg: Cfg {
     /// Sets the EVM spec (hardfork).
-    fn set_spec(&mut self, spec: SpecId);
+    fn set_spec(&mut self, spec: Self::Spec);
 
     /// Sets the chain ID.
     fn set_chain_id(&mut self, chain_id: u64);
@@ -235,10 +297,34 @@ pub trait FoundryCfg: Cfg {
 
     /// Sets the transaction gas limit cap.
     fn set_tx_gas_limit_cap(&mut self, cap: Option<u64>);
+
+    /// Returns the contract code size limit.
+    fn limit_contract_code_size(&self) -> Option<usize>;
+
+    /// Returns the contract initcode size limit.
+    fn limit_contract_initcode_size(&self) -> Option<usize>;
+
+    /// Returns the blob base fee update fraction.
+    fn blob_base_fee_update_fraction(&self) -> Option<u64>;
+
+    /// Returns the transaction gas limit cap.
+    fn tx_gas_limit_cap_opt(&self) -> Option<u64>;
+
+    /// Sets all cfg fields from another [`FoundryCfg`] implementation.
+    fn set_all(&mut self, cfg: &impl FoundryCfg<Spec = Self::Spec>) {
+        self.set_spec(cfg.spec());
+        self.set_chain_id(cfg.chain_id());
+        self.set_limit_contract_code_size(cfg.limit_contract_code_size());
+        self.set_limit_contract_initcode_size(cfg.limit_contract_initcode_size());
+        self.set_disable_nonce_check(cfg.is_nonce_check_disabled());
+        self.set_max_blobs_per_tx(cfg.max_blobs_per_tx());
+        self.set_blob_base_fee_update_fraction(cfg.blob_base_fee_update_fraction());
+        self.set_tx_gas_limit_cap(cfg.tx_gas_limit_cap_opt());
+    }
 }
 
-impl FoundryCfg for CfgEnv {
-    fn set_spec(&mut self, spec: SpecId) {
+impl<S: Into<SpecId> + Clone> FoundryCfg for CfgEnv<S> {
+    fn set_spec(&mut self, spec: S) {
         self.spec = spec;
     }
 
@@ -269,6 +355,22 @@ impl FoundryCfg for CfgEnv {
     fn set_tx_gas_limit_cap(&mut self, cap: Option<u64>) {
         self.tx_gas_limit_cap = cap;
     }
+
+    fn limit_contract_code_size(&self) -> Option<usize> {
+        self.limit_contract_code_size
+    }
+
+    fn limit_contract_initcode_size(&self) -> Option<usize> {
+        self.limit_contract_initcode_size
+    }
+
+    fn blob_base_fee_update_fraction(&self) -> Option<u64> {
+        self.blob_base_fee_update_fraction
+    }
+
+    fn tx_gas_limit_cap_opt(&self) -> Option<u64> {
+        self.tx_gas_limit_cap
+    }
 }
 
 /// Extension trait providing mutable field access to block, tx, and cfg environments.
@@ -296,6 +398,49 @@ impl<DB: Database, J: JournalTr<Database = DB>, C> FoundryContextExt
         &mut self.tx
     }
     fn cfg_mut(&mut self) -> &mut CfgEnv {
+        &mut self.cfg
+    }
+}
+
+/// Alternative to [`FoundryContextExt`]
+pub trait FoundryContextTr:
+    ContextTr<Block: FoundryBlock + Clone, Tx: FoundryTransaction + Clone, Cfg: FoundryCfg + Clone>
+{
+    /// Mutable reference to the block environment.
+    fn block_mut(&mut self) -> &mut Self::Block;
+    /// Mutable reference to the transaction environment.
+    fn tx_mut(&mut self) -> &mut Self::Tx;
+    /// Mutable reference to the configuration environment.
+    fn cfg_mut(&mut self) -> &mut Self::Cfg;
+    /// Sets all block fields from a [`FoundryBlock`] implementation.
+    fn set_block(&mut self, block: &Self::Block) {
+        self.block_mut().set_all(block);
+    }
+    /// Sets all transaction fields from the context's transaction type.
+    fn set_tx(&mut self, tx: &Self::Tx) {
+        self.tx_mut().set_all(tx);
+    }
+    /// Sets all cfg fields from a [`FoundryCfg`] implementation with matching spec.
+    fn set_cfg(&mut self, cfg: &Self::Cfg) {
+        self.cfg_mut().set_all(cfg);
+    }
+}
+
+impl<
+    Block: FoundryBlock + Clone,
+    Tx: FoundryTransaction + Clone,
+    Cfg: FoundryCfg + Clone,
+    DB: Database,
+    J: JournalTr<Database = DB>,
+> FoundryContextTr for Context<Block, Tx, Cfg, DB, J>
+{
+    fn block_mut(&mut self) -> &mut Block {
+        &mut self.block
+    }
+    fn tx_mut(&mut self) -> &mut Tx {
+        &mut self.tx
+    }
+    fn cfg_mut(&mut self) -> &mut Cfg {
         &mut self.cfg
     }
 }

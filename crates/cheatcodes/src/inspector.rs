@@ -741,7 +741,7 @@ impl Cheatcodes {
     /// access lists themselves.
     fn apply_accesslist<CTX: FoundryContextExt>(&mut self, ecx: &mut CTX) {
         if let Some(access_list) = &self.access_list {
-            ecx.tx_mut().set_access_list(access_list.clone());
+            ecx.tx_mut().set_access_list(access_list.0.iter().clone());
 
             if ecx.tx().tx_type() == TransactionType::Legacy as u8 {
                 ecx.tx_mut().set_tx_type(TransactionType::Eip2930 as u8);
