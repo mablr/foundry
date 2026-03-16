@@ -343,7 +343,7 @@ impl CallArgs {
             let value = tx.value().unwrap_or_default();
             let input = tx.input().cloned().unwrap_or_default();
             let tx_kind = tx.kind().expect("set by builder");
-            let env_tx = &mut executor.env_mut().tx;
+            let env_tx = executor.tx_env_mut();
 
             // Set transaction options with --trace
             if let Some(gas_limit) = tx.gas_limit() {

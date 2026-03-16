@@ -140,7 +140,7 @@ impl PreSimulationState {
 
                 // Simulate mining the transaction if the user passes `--slow`.
                 if self.args.slow {
-                    runner.executor.env_mut().evm_env.block_env.number += U256::from(1);
+                    runner.executor.evm_env_mut().block_env.number += U256::from(1);
                 }
 
                 let is_noop_tx = if let Some(to) = to {
