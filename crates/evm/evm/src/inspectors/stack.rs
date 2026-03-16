@@ -26,7 +26,7 @@ use foundry_evm_traces::{SparsedTraceArena, TraceMode};
 use revm::{
     Inspector,
     context::{
-        Block, BlockEnv, Cfg, ContextTr, JournalTr, Transaction,
+        Block, BlockEnv, Cfg, ContextTr, JournalTr, Transaction, TxEnv,
         result::{EVMError, ExecutionResult, Output},
     },
     context_interface::CreateScheme,
@@ -484,9 +484,9 @@ impl InspectorStack {
 
     /// Set variables from an environment for the relevant inspectors.
     #[inline]
-    pub fn set_env(&mut self, env: &Env) {
-        self.set_block(&env.evm_env.block_env);
-        self.set_gas_price(env.tx.gas_price);
+    pub fn set_env(&mut self, evm_env: &EvmEnv, tx_env: &TxEnv) {
+        self.set_block(&evm_env.block_env);
+        self.set_gas_price(tx_env.gas_price);
     }
 
     /// Sets the block for the relevant inspectors.

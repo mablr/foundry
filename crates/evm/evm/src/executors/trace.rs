@@ -36,7 +36,7 @@ impl TracingExecutor {
                 stack.trace_mode(trace_mode).networks(networks).create2_deployer(create2_deployer)
             })
             .spec_id(evm_spec_id(version.unwrap_or_default()))
-            .build(env, db);
+            .build(env.evm_env, env.tx, db);
 
         // Apply the state overrides.
         if let Some(state_overrides) = state_overrides {
