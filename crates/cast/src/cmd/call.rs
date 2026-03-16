@@ -21,7 +21,6 @@ use foundry_cli::{
 };
 use foundry_common::{
     abi::{encode_function_args, get_func},
-    fmt::{UIfmt, UIfmtHeaderExt, UIfmtSignatureExt},
     provider::{ProviderBuilder, curl_transport::generate_curl_command},
     sh_println, shell,
 };
@@ -43,7 +42,6 @@ use foundry_wallets::WalletOpts;
 use itertools::Either;
 use regex::Regex;
 use revm::context::TransactionType;
-use serde::Serialize;
 use std::{str::FromStr, sync::LazyLock};
 use tempo_alloy::TempoNetwork;
 
@@ -231,11 +229,7 @@ impl CallArgs {
 
     pub async fn run_with_network<N: Network + Unpin>(self) -> Result<()>
     where
-        N::TxEnvelope: Serialize + UIfmtSignatureExt,
         N::TransactionRequest: FoundryTransactionBuilder<N>,
-        N::TransactionResponse: UIfmt,
-        N::HeaderResponse: UIfmtHeaderExt,
-        N::BlockResponse: UIfmt,
     {
         let figment = self.rpc.clone().into_figment(self.with_local_artifacts).merge(&self);
         let evm_opts = figment.extract::<EvmOpts>()?;
