@@ -4,9 +4,7 @@ use std::{
 };
 
 use crate::{
-    Env, FoundryContextExt, InspectorExt,
-    backend::{DatabaseExt, FoundryJournalExt, JournaledState},
-    constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
+    Env, EthCheatCtx, FoundryContextExt, InspectorExt, backend::{DatabaseExt, FoundryJournalExt, JournaledState}, constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH
 };
 use alloy_consensus::constants::KECCAK_EMPTY;
 use alloy_evm::{Evm, EvmEnv, eth::EthEvmContext, precompiles::PrecompilesMap};
@@ -15,9 +13,7 @@ use foundry_fork_db::DatabaseError;
 use revm::{
     Context, Journal,
     context::{
-        BlockEnv, CfgEnv, ContextTr, CreateScheme, Evm as RevmEvm, JournalTr, LocalContext,
-        LocalContextTr, TxEnv,
-        result::{EVMError, ExecResultAndState, ExecutionResult, HaltReason, ResultAndState},
+        BlockEnv, Cfg, CfgEnv, ContextTr, CreateScheme, Evm as RevmEvm, JournalTr, LocalContext, LocalContextTr, TxEnv, result::{EVMError, ExecResultAndState, ExecutionResult, HaltReason, ResultAndState}
     },
     handler::{
         EthFrame, EthPrecompiles, EvmTr, FrameResult, FrameTr, Handler, ItemOrResult,
@@ -33,10 +29,10 @@ use revm::{
     primitives::hardfork::SpecId,
 };
 
-pub fn new_evm_with_inspector<'db, I: InspectorExt>(
+pub fn new_evm_with_inspector<'db, CTX: EthCheatCtx, I: InspectorExt>(
     db: &'db mut dyn DatabaseExt,
-    evm_env: EvmEnv,
-    tx_env: TxEnv,
+    evm_env: EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
+    tx_env: CTX::Tx,
     inspector: I,
 ) -> FoundryEvm<'db, I> {
     let mut ctx = EthEvmContext {
