@@ -32,16 +32,16 @@ impl Env {
     /// Clones the evm env and tx env separately from a [`FoundryContextExt`] context.
     pub fn clone_evm_and_tx(ecx: &mut impl FoundryContextExt) -> (EvmEnv, TxEnv) {
         (
-            EvmEnv { cfg_env: ecx.cfg_mut().clone(), block_env: ecx.block_mut().clone() },
-            ecx.tx_mut().clone(),
+            EvmEnv { cfg_env: ecx.eth_cfg_mut().clone(), block_env: ecx.eth_block_mut().clone() },
+            ecx.eth_tx_mut().clone(),
         )
     }
 
     /// Writes the split evm env and tx env back into a [`FoundryContextExt`] context.
     pub fn apply_evm_and_tx(ecx: &mut impl FoundryContextExt, evm_env: EvmEnv, tx_env: TxEnv) {
-        *ecx.block_mut() = evm_env.block_env;
-        *ecx.cfg_mut() = evm_env.cfg_env;
-        *ecx.tx_mut() = tx_env;
+        *ecx.eth_block_mut() = evm_env.block_env;
+        *ecx.eth_cfg_mut() = evm_env.cfg_env;
+        *ecx.eth_tx_mut() = tx_env;
     }
 }
 
@@ -280,24 +280,53 @@ impl<S: Into<SpecId> + Clone + Debug> FoundryCfg for CfgEnv<S> {
 pub trait FoundryContextExt:
     ContextTr<Block: FoundryBlock + Clone, Tx: FoundryTransaction + Clone, Cfg: FoundryCfg + Clone>
 {
+    // TODO: to be removed
+    fn eth_block_mut(&mut self) -> &mut BlockEnv;
+    // TODO: to be removed
+    fn eth_tx_mut(&mut self) -> &mut TxEnv;
+    // TODO: to be removed
+    fn eth_cfg_mut(&mut self) -> &mut CfgEnv;
     /// Mutable reference to the block environment.
-    fn block_mut(&mut self) -> &mut BlockEnv;
+    fn block_mut(&mut self) -> &mut Self::Block;
     /// Mutable reference to the transaction environment.
-    fn tx_mut(&mut self) -> &mut TxEnv;
+    fn tx_mut(&mut self) -> &mut Self::Tx;
     /// Mutable reference to the configuration environment.
-    fn cfg_mut(&mut self) -> &mut CfgEnv;
+    fn cfg_mut(&mut self) -> &mut Self::Cfg;
+    /// Sets block environment
+    fn set_block(&mut self, block: Self::Block) {
+        *self.block_mut() = block;
+    }
+    /// Sets transaction environment
+    fn set_tx(&mut self, tx: Self::Tx) {
+        *self.tx_mut() = tx;
+    }
+    /// Sets configuration environment
+    fn set_cfg(&mut self, cfg: Self::Cfg) {
+        *self.cfg_mut() = cfg;
+    }
 }
 
 impl<DB: Database, J: JournalTr<Database = DB>, C> FoundryContextExt
     for Context<BlockEnv, TxEnv, CfgEnv, DB, J, C>
 {
-    fn block_mut(&mut self) -> &mut BlockEnv {
+    fn eth_block_mut(&mut self) -> &mut BlockEnv {
         &mut self.block
     }
-    fn tx_mut(&mut self) -> &mut TxEnv {
+
+    fn eth_tx_mut(&mut self) -> &mut TxEnv {
         &mut self.tx
     }
-    fn cfg_mut(&mut self) -> &mut CfgEnv {
+
+    fn eth_cfg_mut(&mut self) -> &mut CfgEnv {
+        &mut self.cfg
+    }
+    fn block_mut(&mut self) -> &mut Self::Block {
+        &mut self.block
+    }
+    fn tx_mut(&mut self) -> &mut Self::Tx {
+        &mut self.tx
+    }
+    fn cfg_mut(&mut self) -> &mut Self::Cfg {
         &mut self.cfg
     }
 }

@@ -786,7 +786,7 @@ impl Cheatcodes {
     ) -> Option<CallOutcome> {
         // Apply custom execution evm version.
         if let Some(spec_id) = self.execution_evm_version {
-            ecx.cfg_mut().set_spec(spec_id);
+            ecx.eth_cfg_mut().set_spec(spec_id);
         }
 
         let gas = Gas::new(call.gas_limit);
@@ -1200,7 +1200,7 @@ impl<CTX: CheatsCtxExt> Inspector<CTX> for Cheatcodes {
         // When the first interpreter is initialized we've circumvented the balance and gas checks,
         // so we apply our actual block data with the correct fees and all.
         if let Some(block) = self.block.take() {
-            *ecx.block_mut() = block;
+            *ecx.eth_block_mut() = block;
         }
         if let Some(gas_price) = self.gas_price.take() {
             ecx.tx_mut().set_gas_price(gas_price);
@@ -1710,7 +1710,7 @@ impl<CTX: CheatsCtxExt> Inspector<CTX> for Cheatcodes {
     fn create(&mut self, ecx: &mut CTX, mut input: &mut CreateInputs) -> Option<CreateOutcome> {
         // Apply custom execution evm version.
         if let Some(spec_id) = self.execution_evm_version {
-            ecx.cfg_mut().set_spec(spec_id);
+            ecx.eth_cfg_mut().set_spec(spec_id);
         }
 
         let gas = Gas::new(input.gas_limit());
