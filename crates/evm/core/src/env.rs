@@ -9,6 +9,8 @@ use revm::{
     primitives::{TxKind, hardfork::SpecId},
 };
 
+use crate::backend::{DatabaseExt, FoundryJournalExt};
+
 /// Helper container type for [`EvmEnv`] and [`TxEnv`].
 #[derive(Clone, Debug, Default)]
 pub struct Env {
@@ -329,4 +331,31 @@ impl<DB: Database, J: JournalTr<Database = DB>, C> FoundryContextExt
     fn cfg_mut(&mut self) -> &mut Self::Cfg {
         &mut self.cfg
     }
+}
+
+/// Temporary bound alias used during the transition to a fully generic foundry-evm and
+/// foundry-cheatcodes.
+///
+/// Pins the EVM context to Ethereum-specific environment types (`BlockEnv`, `TxEnv`, `CfgEnv`)
+/// so that cheatcode implementations don't need to repeat the full where-clause everywhere.
+/// Once cheatcodes are fully generic over network/environment types this alias will be removed.
+pub trait EthCheatCtx:
+    FoundryContextExt<
+        Block = BlockEnv,
+        Tx = TxEnv,
+        Cfg = CfgEnv,
+        Journal: FoundryJournalExt,
+        Db: DatabaseExt,
+    >
+{
+}
+impl<CTX> EthCheatCtx for CTX where
+    CTX: FoundryContextExt<
+            Block = BlockEnv,
+            Tx = TxEnv,
+            Cfg = CfgEnv,
+            Journal: FoundryJournalExt,
+            Db: DatabaseExt,
+        >
+{
 }

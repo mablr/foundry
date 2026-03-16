@@ -1,8 +1,8 @@
 //! Implementations of [`Evm`](spec::Group::Evm) cheatcodes.
 
 use crate::{
-    BroadcastableTransaction, Cheatcode, Cheatcodes, CheatcodesExecutor, CheatsCtxExt, CheatsCtxt,
-    Error, Result, Vm::*, inspector::RecordDebugStepInfo,
+    BroadcastableTransaction, Cheatcode, Cheatcodes, CheatcodesExecutor, CheatsCtxt, Error,
+    EthCheatCtx, Result, Vm::*, inspector::RecordDebugStepInfo,
 };
 use alloy_consensus::TxEnvelope;
 use alloy_evm::{EvmEnv, FromRecoveredTx};
@@ -1130,7 +1130,7 @@ impl Cheatcode for getStorageAccessesCall {
 }
 
 impl Cheatcode for broadcastRawTransactionCall {
-    fn apply_full<CTX: CheatsCtxExt>(
+    fn apply_full<CTX: EthCheatCtx>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
         executor: &mut dyn CheatcodesExecutor<CTX>,
@@ -1170,7 +1170,7 @@ impl Cheatcode for setBlockhashCall {
 }
 
 impl Cheatcode for executeTransactionCall {
-    fn apply_full<CTX: CheatsCtxExt>(
+    fn apply_full<CTX: EthCheatCtx>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
         executor: &mut dyn CheatcodesExecutor<CTX>,

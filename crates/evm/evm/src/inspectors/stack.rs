@@ -10,7 +10,7 @@ use alloy_primitives::{
 };
 use alloy_rpc_types::request::TransactionRequest;
 use foundry_cheatcodes::{
-    CheatcodeAnalysis, CheatcodesExecutor, CheatsCtxExt, NestedEvmClosure, Wallets,
+    CheatcodeAnalysis, CheatcodesExecutor, EthCheatCtx, NestedEvmClosure, Wallets,
 };
 use foundry_common::compile::Analysis;
 use foundry_compilers::ProjectPathsConfig;
@@ -366,7 +366,7 @@ pub struct InspectorStackRefMut<'a> {
     pub inner: &'a mut InspectorStackInner,
 }
 
-impl<CTX: CheatsCtxExt> CheatcodesExecutor<CTX> for InspectorStackInner {
+impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
     fn with_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes,
@@ -667,7 +667,7 @@ impl InspectorStackRefMut<'_> {
         ecx.tx_mut().set_caller(inner_context_data.original_origin);
     }
 
-    fn do_call_end<CTX: CheatsCtxExt>(
+    fn do_call_end<CTX: EthCheatCtx>(
         &mut self,
         ecx: &mut CTX,
         inputs: &CallInputs,
@@ -704,7 +704,7 @@ impl InspectorStackRefMut<'_> {
         outcome.clone()
     }
 
-    fn do_create_end<CTX: CheatsCtxExt>(
+    fn do_create_end<CTX: EthCheatCtx>(
         &mut self,
         ecx: &mut CTX,
         call: &CreateInputs,
@@ -927,7 +927,7 @@ impl InspectorStackRefMut<'_> {
     // delegate to `InspectorStackRefMut` in this case.
 
     #[inline(always)]
-    fn step_inlined<CTX: CheatsCtxExt>(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step_inlined<CTX: EthCheatCtx>(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -946,11 +946,7 @@ impl InspectorStackRefMut<'_> {
     }
 
     #[inline(always)]
-    fn step_end_inlined<CTX: CheatsCtxExt>(
-        &mut self,
-        interpreter: &mut Interpreter,
-        ecx: &mut CTX,
-    ) {
+    fn step_end_inlined<CTX: EthCheatCtx>(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -966,7 +962,7 @@ impl InspectorStackRefMut<'_> {
     }
 }
 
-impl<CTX: CheatsCtxExt> Inspector<CTX> for InspectorStackRefMut<'_> {
+impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStackRefMut<'_> {
     fn initialize_interp(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         call_inspectors!(
             [
@@ -1197,7 +1193,7 @@ impl FoundryInspectorExt for InspectorStackRefMut<'_> {
     }
 }
 
-impl<CTX: CheatsCtxExt> Inspector<CTX> for InspectorStack {
+impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStack {
     fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         self.as_mut().step_inlined(interpreter, ecx)
     }

@@ -1,6 +1,6 @@
 //! Implementations of [`Testing`](spec::Group::Testing) cheatcodes.
 
-use crate::{Cheatcode, Cheatcodes, CheatsCtxExt, CheatsCtxt, Result, Vm::*};
+use crate::{Cheatcode, Cheatcodes, CheatsCtxt, EthCheatCtx, Result, Vm::*};
 use alloy_chains::Chain as AlloyChain;
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolValue;
@@ -67,7 +67,7 @@ impl Cheatcode for sleepCall {
 }
 
 impl Cheatcode for skip_0Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { skipTest } = *self;
         skip_1Call { skipTest, reason: String::new() }.apply_stateful(ccx)
     }

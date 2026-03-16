@@ -1,6 +1,6 @@
 use crate::{
-    Cheatcode, Cheatcodes, CheatcodesExecutor, CheatsCtxExt, CheatsCtxt, DatabaseExt, Result,
-    Vm::*, json::json_value_to_token,
+    Cheatcode, Cheatcodes, CheatcodesExecutor, CheatsCtxt, DatabaseExt, EthCheatCtx, Result, Vm::*,
+    json::json_value_to_token,
 };
 use alloy_dyn_abi::DynSolValue;
 use alloy_evm::EvmEnv;
@@ -58,28 +58,28 @@ impl Cheatcode for createFork_2Call {
 }
 
 impl Cheatcode for createSelectFork_0Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { urlOrAlias } = self;
         create_select_fork(ccx, urlOrAlias, None)
     }
 }
 
 impl Cheatcode for createSelectFork_1Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { urlOrAlias, blockNumber } = self;
         create_select_fork(ccx, urlOrAlias, Some(blockNumber.saturating_to()))
     }
 }
 
 impl Cheatcode for createSelectFork_2Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { urlOrAlias, txHash } = self;
         create_select_fork_at_transaction(ccx, urlOrAlias, txHash)
     }
 }
 
 impl Cheatcode for rollFork_0Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { blockNumber } = self;
         persist_caller(ccx);
         let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
@@ -91,7 +91,7 @@ impl Cheatcode for rollFork_0Call {
 }
 
 impl Cheatcode for rollFork_1Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { txHash } = self;
         persist_caller(ccx);
         let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
@@ -103,7 +103,7 @@ impl Cheatcode for rollFork_1Call {
 }
 
 impl Cheatcode for rollFork_2Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { forkId, blockNumber } = self;
         persist_caller(ccx);
         let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
@@ -115,7 +115,7 @@ impl Cheatcode for rollFork_2Call {
 }
 
 impl Cheatcode for rollFork_3Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { forkId, txHash } = self;
         persist_caller(ccx);
         let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
@@ -127,7 +127,7 @@ impl Cheatcode for rollFork_3Call {
 }
 
 impl Cheatcode for selectForkCall {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { forkId } = self;
         persist_caller(ccx);
         check_broadcast(ccx.state)?;
@@ -346,7 +346,7 @@ impl Cheatcode for getRawBlockHeaderCall {
 }
 
 /// Creates and then also selects the new fork
-fn create_select_fork<CTX: CheatsCtxExt>(
+fn create_select_fork<CTX: EthCheatCtx>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
     block: Option<u64>,
@@ -373,7 +373,7 @@ fn create_fork<CTX: FoundryContextExt<Db: DatabaseExt>>(
 }
 
 /// Creates and then also selects the new fork at the given transaction
-fn create_select_fork_at_transaction<CTX: CheatsCtxExt>(
+fn create_select_fork_at_transaction<CTX: EthCheatCtx>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
     transaction: &B256,

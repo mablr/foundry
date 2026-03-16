@@ -36,7 +36,7 @@ use foundry_common::{
     mapping_slots::{MappingSlots, step as mapping_step},
 };
 use foundry_evm_core::{
-    Breakpoints, Env, EvmEnv, FoundryInspectorExt, FoundryTransaction,
+    Breakpoints, Env, EthCheatCtx, EvmEnv, FoundryInspectorExt, FoundryTransaction,
     abi::Vm::stopExpectSafeMemoryCall,
     backend::{DatabaseError, DatabaseExt, FoundryJournalExt, RevertDiagnostic},
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME},
@@ -83,32 +83,6 @@ mod utils;
 
 pub mod analysis;
 pub use analysis::CheatcodeAnalysis;
-
-/// Bounds for the generic `Inspector<CTX>` impl on `Cheatcodes`.
-///
-/// Shorthand used internally to avoid repeating the full where-clause.
-/// Any `EthEvmContext<&mut dyn DatabaseExt>` satisfies these bounds, so all
-/// existing call-sites (e.g. `InspectorStackRefMut`) keep working unchanged.
-pub trait CheatsCtxExt:
-    FoundryContextExt<
-        Block = BlockEnv,
-        Tx = TxEnv,
-        Cfg = CfgEnv,
-        Journal: FoundryJournalExt,
-        Db: DatabaseExt,
-    >
-{
-}
-impl<CTX> CheatsCtxExt for CTX where
-    CTX: FoundryContextExt<
-            Block = BlockEnv,
-            Tx = TxEnv,
-            Cfg = CfgEnv,
-            Journal: FoundryJournalExt,
-            Db: DatabaseExt,
-        >
-{
-}
 
 /// Closure type used by [`CheatcodesExecutor`] methods that run nested EVM operations.
 pub type NestedEvmClosure<'a> =
@@ -203,7 +177,7 @@ pub(crate) fn exec_create<CTX: FoundryContextExt<Journal: FoundryJournalExt>>(
 #[derive(Debug, Default, Clone, Copy)]
 struct TransparentCheatcodesExecutor;
 
-impl<CTX: CheatsCtxExt> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor {
+impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor {
     fn with_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes,
@@ -701,7 +675,7 @@ impl Cheatcodes {
     }
 
     /// Decodes the input data and applies the cheatcode.
-    fn apply_cheatcode<CTX: CheatsCtxExt>(
+    fn apply_cheatcode<CTX: EthCheatCtx>(
         &mut self,
         ecx: &mut CTX,
         call: &CallInputs,
@@ -791,7 +765,7 @@ impl Cheatcodes {
         }
     }
 
-    pub fn call_with_executor<CTX: CheatsCtxExt>(
+    pub fn call_with_executor<CTX: EthCheatCtx>(
         &mut self,
         ecx: &mut CTX,
         call: &mut CallInputs,
@@ -1208,7 +1182,7 @@ impl Cheatcodes {
     }
 }
 
-impl<CTX: CheatsCtxExt> Inspector<CTX> for Cheatcodes {
+impl<CTX: EthCheatCtx> Inspector<CTX> for Cheatcodes {
     fn initialize_interp(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         // When the first interpreter is initialized we've circumvented the balance and gas checks,
         // so we apply our actual block data with the correct fees and all.
@@ -2615,7 +2589,7 @@ fn cheatcode_signature(cheat: &spec::Cheatcode<'static>) -> &'static str {
 }
 
 /// Dispatches the cheatcode call to the appropriate function.
-fn apply_dispatch<CTX: CheatsCtxExt>(
+fn apply_dispatch<CTX: EthCheatCtx>(
     calls: &Vm::VmCalls,
     ccx: &mut CheatsCtxt<'_, CTX>,
     executor: &mut dyn CheatcodesExecutor<CTX>,
