@@ -15,7 +15,7 @@ use foundry_fork_db::DatabaseError;
 use revm::{
     Context, Journal,
     context::{
-        BlockEnv, CfgEnv, ContextTr, CreateScheme, Evm as RevmEvm, JournalTr, LocalContext,
+        BlockEnv, Cfg, CfgEnv, ContextTr, CreateScheme, Evm as RevmEvm, JournalTr, LocalContext,
         LocalContextTr, TxEnv,
         result::{EVMError, ExecResultAndState, ExecutionResult, HaltReason, ResultAndState},
     },
@@ -307,10 +307,13 @@ pub fn with_cloned_context<CTX: EthCheatCtx, R>(
     ecx: &mut CTX,
     f: impl FnOnce(
         &mut dyn DatabaseExt,
-        EvmEnv,
-        TxEnv,
+        EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
+        CTX::Tx,
         JournaledState,
-    ) -> Result<(R, EvmEnv, TxEnv, JournaledState), EVMError<DatabaseError>>,
+    ) -> Result<
+        (R, EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, CTX::Tx, JournaledState),
+        EVMError<DatabaseError>,
+    >,
 ) -> Result<R, EVMError<DatabaseError>> {
     let (evm_env, tx_env) = Env::clone_evm_and_tx(ecx);
 

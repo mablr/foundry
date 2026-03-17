@@ -24,13 +24,6 @@ impl Env {
         Self { evm_env: EvmEnv { cfg_env: cfg, block_env: block }, tx }
     }
 
-    pub fn new_with_spec_id(cfg: CfgEnv, block: BlockEnv, tx: TxEnv, spec_id: SpecId) -> Self {
-        let mut cfg = cfg;
-        cfg.spec = spec_id;
-
-        Self::from(cfg, block, tx)
-    }
-
     /// Clones the evm env and tx env separately from a [`EthCheatCtx`] context.
     pub fn clone_evm_and_tx(ecx: &mut impl EthCheatCtx) -> (EvmEnv, TxEnv) {
         (

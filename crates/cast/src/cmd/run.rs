@@ -1,6 +1,6 @@
 use crate::{debug::handle_traces, utils::apply_chain_and_block_specific_env_changes};
 use alloy_consensus::{BlockHeader, Transaction};
-use alloy_evm::FromRecoveredTx;
+use alloy_evm::{EvmEnv, FromRecoveredTx};
 use alloy_network::{AnyNetwork, TransactionResponse};
 use alloy_primitives::{
     Address, Bytes, U256,
@@ -24,7 +24,6 @@ use foundry_config::{
     },
 };
 use foundry_evm::{
-    Env,
     executors::{EvmError, Executor, TracingExecutor},
     opts::EvmOpts,
     traces::{InternalTraceMode, TraceMode, Traces},
@@ -222,12 +221,8 @@ impl RunArgs {
             create2_deployer,
             None,
         )?;
-        let mut env = Env::new_with_spec_id(
-            env.evm_env.cfg_env.clone(),
-            env.evm_env.block_env.clone(),
-            env.tx.clone(),
-            executor.spec_id(),
-        );
+        let mut evm_env = EvmEnv::new(env.evm_env.cfg_env, env.evm_env.block_env);
+        evm_env.cfg_env.set_spec(executor.spec_id());
 
         // Set the state to the moment right before the transaction
         if !self.quick {
@@ -258,27 +253,27 @@ impl RunArgs {
                         break;
                     }
 
-                    if let Some(tx_envelope) = tx.as_envelope() {
-                        env.tx = TxEnv::from_recovered_tx(tx_envelope, tx.from());
-                    }
+                    let tx_env = tx.as_envelope().map_or(Default::default(), |tx_envelope| {
+                        TxEnv::from_recovered_tx(tx_envelope, tx.from())
+                    });
 
-                    env.evm_env.cfg_env.disable_balance_check = true;
+                    evm_env.cfg_env.disable_balance_check = true;
 
                     if let Some(to) = Transaction::to(tx) {
                         trace!(tx=?tx.tx_hash(),?to, "executing previous call transaction");
-                        executor
-                            .transact_with_env(env.evm_env.clone(), env.tx.clone())
-                            .wrap_err_with(|| {
+                        executor.transact_with_env(evm_env.clone(), tx_env.clone()).wrap_err_with(
+                            || {
                                 format!(
                                     "Failed to execute transaction: {:?} in block {}",
                                     tx.tx_hash(),
-                                    env.evm_env.block_env.number
+                                    evm_env.block_env.number
                                 )
-                            })?;
+                            },
+                        )?;
                     } else {
                         trace!(tx=?tx.tx_hash(), "executing previous create transaction");
                         if let Err(error) =
-                            executor.deploy_with_env(env.evm_env.clone(), env.tx.clone(), None)
+                            executor.deploy_with_env(evm_env.clone(), tx_env.clone(), None)
                         {
                             match error {
                                 // Reverted transactions should be skipped
@@ -288,7 +283,7 @@ impl RunArgs {
                                         format!(
                                             "Failed to deploy transaction: {:?} in block {}",
                                             tx.tx_hash(),
-                                            env.evm_env.block_env.number
+                                            evm_env.block_env.number
                                         )
                                     });
                                 }
@@ -305,19 +300,20 @@ impl RunArgs {
         let result = {
             executor.set_trace_printer(self.trace_printer);
 
-            if let Some(tx_envelope) = tx.as_envelope() {
-                env.tx = TxEnv::from_recovered_tx(tx_envelope, tx.from());
-            }
+            let tx_env = tx.as_envelope().map_or(Default::default(), |tx_envelope| {
+                TxEnv::from_recovered_tx(tx_envelope, tx.from())
+            });
+
             if is_impersonated_tx(tx.as_ref()) {
-                env.evm_env.cfg_env.disable_balance_check = true;
+                evm_env.cfg_env.disable_balance_check = true;
             }
 
             if let Some(to) = Transaction::to(&tx) {
                 trace!(tx=?tx.tx_hash(), to=?to, "executing call transaction");
-                TraceResult::try_from(executor.transact_with_env(env.evm_env, env.tx))?
+                TraceResult::try_from(executor.transact_with_env(evm_env, tx_env))?
             } else {
                 trace!(tx=?tx.tx_hash(), "executing create transaction");
-                TraceResult::try_from(executor.deploy_with_env(env.evm_env, env.tx, None))?
+                TraceResult::try_from(executor.deploy_with_env(evm_env, tx_env, None))?
             }
         };
 
