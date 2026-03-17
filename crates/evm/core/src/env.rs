@@ -23,21 +23,6 @@ impl Env {
     pub fn from(cfg: CfgEnv, block: BlockEnv, tx: TxEnv) -> Self {
         Self { evm_env: EvmEnv { cfg_env: cfg, block_env: block }, tx }
     }
-
-    /// Clones the evm env and tx env separately from a [`EthCheatCtx`] context.
-    pub fn clone_evm_and_tx(ecx: &mut impl EthCheatCtx) -> (EvmEnv, TxEnv) {
-        (
-            EvmEnv { cfg_env: ecx.cfg_mut().clone(), block_env: ecx.block_mut().clone() },
-            ecx.tx_mut().clone(),
-        )
-    }
-
-    /// Writes the split evm env and tx env back into a [`EthCheatCtx`] context.
-    pub fn apply_evm_and_tx(ecx: &mut impl EthCheatCtx, evm_env: EvmEnv, tx_env: TxEnv) {
-        *ecx.block_mut() = evm_env.block_env;
-        *ecx.cfg_mut() = evm_env.cfg_env;
-        *ecx.tx_mut() = tx_env;
-    }
 }
 
 /// Extension of [`Block`] with mutable setters, allowing EVM-agnostic mutation of block fields.

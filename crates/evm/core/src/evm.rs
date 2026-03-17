@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    Env, EthCheatCtx, InspectorExt,
+    EthCheatCtx, InspectorExt,
     backend::{DatabaseExt, FoundryJournalExt, JournaledState},
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
@@ -315,7 +315,8 @@ pub fn with_cloned_context<CTX: EthCheatCtx, R>(
         EVMError<DatabaseError>,
     >,
 ) -> Result<R, EVMError<DatabaseError>> {
-    let (evm_env, tx_env) = Env::clone_evm_and_tx(ecx);
+    let evm_env = ecx.evm_clone();
+    let tx_env = ecx.tx_clone();
 
     let journal = ecx.journal_mut();
     let (db, journal_inner) = journal.as_db_and_inner();
@@ -325,7 +326,8 @@ pub fn with_cloned_context<CTX: EthCheatCtx, R>(
 
     // Write back modified state. The db borrow was released when f returned.
     ecx.journal_mut().set_inner(sub_inner);
-    Env::apply_evm_and_tx(ecx, sub_evm_env, sub_tx);
+    ecx.set_evm(sub_evm_env);
+    ecx.set_tx(sub_tx);
 
     Ok(result)
 }

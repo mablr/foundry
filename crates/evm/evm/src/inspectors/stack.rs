@@ -15,7 +15,7 @@ use foundry_cheatcodes::{
 use foundry_common::compile::Analysis;
 use foundry_compilers::ProjectPathsConfig;
 use foundry_evm_core::{
-    Env, FoundryBlock, FoundryInspectorExt, FoundryTransaction, InspectorExt,
+    FoundryBlock, FoundryInspectorExt, FoundryTransaction, InspectorExt,
     backend::{DatabaseError, DatabaseExt, FoundryJournalExt, JournaledState},
     env::FoundryContextExt,
     evm::{NestedEvm, new_evm_with_inspector, with_cloned_context},
@@ -404,7 +404,8 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         fork_id: Option<U256>,
         transaction: B256,
     ) -> eyre::Result<()> {
-        let (evm_env, tx_env) = Env::clone_evm_and_tx(ecx);
+        let evm_env = ecx.evm_clone();
+        let tx_env = ecx.tx_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.journal_mut().as_db_and_inner();
         db.transact(fork_id, transaction, evm_env, tx_env, inner, &mut inspector)
@@ -416,7 +417,8 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         ecx: &mut CTX,
         tx: &TransactionRequest,
     ) -> eyre::Result<()> {
-        let (evm_env, tx_env) = Env::clone_evm_and_tx(ecx);
+        let evm_env = ecx.evm_clone();
+        let tx_env = ecx.tx_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.journal_mut().as_db_and_inner();
         db.transact_from_tx(tx, evm_env, tx_env, inner, &mut inspector)
@@ -739,7 +741,8 @@ impl InspectorStackRefMut<'_> {
         gas_limit: u64,
         value: U256,
     ) -> (InterpreterResult, Option<Address>) {
-        let (cached_evm_env, cached_tx_env) = Env::clone_evm_and_tx(ecx);
+        let cached_evm_env = ecx.evm_clone();
+        let cached_tx_env = ecx.tx_clone();
 
         ecx.block_mut().set_basefee(0);
 
@@ -763,7 +766,8 @@ impl InspectorStackRefMut<'_> {
         self.inner_context_data = Some(InnerContextData { original_origin: cached_tx_env.caller });
         self.in_inner_context = true;
 
-        let (evm_env, tx_env) = Env::clone_evm_and_tx(ecx);
+        let evm_env = ecx.evm_clone();
+        let tx_env = ecx.tx_clone();
 
         let res = self.with_inspector(|mut inspector| {
             let (res, nested_env) = {
@@ -801,7 +805,8 @@ impl InspectorStackRefMut<'_> {
             // but restoring the original tx and basefee (which we zeroed for the nested call).
             let mut restored_evm_env = nested_env;
             restored_evm_env.block_env.basefee = cached_evm_env.block_env.basefee;
-            Env::apply_evm_and_tx(ecx, restored_evm_env, cached_tx_env);
+            ecx.set_evm(restored_evm_env);
+            ecx.set_tx(cached_tx_env);
 
             res
         });

@@ -36,7 +36,7 @@ use foundry_common::{
     mapping_slots::{MappingSlots, step as mapping_step},
 };
 use foundry_evm_core::{
-    Breakpoints, Env, EthCheatCtx, EvmEnv, FoundryCfg, FoundryInspectorExt, FoundryTransaction,
+    Breakpoints, EthCheatCtx, EvmEnv, FoundryCfg, FoundryInspectorExt, FoundryTransaction,
     abi::Vm::stopExpectSafeMemoryCall,
     backend::{DatabaseError, DatabaseExt, FoundryJournalExt, RevertDiagnostic},
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME},
@@ -209,7 +209,8 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
         fork_id: Option<U256>,
         transaction: B256,
     ) -> eyre::Result<()> {
-        let (evm_env, tx_env) = Env::clone_evm_and_tx(ecx);
+        let evm_env = ecx.evm_clone();
+        let tx_env = ecx.tx_clone();
         let (db, inner) = ecx.journal_mut().as_db_and_inner();
         db.transact(fork_id, transaction, evm_env, tx_env, inner, cheats)
     }
@@ -220,7 +221,8 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
         ecx: &mut CTX,
         tx: &TransactionRequest,
     ) -> eyre::Result<()> {
-        let (evm_env, tx_env) = Env::clone_evm_and_tx(ecx);
+        let evm_env = ecx.evm_clone();
+        let tx_env = ecx.tx_clone();
         let (db, inner) = ecx.journal_mut().as_db_and_inner();
         db.transact_from_tx(tx, evm_env, tx_env, inner, cheats)
     }

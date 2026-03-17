@@ -24,7 +24,7 @@ use foundry_common::{
 };
 use foundry_compilers::artifacts::EvmVersion;
 use foundry_evm_core::{
-    Env, FoundryBlock, FoundryTransaction,
+    FoundryBlock, FoundryTransaction,
     backend::{DatabaseExt, FoundryJournalExt, RevertStateSnapshotAction},
     constants::{CALLER, CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS, TEST_CONTRACT_ADDRESS},
     env::FoundryContextExt,
@@ -1190,7 +1190,8 @@ impl Cheatcode for executeTransactionCall {
         let tx_env = <TxEnv as FromRecoveredTx<FoundryTxEnvelope>>::from_recovered_tx(&tx, sender);
 
         // Save current env for restoration after execution.
-        let (cached_evm_env, cached_tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+        let cached_evm_env = ccx.ecx.evm_clone();
+        let cached_tx_env = ccx.ecx.tx_clone();
 
         // Override env for isolated execution.
         ccx.ecx.block_mut().set_basefee(0);
@@ -1206,7 +1207,8 @@ impl Cheatcode for executeTransactionCall {
             Some(revm::primitives::eip3860::MAX_INITCODE_SIZE);
 
         // Snapshot the modified env for EVM construction.
-        let (modified_evm_env, modified_tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+        let modified_evm_env = ccx.ecx.evm_clone();
+        let modified_tx_env = ccx.ecx.tx_clone();
 
         // Mark as inner context so isolation mode doesn't trigger a nested transact_inner
         // when the inner EVM executes calls at depth == 1.
@@ -1259,7 +1261,8 @@ impl Cheatcode for executeTransactionCall {
         nested_evm_env.cfg_env.disable_nonce_check = cached_evm_env.cfg_env.disable_nonce_check;
         nested_evm_env.cfg_env.limit_contract_initcode_size =
             cached_evm_env.cfg_env.limit_contract_initcode_size;
-        Env::apply_evm_and_tx(ccx.ecx, nested_evm_env, cached_tx_env);
+        ccx.ecx.set_evm(nested_evm_env);
+        ccx.ecx.set_tx(cached_tx_env);
 
         // Reset inner context flag.
         executor.set_in_inner_context(false, None);
@@ -1416,7 +1419,8 @@ fn inner_revert_to_state<CTX: EthCheatCtx>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     snapshot_id: U256,
 ) -> Result {
-    let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+    let mut evm_env = ccx.ecx.evm_clone();
+    let mut tx_env = ccx.ecx.tx_clone();
     let (db, inner) = ccx.ecx.journal_mut().as_db_and_inner();
     if let Some(restored) = db.revert_state(
         snapshot_id,
@@ -1426,7 +1430,8 @@ fn inner_revert_to_state<CTX: EthCheatCtx>(
         RevertStateSnapshotAction::RevertKeep,
     ) {
         *inner = restored;
-        Env::apply_evm_and_tx(ccx.ecx, evm_env, tx_env);
+        ccx.ecx.set_evm(evm_env);
+        ccx.ecx.set_tx(tx_env);
         Ok(true.abi_encode())
     } else {
         Ok(false.abi_encode())
@@ -1437,7 +1442,8 @@ fn inner_revert_to_state_and_delete<CTX: EthCheatCtx>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     snapshot_id: U256,
 ) -> Result {
-    let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+    let mut evm_env = ccx.ecx.evm_clone();
+    let mut tx_env = ccx.ecx.tx_clone();
     let (db, inner) = ccx.ecx.journal_mut().as_db_and_inner();
     if let Some(restored) = db.revert_state(
         snapshot_id,
@@ -1447,7 +1453,8 @@ fn inner_revert_to_state_and_delete<CTX: EthCheatCtx>(
         RevertStateSnapshotAction::RevertRemove,
     ) {
         *inner = restored;
-        Env::apply_evm_and_tx(ccx.ecx, evm_env, tx_env);
+        ccx.ecx.set_evm(evm_env);
+        ccx.ecx.set_tx(tx_env);
         Ok(true.abi_encode())
     } else {
         Ok(false.abi_encode())
