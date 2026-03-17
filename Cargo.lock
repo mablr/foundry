@@ -4643,6 +4643,7 @@ dependencies = [
  "foundry-common-fmt",
  "foundry-compilers",
  "foundry-config",
+ "foundry-primitives",
  "itertools 0.14.0",
  "jiff",
  "num-format",
