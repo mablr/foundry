@@ -160,8 +160,8 @@ where
 }
 
 /// Used for broadcasting transactions
-/// A transaction can either be a [`TransactionRequest`] waiting to be signed
-/// or a [`TxEnvelope`], already signed
+/// A transaction can either be a `TransactionRequest` waiting to be signed
+/// or a `TxEnvelope`, already signed
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TransactionMaybeSigned<N: Network> {
