@@ -238,7 +238,7 @@ pub struct BundledState {
     pub script_config: ScriptConfig,
     pub script_wallets: Wallets<Ethereum>,
     pub build_data: LinkedBuildData,
-    pub sequence: ScriptSequenceKind,
+    pub sequence: ScriptSequenceKind<Ethereum>,
 }
 
 impl BundledState {
@@ -276,7 +276,7 @@ impl BundledState {
     }
 
     /// Broadcasts transactions from all sequences.
-    pub async fn broadcast(mut self) -> Result<BroadcastedState> {
+    pub async fn broadcast(mut self) -> Result<BroadcastedState<Ethereum>> {
         let required_addresses = self
             .sequence
             .sequences()
