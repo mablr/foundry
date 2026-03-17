@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    Env, FoundryContextExt, InspectorExt,
+    Env, EthCheatCtx, InspectorExt,
     backend::{DatabaseExt, FoundryJournalExt, JournaledState},
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
@@ -303,7 +303,7 @@ pub type EthNestedEvmClosure<'a> = &'a mut dyn FnMut(
 /// and cloned journal inner to the callback. The callback builds whatever EVM it
 /// needs, runs its operations, and returns `(result, modified_env, modified_journal)`.
 /// Modified state is written back after the callback returns.
-pub fn with_cloned_context<CTX: FoundryContextExt, R>(
+pub fn with_cloned_context<CTX: EthCheatCtx, R>(
     ecx: &mut CTX,
     f: impl FnOnce(
         &mut dyn DatabaseExt,
@@ -311,10 +311,7 @@ pub fn with_cloned_context<CTX: FoundryContextExt, R>(
         TxEnv,
         JournaledState,
     ) -> Result<(R, EvmEnv, TxEnv, JournaledState), EVMError<DatabaseError>>,
-) -> Result<R, EVMError<DatabaseError>>
-where
-    CTX::Journal: FoundryJournalExt,
-{
+) -> Result<R, EVMError<DatabaseError>> {
     let (evm_env, tx_env) = Env::clone_evm_and_tx(ecx);
 
     let journal = ecx.journal_mut();

@@ -31,19 +31,19 @@ impl Env {
         Self::from(cfg, block, tx)
     }
 
-    /// Clones the evm env and tx env separately from a [`FoundryContextExt`] context.
-    pub fn clone_evm_and_tx(ecx: &mut impl FoundryContextExt) -> (EvmEnv, TxEnv) {
+    /// Clones the evm env and tx env separately from a [`EthCheatCtx`] context.
+    pub fn clone_evm_and_tx(ecx: &mut impl EthCheatCtx) -> (EvmEnv, TxEnv) {
         (
-            EvmEnv { cfg_env: ecx.eth_cfg_mut().clone(), block_env: ecx.eth_block_mut().clone() },
-            ecx.eth_tx_mut().clone(),
+            EvmEnv { cfg_env: ecx.cfg_mut().clone(), block_env: ecx.block_mut().clone() },
+            ecx.tx_mut().clone(),
         )
     }
 
-    /// Writes the split evm env and tx env back into a [`FoundryContextExt`] context.
-    pub fn apply_evm_and_tx(ecx: &mut impl FoundryContextExt, evm_env: EvmEnv, tx_env: TxEnv) {
-        *ecx.eth_block_mut() = evm_env.block_env;
-        *ecx.eth_cfg_mut() = evm_env.cfg_env;
-        *ecx.eth_tx_mut() = tx_env;
+    /// Writes the split evm env and tx env back into a [`EthCheatCtx`] context.
+    pub fn apply_evm_and_tx(ecx: &mut impl EthCheatCtx, evm_env: EvmEnv, tx_env: TxEnv) {
+        *ecx.block_mut() = evm_env.block_env;
+        *ecx.cfg_mut() = evm_env.cfg_env;
+        *ecx.tx_mut() = tx_env;
     }
 }
 
@@ -282,12 +282,6 @@ impl<S: Into<SpecId> + Clone + Debug> FoundryCfg for CfgEnv<S> {
 pub trait FoundryContextExt:
     ContextTr<Block: FoundryBlock + Clone, Tx: FoundryTransaction + Clone, Cfg: FoundryCfg + Clone>
 {
-    // TODO: to be removed
-    fn eth_block_mut(&mut self) -> &mut BlockEnv;
-    // TODO: to be removed
-    fn eth_tx_mut(&mut self) -> &mut TxEnv;
-    // TODO: to be removed
-    fn eth_cfg_mut(&mut self) -> &mut CfgEnv;
     /// Mutable reference to the block environment.
     fn block_mut(&mut self) -> &mut Self::Block;
     /// Mutable reference to the transaction environment.
@@ -311,17 +305,6 @@ pub trait FoundryContextExt:
 impl<DB: Database, J: JournalTr<Database = DB>, C> FoundryContextExt
     for Context<BlockEnv, TxEnv, CfgEnv, DB, J, C>
 {
-    fn eth_block_mut(&mut self) -> &mut BlockEnv {
-        &mut self.block
-    }
-
-    fn eth_tx_mut(&mut self) -> &mut TxEnv {
-        &mut self.tx
-    }
-
-    fn eth_cfg_mut(&mut self) -> &mut CfgEnv {
-        &mut self.cfg
-    }
     fn block_mut(&mut self) -> &mut Self::Block {
         &mut self.block
     }

@@ -730,7 +730,7 @@ impl InspectorStackRefMut<'_> {
         outcome.clone()
     }
 
-    fn transact_inner<CTX: FoundryContextExt>(
+    fn transact_inner<CTX: EthCheatCtx>(
         &mut self,
         ecx: &mut CTX,
         kind: TxKind,
@@ -738,10 +738,7 @@ impl InspectorStackRefMut<'_> {
         input: Bytes,
         gas_limit: u64,
         value: U256,
-    ) -> (InterpreterResult, Option<Address>)
-    where
-        CTX::Journal: FoundryJournalExt,
-    {
+    ) -> (InterpreterResult, Option<Address>) {
         let (cached_evm_env, cached_tx_env) = Env::clone_evm_and_tx(ecx);
 
         ecx.block_mut().set_basefee(0);
