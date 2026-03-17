@@ -55,8 +55,8 @@ fn default_vec_of_strings() -> Option<Vec<String>> {
     Some(vec![])
 }
 
-impl TransactionWithMetadata {
-    pub fn from_tx_request(transaction: TransactionMaybeSigned<Ethereum>) -> Self {
+impl<N: Network> TransactionWithMetadata<N> {
+    pub fn from_tx_request(transaction: TransactionMaybeSigned<N>) -> Self {
         Self {
             transaction,
             hash: Default::default(),
@@ -71,11 +71,11 @@ impl TransactionWithMetadata {
         }
     }
 
-    pub fn tx(&self) -> &TransactionMaybeSigned<Ethereum> {
+    pub fn tx(&self) -> &TransactionMaybeSigned<N> {
         &self.transaction
     }
 
-    pub fn tx_mut(&mut self) -> &mut TransactionMaybeSigned<Ethereum> {
+    pub fn tx_mut(&mut self) -> &mut TransactionMaybeSigned<N> {
         &mut self.transaction
     }
 

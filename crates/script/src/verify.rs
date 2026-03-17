@@ -3,7 +3,7 @@ use crate::{
     build::LinkedBuildData,
     sequence::{ScriptSequenceKind, get_commit_hash},
 };
-use alloy_network::ReceiptResponse;
+use alloy_network::{Ethereum, ReceiptResponse};
 use alloy_primitives::{Address, hex};
 use eyre::{Result, eyre};
 use forge_script_sequence::{AdditionalContract, ScriptSequence};
@@ -180,7 +180,7 @@ impl VerifyBundle {
 /// Given the broadcast log, it matches transactions with receipts, and tries to verify any
 /// created contract on etherscan.
 async fn verify_contracts(
-    sequence: &mut ScriptSequence,
+    sequence: &mut ScriptSequence<Ethereum>,
     config: &Config,
     mut verify: VerifyBundle,
 ) -> Result<()> {
@@ -267,7 +267,7 @@ async fn verify_contracts(
 }
 
 fn check_unverified(
-    sequence: &ScriptSequence,
+    sequence: &ScriptSequence<Ethereum>,
     unverifiable_contracts: Vec<Address>,
     verify: VerifyBundle,
 ) {

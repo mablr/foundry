@@ -32,7 +32,11 @@ pub struct SequenceProgressState {
 }
 
 impl SequenceProgressState {
-    pub fn new(sequence_idx: usize, sequence: &ScriptSequence, multi: MultiProgress) -> Self {
+    pub fn new(
+        sequence_idx: usize,
+        sequence: &ScriptSequence<Ethereum>,
+        multi: MultiProgress,
+    ) -> Self {
         let mut state = if shell::is_quiet() || shell::is_json() {
             let top_spinner = ProgressBar::hidden();
             let txs = ProgressBar::hidden();
@@ -143,7 +147,11 @@ pub struct SequenceProgress {
 }
 
 impl SequenceProgress {
-    pub fn new(sequence_idx: usize, sequence: &ScriptSequence, multi: MultiProgress) -> Self {
+    pub fn new(
+        sequence_idx: usize,
+        sequence: &ScriptSequence<Ethereum>,
+        multi: MultiProgress,
+    ) -> Self {
         Self {
             inner: Arc::new(RwLock::new(SequenceProgressState::new(sequence_idx, sequence, multi))),
         }
@@ -163,7 +171,7 @@ impl ScriptProgress {
     pub fn get_sequence_progress(
         &self,
         sequence_idx: usize,
-        sequence: &ScriptSequence,
+        sequence: &ScriptSequence<Ethereum>,
     ) -> SequenceProgress {
         if let Some(progress) = self.state.read().get(&sequence_idx) {
             return progress.clone();
@@ -186,7 +194,7 @@ impl ScriptProgress {
     pub async fn wait_for_pending(
         &self,
         sequence_idx: usize,
-        deployment_sequence: &mut ScriptSequence,
+        deployment_sequence: &mut ScriptSequence<Ethereum>,
         provider: &RootProvider<Ethereum>,
         timeout: u64,
     ) -> Result<()> {
