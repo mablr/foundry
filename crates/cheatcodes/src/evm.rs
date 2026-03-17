@@ -24,7 +24,7 @@ use foundry_common::{
 };
 use foundry_compilers::artifacts::EvmVersion;
 use foundry_evm_core::{
-    Env, FoundryBlock, FoundryCfg, FoundryTransaction,
+    Env, FoundryBlock, FoundryTransaction,
     backend::{DatabaseExt, FoundryJournalExt, RevertStateSnapshotAction},
     constants::{CALLER, CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS, TEST_CONTRACT_ADDRESS},
     env::FoundryContextExt,
@@ -496,10 +496,10 @@ impl Cheatcode for getChainIdCall {
 }
 
 impl Cheatcode for chainIdCall {
-    fn apply_stateful<CTX: FoundryContextExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { newChainId } = self;
         ensure!(*newChainId <= U256::from(u64::MAX), "chain ID must be less than 2^64");
-        ccx.ecx.cfg_mut().set_chain_id(newChainId.to());
+        ccx.ecx.cfg_mut().chain_id = newChainId.to();
         Ok(Default::default())
     }
 }
@@ -1199,12 +1199,11 @@ impl Cheatcode for executeTransactionCall {
         ccx.ecx.tx_mut().set_gas_priority_fee(None);
 
         // Enable nonce checks for realistic simulation.
-        ccx.ecx.cfg_mut().set_disable_nonce_check(false);
+        ccx.ecx.cfg_mut().disable_nonce_check = false;
 
         // EIP-3860: enforce initcode size limit.
-        ccx.ecx
-            .cfg_mut()
-            .set_limit_contract_initcode_size(Some(revm::primitives::eip3860::MAX_INITCODE_SIZE));
+        ccx.ecx.cfg_mut().limit_contract_initcode_size =
+            Some(revm::primitives::eip3860::MAX_INITCODE_SIZE);
 
         // Snapshot the modified env for EVM construction.
         let (modified_evm_env, modified_tx_env) = Env::clone_evm_and_tx(ccx.ecx);
