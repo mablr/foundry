@@ -1,6 +1,6 @@
 use alloy_chains::{Chain, NamedChain};
-use alloy_network::{Ethereum, Network, ReceiptResponse};
-use alloy_primitives::{TxHash, U256, utils::format_units};
+use alloy_network::{Network, ReceiptResponse};
+use alloy_primitives::{Address, TxHash, U256, utils::format_units};
 use alloy_provider::{
     PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider, WatchTxError,
 };
@@ -9,6 +9,18 @@ use eyre::{Result, eyre};
 use forge_script_sequence::ScriptSequence;
 use foundry_common::{retry, retry::RetryError, shell};
 use std::time::Duration;
+
+/// Helper trait providing `contract_address` setter for generic `ReceiptResponse`
+pub trait FoundryReceiptResponse {
+    /// Sets address of the created contract, or `None` if the transaction was not a deployment.
+    fn set_contract_address(&mut self, contract_address: Address);
+}
+
+impl FoundryReceiptResponse for TransactionReceipt {
+    fn set_contract_address(&mut self, contract_address: Address) {
+        self.contract_address = Some(contract_address);
+    }
+}
 
 /// Marker error type for pending receipts
 #[derive(Debug, thiserror::Error)]
@@ -89,10 +101,10 @@ pub async fn check_tx_status<N: Network>(
 }
 
 /// Prints parts of the receipt to stdout
-pub fn format_receipt(
+pub fn format_receipt<N: Network>(
     chain: Chain,
-    receipt: &TransactionReceipt,
-    sequence: Option<&ScriptSequence<Ethereum>>,
+    receipt: &N::ReceiptResponse,
+    sequence: Option<&ScriptSequence<N>>,
 ) -> String {
     let gas_used = receipt.gas_used();
     let gas_price = receipt.effective_gas_price();
@@ -182,6 +194,7 @@ pub fn format_receipt(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy_network::Ethereum;
     use alloy_primitives::B256;
     use std::collections::VecDeque;
 
@@ -232,7 +245,7 @@ mod tests {
     #[test]
     fn format_receipt_without_sequence_omits_metadata() {
         let hash = B256::repeat_byte(0x42);
-        let out = format_receipt(Chain::mainnet(), &mock_receipt(hash, true), None);
+        let out = format_receipt::<Ethereum>(Chain::mainnet(), &mock_receipt(hash, true), None);
 
         assert!(!out.contains("Contract:"));
         assert!(!out.contains("Function:"));

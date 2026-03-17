@@ -622,6 +622,20 @@ impl<DB: Db + ?Sized, V: TransactionValidator> TransactionExecutor<'_, DB, V> {
     }
 }
 
+pub struct AnvilBlockExecutorFactory;
+
+impl AnvilBlockExecutorFactory {
+    pub fn create_executor<DB>(
+        evm: EitherEvm<DB, AnvilInspector, PrecompilesMap>,
+        ctx: AnvilExecutionCtx,
+    ) -> AnvilBlockExecutor<EitherEvm<DB, AnvilInspector, PrecompilesMap>>
+    where
+        DB: StateDB,
+    {
+        AnvilBlockExecutor::new(evm, ctx)
+    }
+}
+
 /// Represents the result of a single transaction execution attempt
 pub enum TransactionExecutionOutcome<T = FoundryTxEnvelope> {
     /// Transaction successfully executed

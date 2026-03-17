@@ -286,7 +286,7 @@ pub trait EthCheatCtx:
         Block = BlockEnv,
         Tx = TxEnv,
         Cfg = CfgEnv,
-        Journal: FoundryJournalExt,
+        Journal: FoundryJournalExt<Self>,
         Db: DatabaseExt,
     >
 {
@@ -296,7 +296,7 @@ impl<CTX> EthCheatCtx for CTX where
             Block = BlockEnv,
             Tx = TxEnv,
             Cfg = CfgEnv,
-            Journal: FoundryJournalExt,
+            Journal: FoundryJournalExt<Self>,
             Db: DatabaseExt,
         >
 {

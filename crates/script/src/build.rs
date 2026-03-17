@@ -333,7 +333,11 @@ impl CompiledState {
         })
     }
 
-    fn try_load_sequence(&self, chain: Option<u64>, dry_run: bool) -> Result<ScriptSequenceKind> {
+    fn try_load_sequence(
+        &self,
+        chain: Option<u64>,
+        dry_run: bool,
+    ) -> Result<ScriptSequenceKind<Ethereum>> {
         if let Some(chain) = chain {
             let sequence = ScriptSequence::load(
                 &self.script_config.config,
