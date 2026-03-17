@@ -4,7 +4,7 @@ pub use alloy_evm::EvmEnv;
 use alloy_primitives::{Address, B256, Bytes, U256};
 use revm::{
     Context, Database,
-    context::{Block, BlockEnv, Cfg, CfgEnv, JournalTr, Transaction, TxEnv},
+    context::{Block, BlockEnv, CfgEnv, JournalTr, Transaction, TxEnv},
     context_interface::{ContextTr, transaction::AccessList},
     primitives::{TxKind, hardfork::SpecId},
 };
@@ -213,66 +213,13 @@ impl FoundryTransaction for TxEnv {
     }
 }
 
-/// Extension of [`Cfg`] with mutable setters, allowing EVM-agnostic mutation of EVM configuration
-/// fields.
-pub trait FoundryCfg: Cfg<Spec: Debug> {
-    /// Sets the EVM spec (hardfork).
-    fn set_spec(&mut self, spec: Self::Spec);
-
-    /// Sets the chain ID.
-    fn set_chain_id(&mut self, chain_id: u64);
-
-    /// Sets the contract code size limit.
-    fn set_limit_contract_code_size(&mut self, limit: Option<usize>);
-
-    /// Sets the contract initcode size limit.
-    fn set_limit_contract_initcode_size(&mut self, limit: Option<usize>);
-
-    /// Sets whether nonce checks are disabled.
-    fn set_disable_nonce_check(&mut self, disabled: bool);
-
-    /// Sets the max blobs per transaction.
-    fn set_max_blobs_per_tx(&mut self, max: Option<u64>);
-
-    /// Sets the blob base fee update fraction.
-    fn set_blob_base_fee_update_fraction(&mut self, fraction: Option<u64>);
-
-    /// Sets the transaction gas limit cap.
-    fn set_tx_gas_limit_cap(&mut self, cap: Option<u64>);
+/// Marker trait for Foundry's [`CfgEnv`] type, abstracting `Spec` type.
+pub trait FoundryCfg: Clone + Debug {
+    type Spec: Into<SpecId> + Clone + Debug;
 }
 
-impl<S: Into<SpecId> + Clone + Debug> FoundryCfg for CfgEnv<S> {
-    fn set_spec(&mut self, spec: S) {
-        self.spec = spec;
-    }
-
-    fn set_chain_id(&mut self, chain_id: u64) {
-        self.chain_id = chain_id;
-    }
-
-    fn set_limit_contract_code_size(&mut self, limit: Option<usize>) {
-        self.limit_contract_code_size = limit;
-    }
-
-    fn set_limit_contract_initcode_size(&mut self, limit: Option<usize>) {
-        self.limit_contract_initcode_size = limit;
-    }
-
-    fn set_disable_nonce_check(&mut self, disabled: bool) {
-        self.disable_nonce_check = disabled;
-    }
-
-    fn set_max_blobs_per_tx(&mut self, max: Option<u64>) {
-        self.max_blobs_per_tx = max;
-    }
-
-    fn set_blob_base_fee_update_fraction(&mut self, fraction: Option<u64>) {
-        self.blob_base_fee_update_fraction = fraction;
-    }
-
-    fn set_tx_gas_limit_cap(&mut self, cap: Option<u64>) {
-        self.tx_gas_limit_cap = cap;
-    }
+impl<SPEC: Into<SpecId> + Clone + Debug> FoundryCfg for CfgEnv<SPEC> {
+    type Spec = SPEC;
 }
 
 /// Extension trait providing mutable field access to block, tx, and cfg environments.
@@ -280,7 +227,7 @@ impl<S: Into<SpecId> + Clone + Debug> FoundryCfg for CfgEnv<S> {
 /// [`ContextTr`] only exposes immutable references for block, tx, and cfg.
 /// Cheatcodes like `vm.warp()`, `vm.roll()`, `vm.chainId()` need to mutate these fields.
 pub trait FoundryContextExt:
-    ContextTr<Block: FoundryBlock + Clone, Tx: FoundryTransaction + Clone, Cfg: FoundryCfg + Clone>
+    ContextTr<Block: FoundryBlock + Clone, Tx: FoundryTransaction + Clone, Cfg: FoundryCfg>
 {
     /// Mutable reference to the block environment.
     fn block_mut(&mut self) -> &mut Self::Block;
