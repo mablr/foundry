@@ -1,3 +1,4 @@
+use alloy_network::Ethereum;
 use eyre::{ContextCompat, Result, WrapErr};
 use forge_script_sequence::{
     DRY_RUN_DIR, ScriptSequence, SensitiveScriptSequence, now, sig_to_file_name,
@@ -11,7 +12,7 @@ use std::path::PathBuf;
 /// Holds the sequences of multiple chain deployments.
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct MultiChainSequence {
-    pub deployments: Vec<ScriptSequence>,
+    pub deployments: Vec<ScriptSequence<Ethereum>>,
     #[serde(skip)]
     pub path: PathBuf,
     #[serde(skip)]
@@ -35,7 +36,7 @@ impl SensitiveMultiChainSequence {
 
 impl MultiChainSequence {
     pub fn new(
-        deployments: Vec<ScriptSequence>,
+        deployments: Vec<ScriptSequence<Ethereum>>,
         sig: &str,
         target: &ArtifactId,
         config: &Config,

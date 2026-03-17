@@ -1,4 +1,5 @@
 use crate::multi_sequence::MultiChainSequence;
+use alloy_network::Ethereum;
 use eyre::Result;
 use forge_script_sequence::{ScriptSequence, TransactionWithMetadata};
 use foundry_cli::utils::Git;
@@ -46,7 +47,7 @@ pub fn get_commit_hash(root: &Path) -> Option<String> {
 }
 
 pub enum ScriptSequenceKind {
-    Single(ScriptSequence),
+    Single(ScriptSequence<Ethereum>),
     Multi(MultiChainSequence),
 }
 
@@ -58,14 +59,14 @@ impl ScriptSequenceKind {
         }
     }
 
-    pub fn sequences(&self) -> &[ScriptSequence] {
+    pub fn sequences(&self) -> &[ScriptSequence<Ethereum>] {
         match self {
             Self::Single(sequence) => std::slice::from_ref(sequence),
             Self::Multi(sequence) => &sequence.deployments,
         }
     }
 
-    pub fn sequences_mut(&mut self) -> &mut [ScriptSequence] {
+    pub fn sequences_mut(&mut self) -> &mut [ScriptSequence<Ethereum>] {
         match self {
             Self::Single(sequence) => std::slice::from_mut(sequence),
             Self::Multi(sequence) => &mut sequence.deployments,
@@ -80,8 +81,13 @@ impl ScriptSequenceKind {
     ) -> Result<()> {
         match self {
             Self::Single(sequence) => {
-                sequence.paths =
-                    Some(ScriptSequence::get_paths(config, sig, target, sequence.chain, false)?);
+                sequence.paths = Some(ScriptSequence::<Ethereum>::get_paths(
+                    config,
+                    sig,
+                    target,
+                    sequence.chain,
+                    false,
+                )?);
             }
             Self::Multi(sequence) => {
                 (sequence.path, sequence.sensitive_path) =

@@ -1,5 +1,5 @@
 use alloy_chains::{Chain, NamedChain};
-use alloy_network::{Network, ReceiptResponse};
+use alloy_network::{Ethereum, Network, ReceiptResponse};
 use alloy_primitives::{TxHash, U256, utils::format_units};
 use alloy_provider::{
     PendingTransactionBuilder, PendingTransactionError, Provider, RootProvider, WatchTxError,
@@ -92,7 +92,7 @@ pub async fn check_tx_status<N: Network>(
 pub fn format_receipt(
     chain: Chain,
     receipt: &TransactionReceipt,
-    sequence: Option<&ScriptSequence>,
+    sequence: Option<&ScriptSequence<Ethereum>>,
 ) -> String {
     let gas_used = receipt.gas_used();
     let gas_price = receipt.effective_gas_price();
@@ -198,7 +198,11 @@ mod tests {
         .unwrap()
     }
 
-    fn mock_sequence(tx_hash: B256, contract: Option<&str>, func: Option<&str>) -> ScriptSequence {
+    fn mock_sequence(
+        tx_hash: B256,
+        contract: Option<&str>,
+        func: Option<&str>,
+    ) -> ScriptSequence<Ethereum> {
         let tx = serde_json::from_value(serde_json::json!({
             "hash": tx_hash, "transactionType": "CALL",
             "contractName": contract, "contractAddress": null, "function": func,

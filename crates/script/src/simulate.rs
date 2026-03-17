@@ -255,7 +255,7 @@ pub struct FilledTransactionsState {
     pub script_wallets: Wallets<Ethereum>,
     pub build_data: LinkedBuildData,
     pub execution_artifacts: ExecutionArtifacts,
-    pub transactions: VecDeque<TransactionWithMetadata>,
+    pub transactions: VecDeque<TransactionWithMetadata<Ethereum>>,
 }
 
 impl FilledTransactionsState {
@@ -424,14 +424,14 @@ impl FilledTransactionsState {
         &self,
         multi: bool,
         chain: u64,
-        transactions: VecDeque<TransactionWithMetadata>,
-    ) -> Result<ScriptSequence> {
+        transactions: VecDeque<TransactionWithMetadata<Ethereum>>,
+    ) -> Result<ScriptSequence<Ethereum>> {
         // Paths are set to None for multi-chain sequences parts, because they don't need to be
         // saved to a separate file.
         let paths = if multi {
             None
         } else {
-            Some(ScriptSequence::get_paths(
+            Some(ScriptSequence::<Ethereum>::get_paths(
                 &self.script_config.config,
                 &self.args.sig,
                 &self.build_data.build_data.target,
