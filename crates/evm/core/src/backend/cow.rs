@@ -2,7 +2,7 @@
 
 use super::BackendError;
 use crate::{
-    Env, InspectorExt,
+    InspectorExt,
     backend::{
         Backend, DatabaseExt, JournaledState, LocalForkId, RevertStateSnapshotAction,
         diagnostic::RevertDiagnostic,
@@ -66,23 +66,21 @@ impl<'a> CowBackend<'a> {
     #[instrument(name = "inspect", level = "debug", skip_all)]
     pub fn inspect<I: InspectorExt>(
         &mut self,
-        env: &mut Env,
+        evm_env: &mut EvmEnv,
+        tx_env: &mut TxEnv,
         inspector: I,
     ) -> eyre::Result<ResultAndState> {
         // this is a new call to inspect with a new env, so even if we've cloned the backend
         // already, we reset the initialized state
-        self.pending_init = Some((env.evm_env.cfg_env.spec, env.tx.caller, env.tx.kind));
+        self.pending_init = Some((evm_env.cfg_env.spec, tx_env.caller, tx_env.kind));
 
-        let mut evm = crate::evm::new_evm_with_inspector(
-            self,
-            env.evm_env.clone(),
-            env.tx.clone(),
-            inspector,
-        );
+        let mut evm =
+            crate::evm::new_evm_with_inspector(self, evm_env.clone(), tx_env.clone(), inspector);
 
-        let res = evm.transact(env.tx.clone()).wrap_err("EVM error")?;
+        let res = evm.transact(tx_env.clone()).wrap_err("EVM error")?;
 
-        *env = Env::from(evm.cfg.clone(), evm.block.clone(), evm.tx.clone());
+        *evm_env = EvmEnv::new(evm.cfg.clone(), evm.block.clone());
+        *tx_env = evm.tx.clone();
 
         Ok(res)
     }

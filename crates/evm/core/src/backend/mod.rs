@@ -806,20 +806,22 @@ impl Backend {
     #[instrument(name = "inspect", level = "debug", skip_all)]
     pub fn inspect<I: InspectorExt>(
         &mut self,
-        env: &mut Env,
+        evm_env: &mut EvmEnv,
+        tx_env: &mut TxEnv,
         inspector: I,
     ) -> eyre::Result<ResultAndState> {
-        self.initialize(env.evm_env.cfg_env.spec, env.tx.caller, env.tx.kind);
+        self.initialize(evm_env.cfg_env.spec, tx_env.caller, tx_env.kind);
         let mut evm = crate::evm::new_evm_with_inspector(
             self,
-            env.evm_env.to_owned(),
-            env.tx.to_owned(),
+            evm_env.to_owned(),
+            tx_env.to_owned(),
             inspector,
         );
 
-        let res = evm.transact(env.tx.clone()).wrap_err("EVM error")?;
+        let res = evm.transact(tx_env.clone()).wrap_err("EVM error")?;
 
-        *env = Env::from(evm.cfg.clone(), evm.block.clone(), evm.tx.clone());
+        *evm_env = EvmEnv::new(evm.cfg.clone(), evm.block.clone());
+        *tx_env = evm.tx.clone();
 
         Ok(res)
     }

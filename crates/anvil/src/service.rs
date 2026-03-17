@@ -11,7 +11,7 @@ use crate::{
     mem::{Backend, storage::MinedBlockOutcome},
 };
 use alloy_network::Network;
-use foundry_primitives::{FoundryNetwork, FoundryTxEnvelope};
+use foundry_primitives::FoundryNetwork;
 use futures::{FutureExt, Stream, StreamExt};
 use std::{
     collections::VecDeque,
@@ -27,13 +27,13 @@ use tokio::{task::JoinHandle, time::Interval};
 /// transactions for the next block, then those transactions are handed off to the backend to
 /// construct a new block, if all transactions were successfully included in a new block they get
 /// purged from the `Pool`.
-pub struct NodeService<N: Network, T = FoundryTxEnvelope> {
+pub struct NodeService<N: Network> {
     /// The pool that holds all transactions.
-    pool: Arc<Pool<T>>,
+    pool: Arc<Pool<N::TxEnvelope>>,
     /// Creates new blocks.
-    block_producer: BlockProducer<N, T>,
+    block_producer: BlockProducer<N>,
     /// The miner responsible to select transactions from the `pool`.
-    miner: Miner<T>,
+    miner: Miner<N::TxEnvelope>,
     /// Maintenance task for fee history related tasks.
     fee_history: FeeHistoryService,
     /// Tracks all active filters
@@ -102,17 +102,17 @@ impl Future for NodeService<FoundryNetwork> {
     }
 }
 
-type MiningResult<N, T> = (MinedBlockOutcome<T>, Arc<Backend<N>>);
+type MiningResult<N> = (MinedBlockOutcome<<N as Network>::TxEnvelope>, Arc<Backend<N>>);
 
 /// A type that exclusively mines one block at a time
 #[must_use = "streams do nothing unless polled"]
-struct BlockProducer<N: Network, T = FoundryTxEnvelope> {
+struct BlockProducer<N: Network> {
     /// Holds the backend if no block is being mined
     idle_backend: Option<Arc<Backend<N>>>,
     /// Single active future that mines a new block
-    block_mining: Option<JoinHandle<MiningResult<N, T>>>,
+    block_mining: Option<JoinHandle<MiningResult<N>>>,
     /// backlog of sets of transactions ready to be mined
-    queued: VecDeque<Vec<Arc<PoolTransaction<T>>>>,
+    queued: VecDeque<Vec<Arc<PoolTransaction<N::TxEnvelope>>>>,
 }
 
 impl BlockProducer<FoundryNetwork> {

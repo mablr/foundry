@@ -113,17 +113,17 @@ impl ExecutedTransaction {
 }
 
 /// Represents the outcome of mining a new block
-pub struct ExecutedTransactions<N: Network, T = FoundryTxEnvelope> {
+pub struct ExecutedTransactions<N: Network> {
     /// The block created after executing the `included` transactions
     pub block: TypedBlockInfo<N>,
     /// All transactions included in the block
-    pub included: Vec<Arc<PoolTransaction<T>>>,
+    pub included: Vec<Arc<PoolTransaction<N::TxEnvelope>>>,
     /// All transactions that were invalid at the point of their execution and were not included in
     /// the block
-    pub invalid: Vec<Arc<PoolTransaction<T>>>,
+    pub invalid: Vec<Arc<PoolTransaction<N::TxEnvelope>>>,
 }
 
-impl<N: Network, T> fmt::Debug for ExecutedTransactions<N, T> {
+impl<N: Network> fmt::Debug for ExecutedTransactions<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ExecutedTransactions")
             .field("included", &self.included.len())
