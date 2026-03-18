@@ -4854,7 +4854,6 @@ dependencies = [
  "alloy-dyn-abi",
  "alloy-evm",
  "alloy-json-abi",
- "alloy-network",
  "alloy-primitives",
  "alloy-rpc-types",
  "alloy-sol-types",

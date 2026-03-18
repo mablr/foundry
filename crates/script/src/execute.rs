@@ -32,6 +32,7 @@ use foundry_evm::{
         render_trace_arena,
     },
 };
+use foundry_wallets::wallet_browser::signer::BrowserSigner;
 use futures::future::join_all;
 use itertools::Itertools;
 use std::path::Path;
@@ -42,7 +43,8 @@ use yansi::Paint;
 pub struct LinkedState {
     pub args: ScriptArgs,
     pub script_config: ScriptConfig,
-    pub script_wallets: Wallets<Ethereum>,
+    pub script_wallets: Wallets,
+    pub browser_wallet: Option<BrowserSigner<Ethereum>>,
     pub build_data: LinkedBuildData,
 }
 
@@ -63,7 +65,7 @@ impl LinkedState {
     /// Given linked and compiled artifacts, prepares data we need for execution.
     /// This includes the function to call and the calldata to pass to it.
     pub async fn prepare_execution(self) -> Result<PreExecutionState> {
-        let Self { args, script_config, script_wallets, build_data } = self;
+        let Self { args, script_config, script_wallets, browser_wallet, build_data } = self;
 
         let target_contract = build_data.get_target_contract()?;
 
@@ -77,6 +79,7 @@ impl LinkedState {
             args,
             script_config,
             script_wallets,
+            browser_wallet,
             execution_data: ExecutionData {
                 func,
                 calldata,
@@ -93,7 +96,8 @@ impl LinkedState {
 pub struct PreExecutionState {
     pub args: ScriptArgs,
     pub script_config: ScriptConfig,
-    pub script_wallets: Wallets<Ethereum>,
+    pub script_wallets: Wallets,
+    pub browser_wallet: Option<BrowserSigner<Ethereum>>,
     pub build_data: LinkedBuildData,
     pub execution_data: ExecutionData,
 }
@@ -123,6 +127,7 @@ impl PreExecutionState {
                 args: self.args,
                 script_config: self.script_config,
                 script_wallets: self.script_wallets,
+                browser_wallet: self.browser_wallet,
                 build_data: self.build_data.build_data,
             };
 
@@ -133,6 +138,7 @@ impl PreExecutionState {
             args: self.args,
             script_config: self.script_config,
             script_wallets: self.script_wallets,
+            browser_wallet: self.browser_wallet,
             build_data: self.build_data,
             execution_data: self.execution_data,
             execution_result: result,
@@ -275,7 +281,8 @@ pub struct ExecutionArtifacts {
 pub struct ExecutedState {
     pub args: ScriptArgs,
     pub script_config: ScriptConfig,
-    pub script_wallets: Wallets<Ethereum>,
+    pub script_wallets: Wallets,
+    pub browser_wallet: Option<BrowserSigner<Ethereum>>,
     pub build_data: LinkedBuildData,
     pub execution_data: ExecutionData,
     pub execution_result: ScriptResult,
@@ -314,6 +321,7 @@ impl ExecutedState {
             args: self.args,
             script_config: self.script_config,
             script_wallets: self.script_wallets,
+            browser_wallet: self.browser_wallet,
             build_data: self.build_data,
             execution_data: self.execution_data,
             execution_result: self.execution_result,
