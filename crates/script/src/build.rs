@@ -256,7 +256,7 @@ impl CompiledState {
     }
 
     /// Tries loading the resumed state from the cache files, skipping simulation stage.
-    pub async fn resume(self) -> Result<BundledState> {
+    pub async fn resume(self) -> Result<BundledState<Ethereum>> {
         let chain = if self.args.multi {
             None
         } else {

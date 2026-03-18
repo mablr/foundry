@@ -264,7 +264,7 @@ impl FilledTransactionsState {
     /// chain deployment.
     ///
     /// Each transaction will be added with the correct transaction type and gas estimation.
-    pub async fn bundle(mut self) -> Result<BundledState> {
+    pub async fn bundle(mut self) -> Result<BundledState<Ethereum>> {
         let is_multi_deployment = self.execution_artifacts.rpc_data.total_rpcs.len() > 1;
 
         if is_multi_deployment && !self.build_data.libraries.is_empty() {
