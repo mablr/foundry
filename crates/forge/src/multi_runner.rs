@@ -295,7 +295,7 @@ pub struct TestRunnerConfig {
     pub evm_opts: EvmOpts,
     /// EVM environment.
     pub evm_env: EvmEnv,
-    /// EVM environment.
+    /// Transaction environment.
     pub tx_env: TxEnv,
     /// EVM version.
     pub spec_id: SpecId,
