@@ -11,20 +11,6 @@ use revm::{
 
 use crate::backend::{DatabaseExt, FoundryJournalExt};
 
-/// Helper container type for [`EvmEnv`] and [`TxEnv`].
-#[derive(Clone, Debug, Default)]
-pub struct Env {
-    pub evm_env: EvmEnv,
-    pub tx: TxEnv,
-}
-
-/// Helper container type for [`EvmEnv`] and [`TxEnv`].
-impl Env {
-    pub fn from(cfg: CfgEnv, block: BlockEnv, tx: TxEnv) -> Self {
-        Self { evm_env: EvmEnv { cfg_env: cfg, block_env: block }, tx }
-    }
-}
-
 /// Extension of [`Block`] with mutable setters, allowing EVM-agnostic mutation of block fields.
 pub trait FoundryBlock: Block {
     /// Sets the block number.

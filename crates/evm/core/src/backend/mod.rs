@@ -2118,9 +2118,9 @@ mod tests {
         evm_opts.fork_url = Some(endpoint.to_string());
         evm_opts.fork_block_number = Some(block_num);
 
-        let env = evm_opts.env().await.unwrap();
+        let (evm_env, _) = evm_opts.env().await.unwrap();
 
-        let fork = evm_opts.get_fork(&Config::default(), env.evm_env.clone()).unwrap();
+        let fork = evm_opts.get_fork(&Config::default(), evm_env.clone()).unwrap();
 
         let backend = Backend::spawn(Some(fork)).unwrap();
 
@@ -2136,7 +2136,7 @@ mod tests {
 
         let meta = BlockchainDbMeta {
             chain: None,
-            block_env: env.evm_env.block_env,
+            block_env: evm_env.block_env,
             hosts: Default::default(),
         };
 
