@@ -7,12 +7,9 @@ use crate::{
     eth::{
         backend::{
             cheats::{CheatEcrecover, CheatsManager},
-            db::{Db, MaybeFullDatabase, SerializableState, StateDb},
+            db::{AnvilCacheDB, Db, MaybeFullDatabase, SerializableState, StateDb},
             env::Env,
-            executor::{
-                AnvilBlockExecutorFactory, AnvilExecutionCtx, TransactionExecutor,
-                build_tx_env_for_pending,
-            },
+            executor::{AnvilBlockExecutorFactory, AnvilExecutionCtx, build_tx_env_for_pending},
             fork::ClientFork,
             genesis::GenesisConfig,
             mem::{
@@ -110,7 +107,7 @@ use op_alloy_consensus::DEPOSIT_TX_TYPE_ID;
 use op_revm::{OpContext, OpHaltReason, OpTransaction};
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use revm::{
-    DatabaseCommit, Inspector,
+    Database as RevmDatabase, DatabaseCommit, Inspector,
     context::{Block as RevmBlock, BlockEnv, Cfg, TxEnv},
     context_interface::{
         block::BlobExcessGasAndPrice,
@@ -2765,31 +2762,248 @@ impl Backend<FoundryNetwork> {
         let db = self.db.read().await;
         let env = self.next_env();
 
-        let mut cache_db = CacheDB::new(&*db);
+        let mut cache_db = AnvilCacheDB::new(&*db);
 
-        let storage = self.blockchain.storage.read();
+        let parent_hash = self.blockchain.storage.read().best_hash;
 
-        let executor = TransactionExecutor {
-            db: &mut cache_db,
-            validator: self,
-            pending: pool_transactions.into_iter(),
-            evm_env: env.evm_env,
-            parent_hash: storage.best_hash,
-            gas_used: 0,
-            blob_gas_used: 0,
-            enable_steps_tracing: self.enable_steps_tracing,
-            print_logs: self.print_logs,
-            print_traces: self.print_traces,
-            call_trace_decoder: self.call_trace_decoder.clone(),
-            precompile_factory: self.precompile_factory.clone(),
-            networks: self.env.read().networks,
-            blob_params: self.blob_params(),
-            cheats: self.cheats().clone(),
+        let spec_id = *env.evm_env.spec_id();
+        let is_shanghai = spec_id >= SpecId::SHANGHAI;
+        let is_cancun = spec_id >= SpecId::CANCUN;
+        let is_prague = spec_id >= SpecId::PRAGUE;
+        let gas_limit = env.evm_env.block_env.gas_limit;
+        let difficulty = env.evm_env.block_env.difficulty;
+        let mix_hash = env.evm_env.block_env.prevrandao;
+        let beneficiary = env.evm_env.block_env.beneficiary;
+        let timestamp = env.evm_env.block_env.timestamp;
+        let base_fee =
+            if spec_id >= SpecId::LONDON { Some(env.evm_env.block_env.basefee) } else { None };
+        let excess_blob_gas =
+            if is_cancun { env.evm_env.block_env.blob_excess_gas() } else { None };
+
+        let mut inspector = AnvilInspector::default().with_tracing();
+        if self.enable_steps_tracing {
+            inspector = inspector.with_steps_tracing();
+        }
+        if self.print_logs {
+            inspector = inspector.with_log_collector();
+        }
+        if self.print_traces {
+            inspector = inspector.with_trace_printer();
+        }
+
+        let env_struct = Env::new(env.evm_env.clone(), Default::default(), env.networks);
+        let mut evm = new_evm_with_inspector(&mut cache_db, &env_struct, inspector);
+
+        env.networks.inject_precompiles(evm.precompiles_mut());
+        if let Some(factory) = &self.precompile_factory {
+            evm.precompiles_mut().extend_precompiles(factory.precompiles());
+        }
+        let cheats = self.cheats().clone();
+        if cheats.has_recover_overrides() {
+            let cheats_arc = Arc::new(cheats.clone());
+            let cheat_ecrecover = CheatEcrecover::new(Arc::clone(&cheats_arc));
+            evm.precompiles_mut().apply_precompile(&EC_RECOVER, move |_| {
+                Some(DynPrecompile::new_stateful(
+                    cheat_ecrecover.precompile_id().clone(),
+                    move |input| cheat_ecrecover.call(input),
+                ))
+            });
+        }
+
+        let exec_ctx = AnvilExecutionCtx { parent_hash, is_prague, is_cancun };
+        let mut executor = AnvilBlockExecutorFactory::create_executor(evm, exec_ctx);
+        executor.apply_pre_execution_changes().expect("pre-execution changes failed");
+
+        let mut transaction_infos: Vec<TransactionInfo> = Vec::new();
+        let mut transactions = Vec::new();
+        let mut bloom = Bloom::default();
+
+        let blob_params = self.blob_params();
+        let networks = env.networks;
+        let mut cumulative_blob_gas_used = if is_cancun { Some(0u64) } else { None };
+
+        for pool_tx in pool_transactions {
+            let pending = &pool_tx.pending_transaction;
+            let sender = *pending.sender();
+
+            let account = match executor
+                .evm_mut()
+                .db_mut()
+                .basic(sender)
+                .map(|a| a.unwrap_or_default())
+            {
+                Ok(acc) => acc,
+                Err(err) => {
+                    trace!(target: "backend", ?err, "db error for tx {:?}, skipping", pool_tx.hash());
+                    continue;
+                }
+            };
+
+            let tx_env = build_tx_env_for_pending(pending, &cheats, networks, &env.evm_env);
+            let full_env = Env::new(env.evm_env.clone(), tx_env.clone(), networks);
+
+            let cumulative_gas =
+                executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);
+            let max_block_gas = cumulative_gas.saturating_add(pending.transaction.gas_limit());
+            if !env.evm_env.cfg_env.disable_block_gas_limit && max_block_gas > gas_limit {
+                trace!(target: "backend", tx_gas_limit = %pending.transaction.gas_limit(), ?pool_tx, "block gas limit exhausting, skipping transaction");
+                continue;
+            }
+
+            if env.evm_env.cfg_env.tx_gas_limit_cap.is_none()
+                && pending.transaction.gas_limit() > env.evm_env.cfg_env.tx_gas_limit_cap()
+            {
+                trace!(target: "backend", tx_gas_limit = %pending.transaction.gas_limit(), ?pool_tx, "transaction gas limit exhausting, skipping transaction");
+                continue;
+            }
+
+            let tx_blob_gas = pending.transaction.blob_gas_used().unwrap_or(0);
+            let current_blob_gas = cumulative_blob_gas_used.unwrap_or(0);
+            if current_blob_gas.saturating_add(tx_blob_gas) > blob_params.max_blob_gas_per_block() {
+                trace!(target: "backend", blob_gas = %tx_blob_gas, ?pool_tx, "block blob gas limit exhausting, skipping transaction");
+                continue;
+            }
+
+            if let Err(err) = self.validate_pool_transaction_for(pending, &account, &full_env) {
+                warn!(target: "backend", "Skipping invalid tx execution [{:?}] {}", pool_tx.hash(), err);
+                continue;
+            }
+
+            let nonce = account.nonce;
+
+            let recovered = Recovered::new_unchecked(pending.transaction.as_ref().clone(), sender);
+            trace!(target: "backend", "[{:?}] executing", pool_tx.hash());
+            match executor.execute_transaction_without_commit((tx_env, recovered)) {
+                Ok(result) => {
+                    let exec_result = result.inner.result.result.clone();
+                    let gas_used = result.inner.result.result.gas_used();
+
+                    executor.commit_transaction(result).expect("commit failed");
+
+                    let insp = executor.evm_mut().inspector_mut();
+
+                    if self.print_traces {
+                        insp.print_traces(self.call_trace_decoder.clone());
+                    }
+                    insp.print_logs();
+
+                    let traces = insp
+                        .tracer
+                        .take()
+                        .map(|t| t.into_traces().into_nodes())
+                        .unwrap_or_default();
+
+                    if self.enable_steps_tracing {
+                        insp.tracer = Some(TracingInspector::new(
+                            TracingInspectorConfig::all().with_state_diffs(),
+                        ));
+                    } else {
+                        insp.tracer = Some(TracingInspector::new(
+                            TracingInspectorConfig::all().set_steps(false),
+                        ));
+                    }
+                    if self.print_logs {
+                        insp.log_collector = Some(foundry_evm::inspectors::LogCollector::Capture {
+                            logs: Vec::new(),
+                        });
+                    }
+
+                    if is_cancun {
+                        cumulative_blob_gas_used =
+                            Some(cumulative_blob_gas_used.unwrap_or(0).saturating_add(tx_blob_gas));
+                    }
+
+                    let (exit_reason, out, logs) = match exec_result {
+                        ExecutionResult::Success { reason, gas_used: _, logs, output, .. } => {
+                            (reason.into(), Some(output), logs)
+                        }
+                        ExecutionResult::Revert { gas_used: _, output } => {
+                            (InstructionResult::Revert, Some(Output::Call(output)), Vec::new())
+                        }
+                        ExecutionResult::Halt { reason, gas_used: _ } => {
+                            (op_haltreason_to_instruction_result(reason), None, Vec::new())
+                        }
+                    };
+
+                    for log in &logs {
+                        bloom.accrue(BloomInput::Raw(&log.address[..]));
+                        for topic in log.topics() {
+                            bloom.accrue(BloomInput::Raw(&topic[..]));
+                        }
+                    }
+
+                    let contract_address = if pending.transaction.to().is_none() {
+                        let addr = sender.create(nonce);
+                        Some(addr)
+                    } else {
+                        None
+                    };
+
+                    let transaction_index = transaction_infos.len() as u64;
+                    let info = TransactionInfo {
+                        transaction_hash: pool_tx.hash(),
+                        transaction_index,
+                        from: sender,
+                        to: pending.transaction.to(),
+                        contract_address,
+                        traces,
+                        exit: exit_reason,
+                        out: out.map(Output::into_data),
+                        nonce,
+                        gas_used,
+                    };
+
+                    transaction_infos.push(info);
+                    transactions.push(pending.transaction.clone());
+                }
+                Err(err) => {
+                    trace!(target: "backend", ?err, "tx execution error, skipping {:?}", pool_tx.hash());
+                }
+            }
+        }
+
+        let (evm, block_result) = executor.finish().expect("executor finish failed");
+        drop(evm);
+
+        // Extract inner CacheDB (which implements MaybeFullDatabase)
+        let cache_db = cache_db.0;
+
+        let state_root = cache_db.maybe_state_root().unwrap_or_default();
+        let receipts_root = calculate_receipt_root(&block_result.receipts);
+        let cumulative_gas_used = block_result.gas_used;
+
+        let header = Header {
+            parent_hash,
+            ommers_hash: Default::default(),
+            beneficiary,
+            state_root,
+            transactions_root: Default::default(),
+            receipts_root,
+            logs_bloom: bloom,
+            difficulty,
+            number: env.evm_env.block_env.number.saturating_to(),
+            gas_limit,
+            gas_used: cumulative_gas_used,
+            timestamp: timestamp.saturating_to(),
+            extra_data: Default::default(),
+            mix_hash: mix_hash.unwrap_or_default(),
+            nonce: Default::default(),
+            base_fee_per_gas: base_fee,
+            parent_beacon_block_root: is_cancun.then_some(Default::default()),
+            blob_gas_used: cumulative_blob_gas_used,
+            excess_blob_gas,
+            withdrawals_root: is_shanghai.then_some(EMPTY_WITHDRAWALS),
+            requests_hash: is_prague.then_some(EMPTY_REQUESTS_HASH),
         };
 
-        // create a new pending block
-        let executed = executor.execute();
-        f(Box::new(cache_db), executed.block)
+        let block = create_block(header, transactions);
+        let block_info = TypedBlockInfo {
+            block,
+            transactions: transaction_infos,
+            receipts: block_result.receipts,
+        };
+
+        f(Box::new(cache_db), block_info)
     }
 
     /// Executes the [TransactionRequest] without writing to the DB
@@ -3410,32 +3624,141 @@ impl Backend<FoundryNetwork> {
             .collect();
 
         let trace = |parent_state: &StateDb| -> Result<T, BlockchainError> {
-            let mut cache_db = CacheDB::new(Box::new(parent_state));
+            let mut cache_db = AnvilCacheDB::new(Box::new(parent_state));
 
             // configure the blockenv for the block of the transaction
             let mut env = self.env.read().clone();
 
             env.evm_env.block_env = block_env_from_header(&block.header);
 
-            let executor = TransactionExecutor {
-                db: &mut cache_db,
-                validator: self,
-                pending: pool_txs.into_iter(),
-                evm_env: env.evm_env.clone(),
-                parent_hash: block.header.parent_hash,
-                gas_used: 0,
-                blob_gas_used: 0,
-                enable_steps_tracing: self.enable_steps_tracing,
-                print_logs: self.print_logs,
-                print_traces: self.print_traces,
-                call_trace_decoder: self.call_trace_decoder.clone(),
-                precompile_factory: self.precompile_factory.clone(),
-                networks: self.env.read().networks,
-                blob_params: self.blob_params(),
-                cheats: self.cheats().clone(),
-            };
+            let spec_id = *env.evm_env.spec_id();
+            let is_cancun = spec_id >= SpecId::CANCUN;
+            let is_prague = spec_id >= SpecId::PRAGUE;
+            let gas_limit = env.evm_env.block_env.gas_limit;
 
-            let _ = executor.execute();
+            let mut inspector_replay = AnvilInspector::default().with_tracing();
+            if self.enable_steps_tracing {
+                inspector_replay = inspector_replay.with_steps_tracing();
+            }
+            if self.print_logs {
+                inspector_replay = inspector_replay.with_log_collector();
+            }
+            if self.print_traces {
+                inspector_replay = inspector_replay.with_trace_printer();
+            }
+
+            let env_struct = Env::new(env.evm_env.clone(), Default::default(), env.networks);
+            let mut evm_replay =
+                new_evm_with_inspector(&mut cache_db, &env_struct, inspector_replay);
+
+            env.networks.inject_precompiles(evm_replay.precompiles_mut());
+            if let Some(factory) = &self.precompile_factory {
+                evm_replay.precompiles_mut().extend_precompiles(factory.precompiles());
+            }
+            let cheats = self.cheats().clone();
+            if cheats.has_recover_overrides() {
+                let cheats_arc = Arc::new(cheats.clone());
+                let cheat_ecrecover = CheatEcrecover::new(Arc::clone(&cheats_arc));
+                evm_replay.precompiles_mut().apply_precompile(&EC_RECOVER, move |_| {
+                    Some(DynPrecompile::new_stateful(
+                        cheat_ecrecover.precompile_id().clone(),
+                        move |input| cheat_ecrecover.call(input),
+                    ))
+                });
+            }
+
+            let exec_ctx =
+                AnvilExecutionCtx { parent_hash: block.header.parent_hash, is_prague, is_cancun };
+            let mut replay_executor =
+                AnvilBlockExecutorFactory::create_executor(evm_replay, exec_ctx);
+            replay_executor.apply_pre_execution_changes().expect("pre-execution changes failed");
+
+            let blob_params = self.blob_params();
+            let networks = env.networks;
+            let mut cumulative_blob_gas_used = if is_cancun { Some(0u64) } else { None };
+
+            for pool_tx in pool_txs {
+                let pending = &pool_tx.pending_transaction;
+                let sender = *pending.sender();
+
+                let account = match replay_executor
+                    .evm_mut()
+                    .db_mut()
+                    .basic(sender)
+                    .map(|a| a.unwrap_or_default())
+                {
+                    Ok(acc) => acc,
+                    Err(_) => continue,
+                };
+
+                let tx_env = build_tx_env_for_pending(pending, &cheats, networks, &env.evm_env);
+                let full_env = Env::new(env.evm_env.clone(), tx_env.clone(), networks);
+
+                let cumulative_gas =
+                    replay_executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);
+                let max_block_gas = cumulative_gas.saturating_add(pending.transaction.gas_limit());
+                if !env.evm_env.cfg_env.disable_block_gas_limit && max_block_gas > gas_limit {
+                    continue;
+                }
+
+                if env.evm_env.cfg_env.tx_gas_limit_cap.is_none()
+                    && pending.transaction.gas_limit() > env.evm_env.cfg_env.tx_gas_limit_cap()
+                {
+                    continue;
+                }
+
+                let tx_blob_gas = pending.transaction.blob_gas_used().unwrap_or(0);
+                let current_blob_gas = cumulative_blob_gas_used.unwrap_or(0);
+                if current_blob_gas.saturating_add(tx_blob_gas)
+                    > blob_params.max_blob_gas_per_block()
+                {
+                    continue;
+                }
+
+                if self.validate_pool_transaction_for(pending, &account, &full_env).is_err() {
+                    continue;
+                }
+
+                let recovered =
+                    Recovered::new_unchecked(pending.transaction.as_ref().clone(), sender);
+                if let Ok(result) =
+                    replay_executor.execute_transaction_without_commit((tx_env, recovered))
+                {
+                    replay_executor.commit_transaction(result).expect("commit failed");
+
+                    let insp = replay_executor.evm_mut().inspector_mut();
+                    insp.print_logs();
+                    if self.print_traces {
+                        insp.print_traces(self.call_trace_decoder.clone());
+                    }
+                    insp.tracer.take();
+                    if self.enable_steps_tracing {
+                        insp.tracer = Some(TracingInspector::new(
+                            TracingInspectorConfig::all().with_state_diffs(),
+                        ));
+                    } else {
+                        insp.tracer = Some(TracingInspector::new(
+                            TracingInspectorConfig::all().set_steps(false),
+                        ));
+                    }
+                    if self.print_logs {
+                        insp.log_collector = Some(foundry_evm::inspectors::LogCollector::Capture {
+                            logs: Vec::new(),
+                        });
+                    }
+
+                    if is_cancun {
+                        cumulative_blob_gas_used =
+                            Some(cumulative_blob_gas_used.unwrap_or(0).saturating_add(tx_blob_gas));
+                    }
+                }
+            }
+
+            let (evm_done, _) = replay_executor.finish().expect("executor finish failed");
+            drop(evm_done);
+
+            // Extract inner CacheDB to match the expected types for the target tx execution
+            let cache_db = cache_db.0;
 
             let target_tx = block.body.transactions[index].clone();
             let target_tx = PendingTransaction::from_maybe_impersonated(target_tx)?;
