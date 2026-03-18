@@ -10,7 +10,7 @@ use crate::{
     sequence::get_commit_hash,
 };
 use alloy_chains::NamedChain;
-use alloy_network::{Ethereum, TransactionBuilder};
+use alloy_network::{Ethereum, Network, TransactionBuilder};
 use alloy_primitives::{Address, TxKind, U256, map::HashMap, utils::format_units};
 use dialoguer::Confirm;
 use eyre::{Context, Result};
@@ -19,6 +19,7 @@ use foundry_cheatcodes::Wallets;
 use foundry_cli::utils::{has_different_gas_calc, now};
 use foundry_common::{ContractData, shell};
 use foundry_evm::traces::{decode_trace_arena, render_trace_arena};
+use foundry_primitives::FoundryTransactionBuilder;
 use futures::future::{join_all, try_join_all};
 use parking_lot::RwLock;
 use std::{
@@ -99,10 +100,13 @@ impl PreSimulationState {
     /// transactions in those environments.
     ///
     /// Collects gas usage and metadata for each transaction.
-    pub async fn simulate_and_fill(
+    pub async fn simulate_and_fill<N: Network>(
         &self,
-        transactions: VecDeque<TransactionWithMetadata>,
-    ) -> Result<VecDeque<TransactionWithMetadata>> {
+        transactions: VecDeque<TransactionWithMetadata<N>>,
+    ) -> Result<VecDeque<TransactionWithMetadata<N>>>
+    where
+        N::TransactionRequest: FoundryTransactionBuilder<N>,
+    {
         trace!(target: "script", "executing onchain simulation");
 
         let runners = Arc::new(
