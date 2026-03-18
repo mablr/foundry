@@ -1,6 +1,6 @@
 use crate::{
-    Cheatcode, Cheatcodes, CheatcodesExecutor, CheatsCtxExt, CheatsCtxt, DatabaseExt, Result,
-    Vm::*, json::json_value_to_token,
+    Cheatcode, Cheatcodes, CheatcodesExecutor, CheatsCtxt, DatabaseExt, EthCheatCtx, Result, Vm::*,
+    json::json_value_to_token,
 };
 use alloy_dyn_abi::DynSolValue;
 use alloy_evm::EvmEnv;
@@ -10,7 +10,7 @@ use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolValue;
 use foundry_common::provider::ProviderBuilder;
-use foundry_evm_core::{Env, FoundryContextExt, backend::FoundryJournalExt, fork::CreateFork};
+use foundry_evm_core::{backend::FoundryJournalExt, fork::CreateFork};
 use revm::context::ContextTr;
 
 impl Cheatcode for activeForkCall {
@@ -28,119 +28,120 @@ impl Cheatcode for activeForkCall {
 }
 
 impl Cheatcode for createFork_0Call {
-    fn apply_stateful<CTX: FoundryContextExt<Db: DatabaseExt>>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
-    ) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { urlOrAlias } = self;
         create_fork(ccx, urlOrAlias, None)
     }
 }
 
 impl Cheatcode for createFork_1Call {
-    fn apply_stateful<CTX: FoundryContextExt<Db: DatabaseExt>>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
-    ) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { urlOrAlias, blockNumber } = self;
         create_fork(ccx, urlOrAlias, Some(blockNumber.saturating_to()))
     }
 }
 
 impl Cheatcode for createFork_2Call {
-    fn apply_stateful<CTX: FoundryContextExt<Db: DatabaseExt>>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
-    ) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { urlOrAlias, txHash } = self;
         create_fork_at_transaction(ccx, urlOrAlias, txHash)
     }
 }
 
 impl Cheatcode for createSelectFork_0Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { urlOrAlias } = self;
         create_select_fork(ccx, urlOrAlias, None)
     }
 }
 
 impl Cheatcode for createSelectFork_1Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { urlOrAlias, blockNumber } = self;
         create_select_fork(ccx, urlOrAlias, Some(blockNumber.saturating_to()))
     }
 }
 
 impl Cheatcode for createSelectFork_2Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { urlOrAlias, txHash } = self;
         create_select_fork_at_transaction(ccx, urlOrAlias, txHash)
     }
 }
 
 impl Cheatcode for rollFork_0Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { blockNumber } = self;
         persist_caller(ccx);
-        let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+        let mut evm_env = ccx.ecx.evm_clone();
+        let mut tx_env = ccx.ecx.tx_clone();
         let (db, inner) = ccx.ecx.journal_mut().as_db_and_inner();
         db.roll_fork(None, (*blockNumber).to(), &mut evm_env, &mut tx_env, inner)?;
-        Env::apply_evm_and_tx(ccx.ecx, evm_env, tx_env);
+        ccx.ecx.set_evm(evm_env);
+        ccx.ecx.set_tx(tx_env);
         Ok(Default::default())
     }
 }
 
 impl Cheatcode for rollFork_1Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { txHash } = self;
         persist_caller(ccx);
-        let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+        let mut evm_env = ccx.ecx.evm_clone();
+        let mut tx_env = ccx.ecx.tx_clone();
         let (db, inner) = ccx.ecx.journal_mut().as_db_and_inner();
         db.roll_fork_to_transaction(None, *txHash, &mut evm_env, &mut tx_env, inner)?;
-        Env::apply_evm_and_tx(ccx.ecx, evm_env, tx_env);
+        ccx.ecx.set_evm(evm_env);
+        ccx.ecx.set_tx(tx_env);
         Ok(Default::default())
     }
 }
 
 impl Cheatcode for rollFork_2Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { forkId, blockNumber } = self;
         persist_caller(ccx);
-        let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+        let mut evm_env = ccx.ecx.evm_clone();
+        let mut tx_env = ccx.ecx.tx_clone();
         let (db, inner) = ccx.ecx.journal_mut().as_db_and_inner();
         db.roll_fork(Some(*forkId), (*blockNumber).to(), &mut evm_env, &mut tx_env, inner)?;
-        Env::apply_evm_and_tx(ccx.ecx, evm_env, tx_env);
+        ccx.ecx.set_evm(evm_env);
+        ccx.ecx.set_tx(tx_env);
         Ok(Default::default())
     }
 }
 
 impl Cheatcode for rollFork_3Call {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { forkId, txHash } = self;
         persist_caller(ccx);
-        let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+        let mut evm_env = ccx.ecx.evm_clone();
+        let mut tx_env = ccx.ecx.tx_clone();
         let (db, inner) = ccx.ecx.journal_mut().as_db_and_inner();
         db.roll_fork_to_transaction(Some(*forkId), *txHash, &mut evm_env, &mut tx_env, inner)?;
-        Env::apply_evm_and_tx(ccx.ecx, evm_env, tx_env);
+        ccx.ecx.set_evm(evm_env);
+        ccx.ecx.set_tx(tx_env);
         Ok(Default::default())
     }
 }
 
 impl Cheatcode for selectForkCall {
-    fn apply_stateful<CTX: CheatsCtxExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { forkId } = self;
         persist_caller(ccx);
         check_broadcast(ccx.state)?;
-        let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+        let mut evm_env = ccx.ecx.evm_clone();
+        let mut tx_env = ccx.ecx.tx_clone();
         let (db, inner) = ccx.ecx.journal_mut().as_db_and_inner();
         db.select_fork(*forkId, &mut evm_env, &mut tx_env, inner)?;
-        Env::apply_evm_and_tx(ccx.ecx, evm_env, tx_env);
+        ccx.ecx.set_evm(evm_env);
+        ccx.ecx.set_tx(tx_env);
         Ok(Default::default())
     }
 }
 
 impl Cheatcode for transact_0Call {
-    fn apply_full<CTX: ContextTr<Journal: FoundryJournalExt>>(
+    fn apply_full<CTX: ContextTr<Journal: FoundryJournalExt<CTX>>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
         executor: &mut dyn CheatcodesExecutor<CTX>,
@@ -151,7 +152,7 @@ impl Cheatcode for transact_0Call {
 }
 
 impl Cheatcode for transact_1Call {
-    fn apply_full<CTX: ContextTr<Journal: FoundryJournalExt>>(
+    fn apply_full<CTX: ContextTr<Journal: FoundryJournalExt<CTX>>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
         executor: &mut dyn CheatcodesExecutor<CTX>,
@@ -346,7 +347,7 @@ impl Cheatcode for getRawBlockHeaderCall {
 }
 
 /// Creates and then also selects the new fork
-fn create_select_fork<CTX: CheatsCtxExt>(
+fn create_select_fork<CTX: EthCheatCtx>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
     block: Option<u64>,
@@ -354,15 +355,17 @@ fn create_select_fork<CTX: CheatsCtxExt>(
     check_broadcast(ccx.state)?;
 
     let fork = create_fork_request(ccx, url_or_alias, block)?;
-    let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+    let mut evm_env = ccx.ecx.evm_clone();
+    let mut tx_env = ccx.ecx.tx_clone();
     let (db, inner) = ccx.ecx.journal_mut().as_db_and_inner();
     let id = db.create_select_fork(fork, &mut evm_env, &mut tx_env, inner)?;
-    Env::apply_evm_and_tx(ccx.ecx, evm_env, tx_env);
+    ccx.ecx.set_evm(evm_env);
+    ccx.ecx.set_tx(tx_env);
     Ok(id.abi_encode())
 }
 
 /// Creates a new fork
-fn create_fork<CTX: FoundryContextExt<Db: DatabaseExt>>(
+fn create_fork<CTX: EthCheatCtx>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
     block: Option<u64>,
@@ -373,7 +376,7 @@ fn create_fork<CTX: FoundryContextExt<Db: DatabaseExt>>(
 }
 
 /// Creates and then also selects the new fork at the given transaction
-fn create_select_fork_at_transaction<CTX: CheatsCtxExt>(
+fn create_select_fork_at_transaction<CTX: EthCheatCtx>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
     transaction: &B256,
@@ -381,16 +384,18 @@ fn create_select_fork_at_transaction<CTX: CheatsCtxExt>(
     check_broadcast(ccx.state)?;
 
     let fork = create_fork_request(ccx, url_or_alias, None)?;
-    let (mut evm_env, mut tx_env) = Env::clone_evm_and_tx(ccx.ecx);
+    let mut evm_env = ccx.ecx.evm_clone();
+    let mut tx_env = ccx.ecx.tx_clone();
     let (db, inner) = ccx.ecx.journal_mut().as_db_and_inner();
     let id =
         db.create_select_fork_at_transaction(fork, &mut evm_env, &mut tx_env, inner, *transaction)?;
-    Env::apply_evm_and_tx(ccx.ecx, evm_env, tx_env);
+    ccx.ecx.set_evm(evm_env);
+    ccx.ecx.set_tx(tx_env);
     Ok(id.abi_encode())
 }
 
 /// Creates a new fork at the given transaction
-fn create_fork_at_transaction<CTX: FoundryContextExt<Db: DatabaseExt>>(
+fn create_fork_at_transaction<CTX: EthCheatCtx>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
     transaction: &B256,
@@ -401,7 +406,7 @@ fn create_fork_at_transaction<CTX: FoundryContextExt<Db: DatabaseExt>>(
 }
 
 /// Creates the request object for a new fork request
-fn create_fork_request<CTX: FoundryContextExt<Db: DatabaseExt>>(
+fn create_fork_request<CTX: EthCheatCtx>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     url_or_alias: &str,
     block: Option<u64>,
@@ -438,7 +443,7 @@ fn check_broadcast(state: &Cheatcodes) -> Result<()> {
     }
 }
 
-fn transact<CTX: ContextTr<Journal: FoundryJournalExt>>(
+fn transact<CTX: ContextTr<Journal: FoundryJournalExt<CTX>>>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     executor: &mut dyn CheatcodesExecutor<CTX>,
     transaction: B256,

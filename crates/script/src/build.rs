@@ -2,7 +2,7 @@ use crate::{
     ScriptArgs, ScriptConfig, broadcast::BundledState, execute::LinkedState,
     multi_sequence::MultiChainSequence, sequence::ScriptSequenceKind,
 };
-use alloy_network::AnyNetwork;
+use alloy_network::{AnyNetwork, Ethereum};
 use alloy_primitives::{B256, Bytes};
 use alloy_provider::Provider;
 use eyre::{OptionExt, Result};
@@ -156,7 +156,7 @@ impl LinkedBuildData {
 pub struct PreprocessedState {
     pub args: ScriptArgs,
     pub script_config: ScriptConfig,
-    pub script_wallets: Wallets,
+    pub script_wallets: Wallets<Ethereum>,
 }
 
 impl PreprocessedState {
@@ -241,7 +241,7 @@ impl PreprocessedState {
 pub struct CompiledState {
     pub args: ScriptArgs,
     pub script_config: ScriptConfig,
-    pub script_wallets: Wallets,
+    pub script_wallets: Wallets<Ethereum>,
     pub build_data: BuildData,
 }
 
@@ -256,7 +256,7 @@ impl CompiledState {
     }
 
     /// Tries loading the resumed state from the cache files, skipping simulation stage.
-    pub async fn resume(self) -> Result<BundledState> {
+    pub async fn resume(self) -> Result<BundledState<Ethereum>> {
         let chain = if self.args.multi {
             None
         } else {
@@ -333,7 +333,11 @@ impl CompiledState {
         })
     }
 
-    fn try_load_sequence(&self, chain: Option<u64>, dry_run: bool) -> Result<ScriptSequenceKind> {
+    fn try_load_sequence(
+        &self,
+        chain: Option<u64>,
+        dry_run: bool,
+    ) -> Result<ScriptSequenceKind<Ethereum>> {
         if let Some(chain) = chain {
             let sequence = ScriptSequence::load(
                 &self.script_config.config,
