@@ -1,7 +1,7 @@
 //! Foundry's main executor backend abstraction and implementation.
 
 use crate::{
-    EthInspectorExt,
+    EthInspectorExt, FoundryBlock, FoundryTransaction,
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, TEST_CONTRACT_ADDRESS},
     evm::new_evm_with_inspector,
     fork::{CreateFork, ForkId, MultiFork},
@@ -12,7 +12,7 @@ use alloy_consensus::{BlockHeader, Typed2718};
 use alloy_evm::{Evm, EvmEnv, FromRecoveredTx, rpc::TryIntoTxEnv};
 use alloy_genesis::GenesisAccount;
 use alloy_network::{
-    AnyNetwork, AnyRpcBlock, AnyRpcTransaction, AnyTxEnvelope, TransactionResponse,
+    AnyNetwork, AnyRpcBlock, AnyRpcTransaction, AnyTxEnvelope, BlockResponse, TransactionResponse,
 };
 use alloy_primitives::{Address, B256, TxKind, U256, keccak256, uint};
 use alloy_rpc_types::{BlockNumberOrTag, Transaction, TransactionRequest};
@@ -23,10 +23,7 @@ use revm::{
     Database, DatabaseCommit, Journal, JournalEntry,
     bytecode::Bytecode,
     context::{BlockEnv, Cfg, ContextTr, JournalInner, TxEnv},
-    context_interface::{
-        block::BlobExcessGasAndPrice, journaled_state::account::JournaledAccountTr,
-        result::ResultAndState,
-    },
+    context_interface::{journaled_state::account::JournaledAccountTr, result::ResultAndState},
     database::{CacheDB, DatabaseRef},
     inspector::{JournalExt, NoOpInspector},
     precompile::{PrecompileSpecId, Precompiles},
@@ -1308,7 +1305,7 @@ impl DatabaseExt for Backend {
         self.roll_fork(Some(id), fork_block, evm_env, tx_env, journaled_state)?;
 
         // we need to update the env to the block
-        update_env_block(evm_env, &block);
+        update_env_block(evm_env, block.header());
 
         // after we forked at the fork block we need to properly update the block env to the block
         // env of the tx's block
@@ -1349,7 +1346,7 @@ impl DatabaseExt for Backend {
         // So we modify the env to match the transaction's block.
         let (_fork_block, block) =
             self.get_block_number_and_block_for_transaction(id, transaction)?;
-        update_env_block(&mut evm_env, &block);
+        update_env_block(&mut evm_env, block.header());
 
         let fork = self.inner.get_fork_by_id_mut(id)?;
         commit_transaction(
@@ -1919,12 +1916,16 @@ impl Default for BackendInner {
 }
 
 /// This updates the currently used env with the fork's environment
-pub(crate) fn update_current_env_with_fork_env(
-    evm_env: &mut EvmEnv,
-    tx_env: &mut TxEnv,
-    fork_evm_env: EvmEnv,
+pub(crate) fn update_current_env_with_fork_env<
+    Spec,
+    Block: FoundryBlock,
+    Tx: FoundryTransaction,
+>(
+    evm_env: &mut EvmEnv<Spec, Block>,
+    tx_env: &mut Tx,
+    fork_evm_env: EvmEnv<Spec, Block>,
 ) {
-    tx_env.chain_id = Some(fork_evm_env.cfg_env.chain_id);
+    tx_env.set_chain_id(Some(fork_evm_env.cfg_env.chain_id));
     *evm_env = fork_evm_env;
 }
 
@@ -2003,21 +2004,24 @@ fn is_contract_in_state(evm_state: &EvmState, acc: Address) -> bool {
 }
 
 /// Updates the evm env's block with the block's data
-fn update_env_block(evm_env: &mut EvmEnv, block: &AnyRpcBlock) {
+fn update_env_block<Spec, Block: FoundryBlock>(
+    evm_env: &mut EvmEnv<Spec, Block>,
+    header: &impl BlockHeader,
+) {
     let block_env = &mut evm_env.block_env;
-    block_env.timestamp = U256::from(block.header.timestamp());
-    block_env.beneficiary = block.header.beneficiary();
-    block_env.difficulty = block.header.difficulty();
-    block_env.prevrandao = Some(block.header.mix_hash().unwrap_or_default());
-    block_env.basefee = block.header.base_fee_per_gas().unwrap_or_default();
-    block_env.gas_limit = block.header.gas_limit();
-    block_env.number = U256::from(block.header.number());
+    block_env.set_timestamp(U256::from(header.timestamp()));
+    block_env.set_beneficiary(header.beneficiary());
+    block_env.set_difficulty(header.difficulty());
+    block_env.set_prevrandao(header.mix_hash());
+    block_env.set_basefee(header.base_fee_per_gas().unwrap_or_default());
+    block_env.set_gas_limit(header.gas_limit());
+    block_env.set_number(U256::from(header.number()));
 
-    if let Some(excess_blob_gas) = block.header.excess_blob_gas() {
-        evm_env.block_env.blob_excess_gas_and_price = Some(BlobExcessGasAndPrice::new(
+    if let Some(excess_blob_gas) = header.excess_blob_gas() {
+        evm_env.block_env.set_blob_excess_gas_and_price(
             excess_blob_gas,
-            get_blob_base_fee_update_fraction(evm_env.cfg_env.chain_id, block.header.timestamp()),
-        ));
+            get_blob_base_fee_update_fraction(evm_env.cfg_env.chain_id, header.timestamp()),
+        );
     }
 }
 
