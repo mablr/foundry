@@ -636,6 +636,52 @@ impl AnvilBlockExecutorFactory {
     }
 }
 
+/// Builds the per-tx `OpTransaction<TxEnv>` from a pending transaction, replicating the logic
+/// from `TransactionExecutor::env_for`.
+pub fn build_tx_env_for_pending(
+    tx: &PendingTransaction,
+    cheats: &CheatsManager,
+    networks: NetworkConfigs,
+    _evm_env: &EvmEnv,
+) -> OpTransaction<TxEnv> {
+    let mut tx_env: OpTransaction<TxEnv> =
+        FromRecoveredTx::from_recovered_tx(tx.transaction.as_ref(), *tx.sender());
+
+    if let FoundryTxEnvelope::Eip7702(tx_7702) = tx.transaction.as_ref()
+        && cheats.has_recover_overrides()
+    {
+        let cheated_auths = tx_7702
+            .tx()
+            .authorization_list
+            .iter()
+            .zip(tx_env.base.authorization_list)
+            .map(|(signed_auth, either_auth)| {
+                either_auth.right_and_then(|recovered_auth| {
+                    if recovered_auth.authority().is_none()
+                        && let Ok(signature) = signed_auth.signature()
+                        && let Some(override_addr) =
+                            cheats.get_recover_override(&signature.as_bytes().into())
+                    {
+                        Either::Right(RecoveredAuthorization::new_unchecked(
+                            recovered_auth.into_parts().0,
+                            RecoveredAuthority::Valid(override_addr),
+                        ))
+                    } else {
+                        Either::Right(recovered_auth)
+                    }
+                })
+            })
+            .collect();
+        tx_env.base.authorization_list = cheated_auths;
+    }
+
+    if networks.is_optimism() {
+        tx_env.enveloped_tx = Some(tx.transaction.encoded_2718().into());
+    }
+
+    tx_env
+}
+
 /// Represents the result of a single transaction execution attempt
 pub enum TransactionExecutionOutcome<T = FoundryTxEnvelope> {
     /// Transaction successfully executed
