@@ -4,7 +4,7 @@ pub use alloy_evm::EvmEnv;
 use alloy_primitives::{Address, B256, Bytes, U256};
 use revm::{
     Context, Database,
-    context::{Block, BlockEnv, CfgEnv, JournalTr, Transaction, TxEnv},
+    context::{Block, BlockEnv, Cfg, CfgEnv, Transaction, TxEnv},
     context_interface::{ContextTr, transaction::AccessList},
     primitives::{TxKind, hardfork::SpecId},
 };
@@ -178,7 +178,7 @@ impl FoundryTransaction for TxEnv {
 }
 
 /// Marker trait for Foundry's [`CfgEnv`] type, abstracting `Spec` type.
-pub trait FoundryCfg: Clone + Debug {
+pub trait FoundryCfg: Cfg + Clone + Debug {
     type Spec: Into<SpecId> + Clone + Debug;
 }
 
@@ -232,8 +232,8 @@ pub trait FoundryContextExt:
     }
 }
 
-impl<DB: Database, J: JournalTr<Database = DB>, C> FoundryContextExt
-    for Context<BlockEnv, TxEnv, CfgEnv, DB, J, C>
+impl<BLOCK: FoundryBlock + Clone, TX: FoundryTransaction + Clone, CFG: FoundryCfg, DB: Database>
+    FoundryContextExt for Context<BLOCK, TX, CFG, DB>
 {
     fn block_mut(&mut self) -> &mut Self::Block {
         &mut self.block
