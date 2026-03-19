@@ -377,9 +377,9 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
             let mut evm = new_evm_with_inspector(db, evm_env, tx_env, &mut inspector);
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
-            let (sub_evm_env, sub_tx) = evm.to_env();
+            let sub_evm_env = evm.to_evm_env();
             let sub_inner = evm.journaled_state.inner.clone();
-            Ok(((), sub_evm_env, sub_tx, sub_inner))
+            Ok((sub_evm_env, sub_inner))
         })
     }
 
@@ -789,7 +789,7 @@ impl InspectorStackRefMut<'_> {
                 evm.journal_inner_mut().depth = 1;
 
                 let res = evm.transact(tx_env);
-                let (nested_evm_env, _) = evm.to_env();
+                let nested_evm_env = evm.to_evm_env();
                 (res, nested_evm_env)
             };
 

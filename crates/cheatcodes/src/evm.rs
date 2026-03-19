@@ -1247,12 +1247,12 @@ impl Cheatcode for executeTransactionCall {
                     // Set depth to 1 for proper trace collection.
                     evm.journal_inner_mut().depth = 1;
                     res = Some(evm.transact(modified_tx.clone()));
-                    nested_env = Some(evm.to_env());
+                    nested_env = Some(evm.to_evm_env());
                     Ok(())
                 },
             )?;
         }
-        let (res, (mut nested_evm_env, _)) = (res.unwrap(), nested_env.unwrap());
+        let (res, mut nested_evm_env) = (res.unwrap(), nested_env.unwrap());
 
         // Restore env, preserving cheatcode cfg/block changes from the nested EVM
         // but restoring the original tx and basefee (which we zeroed for the nested call)
