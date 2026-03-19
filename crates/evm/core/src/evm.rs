@@ -269,7 +269,7 @@ pub type NestedEvmClosure<'a, Block, Tx, Spec> =
 pub fn with_cloned_context<CTX: EthCheatCtx>(
     ecx: &mut CTX,
     f: impl FnOnce(
-        &mut dyn DatabaseExt,
+        &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
         EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
         CTX::Tx,
         JournaledState,
