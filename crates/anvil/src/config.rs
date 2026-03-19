@@ -44,7 +44,6 @@ use foundry_evm::{
     },
     utils::{apply_chain_and_block_specific_env_changes, get_blob_base_fee_update_fraction},
 };
-use foundry_primitives::FoundryNetwork;
 use itertools::Itertools;
 use op_revm::OpTransaction;
 use parking_lot::RwLock;
@@ -1053,7 +1052,13 @@ impl NodeConfig {
     /// [Backend](mem::Backend)
     ///
     /// *Note*: only memory based backend for now
-    pub(crate) async fn setup(&mut self) -> Result<mem::Backend<FoundryNetwork>> {
+    pub(crate) async fn setup<N>(&mut self) -> Result<mem::Backend<N>>
+    where
+        N: alloy_network::Network<
+                TxEnvelope = foundry_primitives::FoundryTxEnvelope,
+                ReceiptEnvelope = foundry_primitives::FoundryReceiptEnvelope,
+            >,
+    {
         // configure the revm environment
 
         let mut cfg = CfgEnv::default();
@@ -1173,10 +1178,6 @@ impl NodeConfig {
                 .set_create2_deployer(DEFAULT_CREATE2_DEPLOYER)
                 .await
                 .wrap_err("failed to create default create2 deployer")?;
-        }
-
-        if let Some(state) = self.init_state.clone() {
-            backend.load_state(state).await.wrap_err("failed to load init state")?;
         }
 
         Ok(backend)
