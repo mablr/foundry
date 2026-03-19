@@ -181,9 +181,9 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
             let mut evm = new_evm_with_inspector(db, evm_env, tx_env, cheats);
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
-            let (sub_evm_env, sub_tx) = evm.to_env();
+            let sub_evm_env = evm.to_evm_env();
             let sub_inner = evm.journaled_state.inner.clone();
-            Ok(((), sub_evm_env, sub_tx, sub_inner))
+            Ok((sub_evm_env, sub_inner))
         })
     }
 

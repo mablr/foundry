@@ -141,26 +141,6 @@ impl<'db, I: EthInspectorExt> Evm for FoundryEvm<'db, I> {
         )
     }
 
-    fn db_mut(&mut self) -> &mut Self::DB {
-        &mut self.inner.ctx.journaled_state.database
-    }
-
-    fn precompiles(&self) -> &Self::Precompiles {
-        &self.inner.precompiles
-    }
-
-    fn precompiles_mut(&mut self) -> &mut Self::Precompiles {
-        &mut self.inner.precompiles
-    }
-
-    fn inspector(&self) -> &Self::Inspector {
-        &self.inner.inspector
-    }
-
-    fn inspector_mut(&mut self) -> &mut Self::Inspector {
-        &mut self.inner.inspector
-    }
-
     fn set_inspector_enabled(&mut self, _enabled: bool) {
         unimplemented!("FoundryEvm is always inspecting")
     }
@@ -234,8 +214,8 @@ pub trait NestedEvm {
         tx: Self::Tx,
     ) -> Result<ResultAndState<HaltReason>, EVMError<DatabaseError>>;
 
-    /// Returns a snapshot of the current environment (cfg + block, tx).
-    fn to_env(&self) -> (EvmEnv<Self::Spec, Self::Block>, Self::Tx);
+    /// Returns a snapshot of the current EVM environment (cfg + block).
+    fn to_evm_env(&self) -> EvmEnv<Self::Spec, Self::Block>;
 }
 
 impl<I: EthInspectorExt> NestedEvm for FoundryEvm<'_, I> {
@@ -271,11 +251,8 @@ impl<I: EthInspectorExt> NestedEvm for FoundryEvm<'_, I> {
         Evm::transact_raw(self, tx)
     }
 
-    fn to_env(&self) -> (EvmEnv, TxEnv) {
-        (
-            EvmEnv { cfg_env: self.inner.ctx.cfg.clone(), block_env: self.inner.ctx.block.clone() },
-            self.inner.ctx.tx.clone(),
-        )
+    fn to_evm_env(&self) -> EvmEnv {
+        EvmEnv { cfg_env: self.inner.ctx.cfg.clone(), block_env: self.inner.ctx.block.clone() }
     }
 }
 
@@ -290,7 +267,7 @@ pub type EthNestedEvmClosure<'a> = &'a mut dyn FnMut(
 /// and cloned journal inner to the callback. The callback builds whatever EVM it
 /// needs, runs its operations, and returns `(result, modified_env, modified_journal)`.
 /// Modified state is written back after the callback returns.
-pub fn with_cloned_context<CTX: EthCheatCtx, R>(
+pub fn with_cloned_context<CTX: EthCheatCtx>(
     ecx: &mut CTX,
     f: impl FnOnce(
         &mut dyn DatabaseExt,
@@ -298,10 +275,10 @@ pub fn with_cloned_context<CTX: EthCheatCtx, R>(
         CTX::Tx,
         JournaledState,
     ) -> Result<
-        (R, EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, CTX::Tx, JournaledState),
+        (EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, JournaledState),
         EVMError<DatabaseError>,
     >,
-) -> Result<R, EVMError<DatabaseError>> {
+) -> Result<(), EVMError<DatabaseError>> {
     let evm_env = ecx.evm_clone();
     let tx_env = ecx.tx_clone();
 
@@ -309,14 +286,13 @@ pub fn with_cloned_context<CTX: EthCheatCtx, R>(
     let (db, journal_inner) = journal.as_db_and_inner();
     let journal_inner_clone = journal_inner.clone();
 
-    let (result, sub_evm_env, sub_tx, sub_inner) = f(db, evm_env, tx_env, journal_inner_clone)?;
+    let (sub_evm_env, sub_inner) = f(db, evm_env, tx_env, journal_inner_clone)?;
 
     // Write back modified state. The db borrow was released when f returned.
     ecx.journal_mut().set_inner(sub_inner);
     ecx.set_evm(sub_evm_env);
-    ecx.set_tx(sub_tx);
 
-    Ok(result)
+    Ok(())
 }
 
 pub struct FoundryHandler<'db, I: EthInspectorExt> {
