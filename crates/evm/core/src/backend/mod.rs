@@ -9,13 +9,13 @@ use crate::{
     utils::get_blob_base_fee_update_fraction,
 };
 use alloy_consensus::{BlockHeader, Typed2718};
-use alloy_evm::{Evm, EvmEnv, FromRecoveredTx, rpc::TryIntoTxEnv};
+use alloy_evm::{Evm, EvmEnv, FromRecoveredTx};
 use alloy_genesis::GenesisAccount;
 use alloy_network::{
     AnyNetwork, AnyRpcBlock, AnyRpcTransaction, AnyTxEnvelope, BlockResponse, TransactionResponse,
 };
 use alloy_primitives::{Address, B256, TxKind, U256, keccak256, uint};
-use alloy_rpc_types::{BlockNumberOrTag, Transaction, TransactionRequest};
+use alloy_rpc_types::{BlockNumberOrTag, Transaction};
 use eyre::Context;
 use foundry_common::{SYSTEM_TRANSACTION_TYPE, is_known_system_sender};
 pub use foundry_fork_db::{BlockchainDb, SharedBackend, cache::BlockchainDbMeta};
@@ -228,7 +228,7 @@ pub trait DatabaseExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
     /// Executes a given TransactionRequest, commits the new state to the DB
     fn transact_from_tx(
         &mut self,
-        transaction: &TransactionRequest,
+        tx_env: &TX,
         evm_env: EvmEnv<SPEC, BLOCK>,
         journaled_state: &mut JournaledState,
         inspector: &mut dyn EthInspectorExt<BLOCK, TX, SPEC>,
@@ -1329,23 +1329,21 @@ impl DatabaseExt for Backend {
 
     fn transact_from_tx(
         &mut self,
-        tx: &TransactionRequest,
+        tx_env: &TxEnv,
         evm_env: EvmEnv,
         journaled_state: &mut JournaledState,
         inspector: &mut dyn EthInspectorExt,
     ) -> eyre::Result<()> {
-        trace!(?tx, "execute signed transaction");
+        trace!(?tx_env, "execute signed transaction");
 
         self.commit(journaled_state.state.clone());
-
-        let tx_env = tx.clone().try_into_tx_env(&evm_env)?;
 
         let res = {
             let mut db = self.clone();
             let mut evm =
                 new_eth_evm_with_inspector(&mut db, evm_env, tx_env.to_owned(), inspector);
             evm.journaled_state.depth = journaled_state.depth + 1;
-            evm.transact(tx_env)?
+            evm.transact_raw(tx_env.to_owned())?
         };
 
         self.commit(res.state);

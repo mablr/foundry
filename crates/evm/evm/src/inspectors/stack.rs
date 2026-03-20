@@ -7,7 +7,6 @@ use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256,
     map::{AddressHashMap, HashMap},
 };
-use alloy_rpc_types::request::TransactionRequest;
 use foundry_cheatcodes::{
     CheatcodeAnalysis, CheatcodesExecutor, EthCheatCtx, NestedEvmClosure, Wallets,
 };
@@ -414,12 +413,12 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         &mut self,
         cheats: &mut Cheatcodes,
         ecx: &mut CTX,
-        tx: &TransactionRequest,
+        tx_env: &CTX::Tx,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
-        db.transact_from_tx(tx, evm_env, inner, &mut inspector)
+        db.transact_from_tx(tx_env, evm_env, inner, &mut inspector)
     }
 
     fn console_log(&mut self, _cheats: &mut Cheatcodes, msg: &str) {
