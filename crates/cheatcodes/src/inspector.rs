@@ -34,7 +34,7 @@ use foundry_common::{
 use foundry_evm_core::{
     Breakpoints, EthCheatCtx, EvmEnv, FoundryInspectorExt, FoundryTransaction,
     abi::Vm::stopExpectSafeMemoryCall,
-    backend::{DatabaseError, DatabaseExt, FoundryJournalExt, RevertDiagnostic},
+    backend::{DatabaseError, DatabaseExt, RevertDiagnostic},
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME},
     env::FoundryContextExt,
     evm::{NestedEvm, NestedEvmClosure, new_eth_evm_with_inspector, with_cloned_context},
@@ -203,7 +203,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let tx_env = ecx.tx_clone();
-        let (db, inner) = ecx.journal_mut().as_db_and_inner();
+        let (db, inner) = ecx.db_journal_inner_mut();
         db.transact(fork_id, transaction, evm_env, tx_env, inner, cheats)
     }
 
@@ -214,7 +214,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
         tx: &TransactionRequest,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
-        let (db, inner) = ecx.journal_mut().as_db_and_inner();
+        let (db, inner) = ecx.db_journal_inner_mut();
         db.transact_from_tx(tx, evm_env, inner, cheats)
     }
 
