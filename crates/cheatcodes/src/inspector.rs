@@ -32,7 +32,7 @@ use foundry_common::{
     mapping_slots::{MappingSlots, step as mapping_step},
 };
 use foundry_evm_core::{
-    Breakpoints, EthCheatCtx, EvmEnv, FoundryCfg, FoundryInspectorExt, FoundryTransaction,
+    Breakpoints, EthCheatCtx, EvmEnv, FoundryInspectorExt, FoundryTransaction,
     abi::Vm::stopExpectSafeMemoryCall,
     backend::{DatabaseError, DatabaseExt, FoundryJournalExt, RevertDiagnostic},
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME},
@@ -47,11 +47,10 @@ use itertools::Itertools;
 use proptest::test_runner::{RngAlgorithm, TestRng, TestRunner};
 use rand::Rng;
 use revm::{
-    Context, Inspector,
+    Inspector,
     bytecode::opcode as op,
     context::{
-        BlockEnv, Cfg, CfgEnv, ContextTr, JournalTr, Transaction, TransactionType, TxEnv,
-        result::EVMError,
+        BlockEnv, Cfg, ContextTr, JournalTr, Transaction, TransactionType, result::EVMError,
     },
     context_interface::{CreateScheme, transaction::SignedAuthorization},
     handler::FrameResult,
@@ -61,6 +60,7 @@ use revm::{
         InstructionResult, Interpreter, InterpreterAction, InterpreterResult,
         interpreter_types::{Jumps, LoopControl, MemoryTr},
     },
+    primitives::hardfork::SpecId,
 };
 use serde_json::Value;
 use std::{
@@ -467,7 +467,7 @@ pub type BroadcastableTransactions = VecDeque<BroadcastableTransaction>;
 ///   cheatcode address: by default, the caller, test contract and newly deployed contracts are
 ///   allowed to execute cheatcodes
 #[derive(Clone, Debug)]
-pub struct Cheatcodes<CTX: FoundryContextExt = Context<BlockEnv, TxEnv, CfgEnv>> {
+pub struct Cheatcodes {
     /// Solar compiler instance, to grant syntactic and semantic analysis capabilities
     pub analysis: Option<CheatcodeAnalysis>,
 
@@ -475,7 +475,7 @@ pub struct Cheatcodes<CTX: FoundryContextExt = Context<BlockEnv, TxEnv, CfgEnv>>
     ///
     /// Used in the cheatcode handler to overwrite the block environment separately from the
     /// execution block environment.
-    pub block: Option<CTX::Block>,
+    pub block: Option<BlockEnv>,
 
     /// Currently active EIP-7702 delegations that will be consumed when building the next
     /// transaction. Set by `vm.attachDelegation()` and consumed via `.take()` during
@@ -606,7 +606,7 @@ pub struct Cheatcodes<CTX: FoundryContextExt = Context<BlockEnv, TxEnv, CfgEnv>>
     /// Used to determine whether the broadcasted call has dynamic gas limit.
     pub dynamic_gas_limit: bool,
     // Custom execution evm version.
-    pub execution_evm_version: Option<<CTX::Cfg as FoundryCfg>::Spec>,
+    pub execution_evm_version: Option<SpecId>,
 }
 
 // This is not derived because calling this in `fn new` with `..Default::default()` creates a second
