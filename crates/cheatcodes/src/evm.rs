@@ -1124,10 +1124,12 @@ impl Cheatcode for broadcastRawTransactionCall {
         let tx = TxEnvelope::decode(&mut self.data.as_ref())
             .map_err(|err| fmt_err!("failed to decode RLP-encoded transaction: {err}"))?;
 
-        executor.transact_from_tx_on_db(ccx.state, ccx.ecx, &tx.clone().into())?;
+        let from = tx.recover_signer()?;
+        let tx_env = FromRecoveredTx::from_recovered_tx(&tx, from);
+
+        executor.transact_from_tx_on_db(ccx.state, ccx.ecx, &tx_env)?;
 
         if ccx.state.broadcast.is_some() {
-            let from = tx.recover_signer()?;
             ccx.state.broadcastable_transactions.push_back(BroadcastableTransaction {
                 rpc: ccx.ecx.db().active_fork_url(),
                 from,

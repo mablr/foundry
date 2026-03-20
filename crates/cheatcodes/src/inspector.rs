@@ -25,7 +25,7 @@ use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256, hex,
     map::{AddressHashMap, HashMap, HashSet},
 };
-use alloy_rpc_types::{AccessList, TransactionRequest};
+use alloy_rpc_types::AccessList;
 use alloy_sol_types::{SolCall, SolInterface, SolValue};
 use foundry_common::{
     SELECTOR_LEN,
@@ -104,7 +104,7 @@ pub trait CheatcodesExecutor<CTX: ContextTr> {
         &mut self,
         cheats: &mut Cheatcodes,
         ecx: &mut CTX,
-        tx: &TransactionRequest,
+        tx: &CTX::Tx,
     ) -> eyre::Result<()>;
 
     /// Runs a closure with a fresh nested EVM built from a raw database and environment.
@@ -211,7 +211,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
         &mut self,
         cheats: &mut Cheatcodes,
         ecx: &mut CTX,
-        tx: &TransactionRequest,
+        tx: &CTX::Tx,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let (db, inner) = ecx.db_journal_inner_mut();
