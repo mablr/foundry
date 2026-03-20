@@ -1,6 +1,9 @@
 use std::fmt::Debug;
 
+use alloy_consensus::{TxEnvelope, Typed2718};
 pub use alloy_evm::EvmEnv;
+use alloy_evm::FromRecoveredTx;
+use alloy_network::AnyTxEnvelope;
 use alloy_primitives::{Address, B256, Bytes, U256};
 use revm::{
     Context, Database,
@@ -281,4 +284,33 @@ impl<CTX> EthCheatCtx for CTX where
             Db: DatabaseExt<Self::Block, Self::Tx, SpecId>,
         >
 {
+}
+
+/// Abstraction trait for converting a transaction envelope into a [`TxEnv`].
+///
+/// This trait bridges the gap between different network envelope types and the EVM's `TxEnv`:
+/// - For [`TxEnvelope`] (Ethereum): delegates directly to [`FromRecoveredTx`].
+/// - For [`AnyTxEnvelope`]: extracts the inner [`TxEnvelope`] via
+///   [`as_envelope()`](AnyTxEnvelope::as_envelope) then delegates to [`FromRecoveredTx`].
+pub trait TryAnyIntoTxEnv {
+    /// Tries to convert this transaction envelope into a [`TxEnv`] given the recovered sender
+    /// address.
+    fn try_into_tx_env(&self, sender: Address) -> eyre::Result<TxEnv>;
+}
+
+impl TryAnyIntoTxEnv for TxEnvelope {
+    fn try_into_tx_env(&self, sender: Address) -> eyre::Result<TxEnv> {
+        Ok(TxEnv::from_recovered_tx(self, sender))
+    }
+}
+
+impl TryAnyIntoTxEnv for AnyTxEnvelope {
+    fn try_into_tx_env(&self, sender: Address) -> eyre::Result<TxEnv> {
+        match self {
+            Self::Ethereum(envelope) => envelope.try_into_tx_env(sender),
+            Self::Unknown(tx) => {
+                eyre::bail!("cannot convert unknown transaction type (0x{:02x}) to TxEnv", tx.ty())
+            }
+        }
+    }
 }

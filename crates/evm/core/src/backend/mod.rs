@@ -1,7 +1,7 @@
 //! Foundry's main executor backend abstraction and implementation.
 
 use crate::{
-    EthInspectorExt, FoundryBlock, FoundryTransaction,
+    EthInspectorExt, FoundryBlock, FoundryTransaction, TryAnyIntoTxEnv,
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, TEST_CONTRACT_ADDRESS},
     evm::new_eth_evm_with_inspector,
     fork::{CreateFork, ForkId, MultiFork},
@@ -9,9 +9,9 @@ use crate::{
     utils::get_blob_base_fee_update_fraction,
 };
 use alloy_consensus::{BlockHeader, Typed2718};
-use alloy_evm::{Evm, EvmEnv, FromRecoveredTx, rpc::TryIntoTxEnv};
+use alloy_evm::{Evm, EvmEnv, rpc::TryIntoTxEnv};
 use alloy_genesis::GenesisAccount;
-use alloy_network::{BlockResponse, Ethereum, Network, TransactionResponse};
+use alloy_network::{AnyNetwork, BlockResponse, Network, TransactionResponse};
 use alloy_primitives::{Address, B256, TxKind, U256, keccak256, uint};
 use alloy_rpc_types::{BlockNumberOrTag, TransactionRequest};
 use eyre::Context;
@@ -442,7 +442,7 @@ struct _ObjectSafe(dyn DatabaseExt);
 /// after reverting the snapshot.
 #[derive(Clone, Debug)]
 #[must_use]
-pub struct Backend<N: Network = Ethereum> {
+pub struct Backend<N: Network = AnyNetwork> {
     /// The access point for managing forks
     forks: MultiFork<N>,
     // The default in memory db
@@ -474,7 +474,7 @@ pub struct Backend<N: Network = Ethereum> {
 
 impl<N: Network> Backend<N>
 where
-    TxEnv: FromRecoveredTx<N::TxEnvelope>,
+    N::TxEnvelope: TryAnyIntoTxEnv,
 {
     /// Creates a new Backend with a spawned multi fork thread.
     ///
@@ -932,7 +932,7 @@ where
 
 impl<N: Network> DatabaseExt for Backend<N>
 where
-    TxEnv: FromRecoveredTx<N::TxEnvelope>,
+    N::TxEnvelope: TryAnyIntoTxEnv,
 {
     fn snapshot_state(&mut self, journaled_state: &JournaledState, evm_env: &EvmEnv) -> U256 {
         trace!("create snapshot");
@@ -1523,7 +1523,7 @@ where
 
 impl<N: Network> DatabaseRef for Backend<N>
 where
-    TxEnv: FromRecoveredTx<N::TxEnvelope>,
+    N::TxEnvelope: TryAnyIntoTxEnv,
 {
     type Error = DatabaseError;
 
@@ -1562,7 +1562,7 @@ where
 
 impl<N: Network> DatabaseCommit for Backend<N>
 where
-    TxEnv: FromRecoveredTx<N::TxEnvelope>,
+    N::TxEnvelope: TryAnyIntoTxEnv,
 {
     fn commit(&mut self, changes: Map<Address, Account>) {
         if let Some(db) = self.active_fork_db_mut() {
@@ -1575,7 +1575,7 @@ where
 
 impl<N: Network> Database for Backend<N>
 where
-    TxEnv: FromRecoveredTx<N::TxEnvelope>,
+    N::TxEnvelope: TryAnyIntoTxEnv,
 {
     type Error = DatabaseError;
     fn basic(&mut self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
@@ -2017,9 +2017,9 @@ fn commit_transaction<N: Network>(
     inspector: &mut dyn EthInspectorExt,
 ) -> eyre::Result<()>
 where
-    TxEnv: FromRecoveredTx<N::TxEnvelope>,
+    N::TxEnvelope: TryAnyIntoTxEnv,
 {
-    *tx_env = TxEnv::from_recovered_tx(tx.as_ref(), tx.from());
+    *tx_env = tx.as_ref().try_into_tx_env(tx.from())?;
 
     let now = Instant::now();
     let res = {
