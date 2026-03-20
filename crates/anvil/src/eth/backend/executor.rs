@@ -312,7 +312,7 @@ impl AnvilBlockExecutorFactory {
 /// Builds the per-tx `OpTransaction<TxEnv>` from a pending transaction, replicating the logic
 /// from `TransactionExecutor::env_for`.
 pub fn build_tx_env_for_pending(
-    tx: &PendingTransaction,
+    tx: &PendingTransaction<FoundryTxEnvelope>,
     cheats: &CheatsManager,
     networks: NetworkConfigs,
     _evm_env: &EvmEnv,

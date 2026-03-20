@@ -667,7 +667,7 @@ where
 #[serde(untagged)]
 pub enum SerializableTransactionType {
     TypedTransaction(FoundryTxEnvelope),
-    MaybeImpersonatedTransaction(MaybeImpersonatedTransaction),
+    MaybeImpersonatedTransaction(MaybeImpersonatedTransaction<FoundryTxEnvelope>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -699,13 +699,13 @@ impl From<SerializableBlock> for Block {
     }
 }
 
-impl From<MaybeImpersonatedTransaction> for SerializableTransactionType {
-    fn from(transaction: MaybeImpersonatedTransaction) -> Self {
+impl From<MaybeImpersonatedTransaction<FoundryTxEnvelope>> for SerializableTransactionType {
+    fn from(transaction: MaybeImpersonatedTransaction<FoundryTxEnvelope>) -> Self {
         Self::MaybeImpersonatedTransaction(transaction)
     }
 }
 
-impl From<SerializableTransactionType> for MaybeImpersonatedTransaction {
+impl From<SerializableTransactionType> for MaybeImpersonatedTransaction<FoundryTxEnvelope> {
     fn from(transaction: SerializableTransactionType) -> Self {
         match transaction {
             SerializableTransactionType::TypedTransaction(tx) => Self::new(tx),

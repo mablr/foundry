@@ -47,6 +47,7 @@ use foundry_evm::{
         get_blob_base_fee_update_fraction,
     },
 };
+use foundry_primitives::FoundryTxEnvelope;
 use itertools::Itertools;
 use op_revm::OpTransaction;
 use parking_lot::RwLock;
@@ -1450,7 +1451,7 @@ latest block number: {latest_block}"
 async fn derive_block_and_transactions(
     fork_choice: &ForkChoice,
     provider: &Arc<RetryProvider>,
-) -> eyre::Result<(BlockNumber, Option<Vec<PoolTransaction>>)> {
+) -> eyre::Result<(BlockNumber, Option<Vec<PoolTransaction<FoundryTxEnvelope>>>)> {
     match fork_choice {
         ForkChoice::Block(block_number) => {
             let block_number = *block_number;

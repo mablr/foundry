@@ -4,13 +4,13 @@ use alloy_consensus::{
 };
 use alloy_eips::eip2718::Encodable2718;
 use alloy_network::Network;
-use foundry_primitives::FoundryNetwork;
+use foundry_primitives::{FoundryNetwork, FoundryTxEnvelope};
 use std::fmt::Debug;
 
 use crate::eth::transaction::MaybeImpersonatedTransaction;
 
 /// Type alias for Ethereum Block with Anvil's transaction type
-pub type Block = alloy_consensus::Block<MaybeImpersonatedTransaction>;
+pub type Block = alloy_consensus::Block<MaybeImpersonatedTransaction<FoundryTxEnvelope>>;
 
 /// Anvil's concrete block info type.
 pub type BlockInfo = TypedBlockInfo<FoundryNetwork>;
@@ -29,7 +29,7 @@ pub struct TypedBlockInfo<N: Network> {
 /// `MaybeImpersonatedTransaction`.
 pub fn create_block<T>(mut header: Header, transactions: impl IntoIterator<Item = T>) -> Block
 where
-    T: Into<MaybeImpersonatedTransaction>,
+    T: Into<MaybeImpersonatedTransaction<FoundryTxEnvelope>>,
 {
     let transactions: Vec<_> = transactions.into_iter().map(Into::into).collect();
     let transactions_root = calculate_transaction_root(&transactions);

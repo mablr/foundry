@@ -156,7 +156,7 @@ pub const MIN_CREATE_GAS: u128 = 53000;
 pub type State = foundry_evm::utils::StateChangeset;
 
 /// A block request, which includes the Pool Transactions if it's Pending
-pub enum BlockRequest<T = FoundryTxEnvelope> {
+pub enum BlockRequest<T> {
     Pending(Vec<Arc<PoolTransaction<T>>>),
     Number(u64),
 }
@@ -1959,7 +1959,7 @@ impl<N: Network> Backend<N> {
     /// executes the transactions without writing to the underlying database
     pub async fn inspect_tx(
         &self,
-        tx: Arc<PoolTransaction>,
+        tx: Arc<PoolTransaction<FoundryTxEnvelope>>,
     ) -> Result<
         (InstructionResult, Option<Output>, u64, State, Vec<revm::primitives::Log>),
         BlockchainError,
@@ -2129,7 +2129,7 @@ where
 // Mining methods — generic over N: Network, with Foundry-associated-type bounds for now.
 impl<N: Network> Backend<N>
 where
-    Self: TransactionValidator,
+    Self: TransactionValidator<FoundryTxEnvelope>,
     N: Network<TxEnvelope = FoundryTxEnvelope, ReceiptEnvelope = FoundryReceiptEnvelope>,
 {
     /// Mines a new block and stores it.
@@ -2138,15 +2138,15 @@ where
     /// provide.
     pub async fn mine_block(
         &self,
-        pool_transactions: Vec<Arc<PoolTransaction>>,
-    ) -> MinedBlockOutcome {
+        pool_transactions: Vec<Arc<PoolTransaction<FoundryTxEnvelope>>>,
+    ) -> MinedBlockOutcome<FoundryTxEnvelope> {
         self.do_mine_block(pool_transactions).await
     }
 
     async fn do_mine_block(
         &self,
-        pool_transactions: Vec<Arc<PoolTransaction>>,
-    ) -> MinedBlockOutcome {
+        pool_transactions: Vec<Arc<PoolTransaction<FoundryTxEnvelope>>>,
+    ) -> MinedBlockOutcome<FoundryTxEnvelope> {
         let _mining_guard = self.mining.lock().await;
         trace!(target: "backend", "creating new block with {} transactions", pool_transactions.len());
 
@@ -2253,8 +2253,8 @@ where
                 executor.apply_pre_execution_changes().expect("pre-execution changes failed");
 
                 // 5. Per-tx loop
-                let mut included: Vec<Arc<PoolTransaction>> = Vec::new();
-                let mut invalid: Vec<Arc<PoolTransaction>> = Vec::new();
+                let mut included: Vec<Arc<PoolTransaction<FoundryTxEnvelope>>> = Vec::new();
+                let mut invalid: Vec<Arc<PoolTransaction<FoundryTxEnvelope>>> = Vec::new();
                 let mut transaction_infos: Vec<TransactionInfo> = Vec::new();
                 let mut transactions = Vec::new();
                 let mut bloom = Bloom::default();
@@ -2602,7 +2602,7 @@ where
     pub async fn reorg(
         &self,
         depth: u64,
-        tx_pairs: HashMap<u64, Vec<Arc<PoolTransaction>>>,
+        tx_pairs: HashMap<u64, Vec<Arc<PoolTransaction<FoundryTxEnvelope>>>>,
         common_block: Block,
     ) -> Result<(), BlockchainError> {
         self.rollback(common_block).await?;
@@ -2624,7 +2624,10 @@ where
     /// Creates the pending block
     ///
     /// This will execute all transaction in the order they come but will not mine the block
-    pub async fn pending_block(&self, pool_transactions: Vec<Arc<PoolTransaction>>) -> BlockInfo {
+    pub async fn pending_block(
+        &self,
+        pool_transactions: Vec<Arc<PoolTransaction<FoundryTxEnvelope>>>,
+    ) -> BlockInfo {
         self.with_pending_block(pool_transactions, |_, block| block).await
     }
 
@@ -2633,7 +2636,7 @@ where
     /// This will execute all transaction in the order they come but will not mine the block
     pub async fn with_pending_block<F, T>(
         &self,
-        pool_transactions: Vec<Arc<PoolTransaction>>,
+        pool_transactions: Vec<Arc<PoolTransaction<FoundryTxEnvelope>>>,
         f: F,
     ) -> T
     where
@@ -2895,7 +2898,7 @@ where
         &self,
         request: WithOtherFields<TransactionRequest>,
         fee_details: FeeDetails,
-        block_request: Option<BlockRequest>,
+        block_request: Option<BlockRequest<FoundryTxEnvelope>>,
         overrides: EvmOverrides,
     ) -> Result<(InstructionResult, Option<Output>, u128, State), BlockchainError> {
         self.with_database_at(block_request, |state, mut block| {
@@ -2919,7 +2922,7 @@ where
         &self,
         request: WithOtherFields<TransactionRequest>,
         fee_details: FeeDetails,
-        block_request: Option<BlockRequest>,
+        block_request: Option<BlockRequest<FoundryTxEnvelope>>,
         opts: GethDebugTracingCallOptions,
     ) -> Result<GethTrace, BlockchainError> {
         let GethDebugTracingCallOptions {
@@ -3066,7 +3069,7 @@ where
     /// Helper function to execute a closure with the database at a specific block
     pub async fn with_database_at<F, T>(
         &self,
-        block_request: Option<BlockRequest>,
+        block_request: Option<BlockRequest<FoundryTxEnvelope>>,
         f: F,
     ) -> Result<T, BlockchainError>
     where
@@ -3123,7 +3126,7 @@ where
         &self,
         address: Address,
         index: U256,
-        block_request: Option<BlockRequest>,
+        block_request: Option<BlockRequest<FoundryTxEnvelope>>,
     ) -> Result<B256, BlockchainError> {
         self.with_database_at(block_request, |db, _| {
             trace!(target: "backend", "get storage for {:?} at {:?}", address, index);
@@ -3140,7 +3143,7 @@ where
     pub async fn get_code(
         &self,
         address: Address,
-        block_request: Option<BlockRequest>,
+        block_request: Option<BlockRequest<FoundryTxEnvelope>>,
     ) -> Result<Bytes, BlockchainError> {
         self.with_database_at(block_request, |db, _| self.get_code_with_state(&db, address)).await?
     }
@@ -3151,7 +3154,7 @@ where
     pub async fn get_balance(
         &self,
         address: Address,
-        block_request: Option<BlockRequest>,
+        block_request: Option<BlockRequest<FoundryTxEnvelope>>,
     ) -> Result<U256, BlockchainError> {
         self.with_database_at(block_request, |db, _| self.get_balance_with_state(db, address))
             .await?
@@ -3160,7 +3163,7 @@ where
     pub async fn get_account_at_block(
         &self,
         address: Address,
-        block_request: Option<BlockRequest>,
+        block_request: Option<BlockRequest<FoundryTxEnvelope>>,
     ) -> Result<TrieAccount, BlockchainError> {
         self.with_database_at(block_request, |block_db, _| {
             let db = block_db.maybe_as_full_db().ok_or(BlockchainError::DataUnavailable)?;
@@ -3180,7 +3183,7 @@ where
     pub async fn get_nonce(
         &self,
         address: Address,
-        block_request: BlockRequest,
+        block_request: BlockRequest<FoundryTxEnvelope>,
     ) -> Result<u64, BlockchainError> {
         if let BlockRequest::Pending(pool_transactions) = &block_request
             && let Some(value) = get_pool_transactions_nonce(pool_transactions, address)
@@ -3230,7 +3233,8 @@ where
             .position(|tx| tx.hash() == hash)
             .expect("transaction not found in block");
 
-        let pool_txs: Vec<Arc<PoolTransaction>> = block.body.transactions[..index]
+        let pool_txs: Vec<Arc<PoolTransaction<FoundryTxEnvelope>>> = block.body.transactions
+            [..index]
             .iter()
             .map(|tx| {
                 let pending_tx =
@@ -3448,7 +3452,7 @@ where
         &self,
         address: Address,
         keys: Vec<B256>,
-        block_request: Option<BlockRequest>,
+        block_request: Option<BlockRequest<FoundryTxEnvelope>>,
     ) -> Result<AccountProof, BlockchainError> {
         let block_number = block_request.as_ref().map(|r| r.block_number());
 
@@ -3730,7 +3734,7 @@ impl Backend<FoundryNetwork> {
     pub async fn simulate(
         &self,
         request: SimulatePayload,
-        block_request: Option<BlockRequest>,
+        block_request: Option<BlockRequest<FoundryTxEnvelope>>,
     ) -> Result<Vec<SimulatedBlock<AnyRpcBlock>>, BlockchainError> {
         self.with_database_at(block_request, |state, mut block_env| {
             let SimulatePayload {
@@ -4207,7 +4211,7 @@ impl Backend<FoundryNetwork> {
 
 /// Get max nonce from transaction pool by address.
 fn get_pool_transactions_nonce(
-    pool_transactions: &[Arc<PoolTransaction>],
+    pool_transactions: &[Arc<PoolTransaction<FoundryTxEnvelope>>],
     address: Address,
 ) -> Option<u64> {
     if let Some(highest_nonce) = pool_transactions
@@ -4223,10 +4227,10 @@ fn get_pool_transactions_nonce(
 }
 
 #[async_trait::async_trait]
-impl TransactionValidator for Backend<FoundryNetwork> {
+impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
     async fn validate_pool_transaction(
         &self,
-        tx: &PendingTransaction,
+        tx: &PendingTransaction<FoundryTxEnvelope>,
     ) -> Result<(), BlockchainError> {
         let address = *tx.sender();
         let account = self.get_account(address).await?;
@@ -4236,7 +4240,7 @@ impl TransactionValidator for Backend<FoundryNetwork> {
 
     fn validate_pool_transaction_for(
         &self,
-        pending: &PendingTransaction,
+        pending: &PendingTransaction<FoundryTxEnvelope>,
         account: &AccountInfo,
         env: &Env,
     ) -> Result<(), InvalidTransactionError> {
@@ -4407,7 +4411,7 @@ impl TransactionValidator for Backend<FoundryNetwork> {
 
     fn validate_for(
         &self,
-        tx: &PendingTransaction,
+        tx: &PendingTransaction<FoundryTxEnvelope>,
         account: &AccountInfo,
         env: &Env,
     ) -> Result<(), InvalidTransactionError> {
@@ -4422,7 +4426,7 @@ impl TransactionValidator for Backend<FoundryNetwork> {
 /// Creates a `AnyRpcTransaction` as it's expected for the `eth` RPC api from storage data
 pub fn transaction_build(
     tx_hash: Option<B256>,
-    eth_transaction: MaybeImpersonatedTransaction,
+    eth_transaction: MaybeImpersonatedTransaction<FoundryTxEnvelope>,
     block: Option<&Block>,
     info: Option<TransactionInfo>,
     base_fee: Option<u64>,
