@@ -763,14 +763,9 @@ impl InspectorStackRefMut<'_> {
 
         let res = self.with_inspector(|mut inspector| {
             let (res, nested_env) = {
-<<<<<<< refactor/evm_merge_FoundryJournalExt_into_FoundryContextExt
                 let (db, journal) = ecx.db_journal_inner_mut();
-                let mut evm = new_evm_with_inspector(db, evm_env, tx_env.clone(), &mut inspector);
-=======
-                let (db, journal) = ecx.journal_mut().as_db_and_inner();
                 let mut evm =
                     new_eth_evm_with_inspector(db, evm_env, tx_env.clone(), &mut inspector);
->>>>>>> master
 
                 evm.journal_inner_mut().state = {
                     let mut state = journal.state.clone();
