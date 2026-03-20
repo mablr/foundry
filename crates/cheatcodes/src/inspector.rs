@@ -113,7 +113,7 @@ pub trait CheatcodesExecutor<CTX: ContextTr> {
     fn with_fresh_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes,
-        db: &mut dyn DatabaseExt,
+        db: &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
         evm_env: EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
         tx_env: CTX::Tx,
         f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
@@ -185,7 +185,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
     fn with_fresh_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes,
-        db: &mut dyn DatabaseExt,
+        db: &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
         evm_env: EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
         tx_env: CTX::Tx,
         f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,

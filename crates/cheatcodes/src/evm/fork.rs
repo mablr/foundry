@@ -14,7 +14,7 @@ use foundry_evm_core::{
     backend::{FoundryJournalExt, JournaledState},
     fork::CreateFork,
 };
-use revm::context::{ContextTr, TxEnv};
+use revm::context::{Cfg, ContextTr};
 
 impl Cheatcode for activeForkCall {
     fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
@@ -415,9 +415,9 @@ fn create_fork_request<CTX: EthCheatCtx>(
 fn fork_env_op<CTX: EthCheatCtx, T: SolValue>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     f: impl FnOnce(
-        &mut dyn DatabaseExt,
-        &mut EvmEnv,
-        &mut TxEnv,
+        &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
+        &mut EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
+        &mut CTX::Tx,
         &mut JournaledState,
     ) -> eyre::Result<T>,
 ) -> Result {
