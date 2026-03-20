@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     EthCheatCtx, EthInspectorExt,
-    backend::{DatabaseExt, FoundryJournalExt, JournaledState},
+    backend::{DatabaseExt, JournaledState},
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
 use alloy_consensus::constants::KECCAK_EMPTY;
@@ -281,14 +281,13 @@ pub fn with_cloned_context<CTX: EthCheatCtx>(
     let evm_env = ecx.evm_clone();
     let tx_env = ecx.tx_clone();
 
-    let journal = ecx.journal_mut();
-    let (db, journal_inner) = journal.as_db_and_inner();
+    let (db, journal_inner) = ecx.db_journal_inner_mut();
     let journal_inner_clone = journal_inner.clone();
 
     let (sub_evm_env, sub_inner) = f(db, evm_env, tx_env, journal_inner_clone)?;
 
     // Write back modified state. The db borrow was released when f returned.
-    ecx.journal_mut().set_inner(sub_inner);
+    ecx.set_journal_inner(sub_inner);
     ecx.set_evm(sub_evm_env);
 
     Ok(())
