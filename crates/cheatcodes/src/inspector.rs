@@ -115,6 +115,8 @@ pub trait CheatcodesExecutor<CTX: ContextTr> {
     /// Runs a closure with a fresh nested EVM built from a raw database and environment.
     /// Unlike `with_nested_evm`, this does NOT clone from `ecx` and does NOT write back.
     /// The caller is responsible for state merging. Used by `executeTransactionCall`.
+    /// Returns the final EVM environment after the closure runs (consumed without cloning).
+    #[allow(clippy::type_complexity)]
     fn with_fresh_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes,
@@ -122,7 +124,7 @@ pub trait CheatcodesExecutor<CTX: ContextTr> {
         evm_env: EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
         tx_env: CTX::Tx,
         f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
-    ) -> Result<(), EVMError<DatabaseError>>;
+    ) -> Result<EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, EVMError<DatabaseError>>;
 
     /// Simulates `console.log` invocation.
     fn console_log(&mut self, cheats: &mut Cheatcodes, msg: &str);
@@ -181,8 +183,8 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
             let mut evm = new_eth_evm_with_inspector(db, evm_env, tx_env, cheats);
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
-            let sub_evm_env = evm.to_evm_env();
             let sub_inner = evm.journaled_state.inner.clone();
+            let sub_evm_env = evm.to_evm_env();
             Ok((sub_evm_env, sub_inner))
         })
     }
@@ -194,9 +196,10 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
         evm_env: EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
         tx_env: CTX::Tx,
         f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
-    ) -> Result<(), EVMError<DatabaseError>> {
+    ) -> Result<EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, EVMError<DatabaseError>> {
         let mut evm = new_eth_evm_with_inspector(db, evm_env, tx_env, cheats);
-        f(&mut evm)
+        f(&mut evm)?;
+        Ok(evm.to_evm_env())
     }
 
     fn transact_on_db(
