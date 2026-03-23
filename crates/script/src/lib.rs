@@ -545,7 +545,7 @@ pub struct ScriptResult {
     pub gas_used: u64,
     pub labeled_addresses: AddressHashMap<String>,
     #[serde(skip)]
-    pub transactions: Option<BroadcastableTransactions>,
+    pub transactions: Option<BroadcastableTransactions<Ethereum>>,
     pub returned: Bytes,
     pub address: Option<Address>,
     #[serde(skip)]
