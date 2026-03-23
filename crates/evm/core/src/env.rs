@@ -195,7 +195,12 @@ impl<SPEC: Into<SpecId> + Clone + Debug> FoundryCfg for CfgEnv<SPEC> {
 /// [`ContextTr`] only exposes immutable references for block, tx, and cfg.
 /// Cheatcodes like `vm.warp()`, `vm.roll()`, `vm.chainId()` need to mutate these fields.
 pub trait FoundryContextExt:
-    ContextTr<Block: FoundryBlock + Clone, Tx: FoundryTransaction + Clone, Cfg: FoundryCfg>
+    ContextTr<
+        Block: FoundryBlock + Clone,
+        Tx: FoundryTransaction + Clone,
+        Cfg: FoundryCfg,
+        Journal: JournalExt,
+    >
 {
     /// Mutable reference to the block environment.
     fn block_mut(&mut self) -> &mut Self::Block;
@@ -270,8 +275,7 @@ pub trait EthCheatCtx:
         Block = BlockEnv,
         Tx = TxEnv,
         Cfg = CfgEnv,
-        Journal: JournalExt,
-        Db: DatabaseExt<Self::Block, Self::Tx, SpecId>,
+        Db: DatabaseExt<Self::Block, Self::Tx, <Self::Cfg as FoundryCfg>::Spec>,
     >
 {
 }
@@ -280,8 +284,7 @@ impl<CTX> EthCheatCtx for CTX where
             Block = BlockEnv,
             Tx = TxEnv,
             Cfg = CfgEnv,
-            Journal: JournalExt,
-            Db: DatabaseExt<Self::Block, Self::Tx, SpecId>,
+            Db: DatabaseExt<Self::Block, Self::Tx, <Self::Cfg as FoundryCfg>::Spec>,
         >
 {
 }

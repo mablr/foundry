@@ -7,7 +7,6 @@ use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256,
     map::{AddressHashMap, HashMap},
 };
-use alloy_rpc_types::request::TransactionRequest;
 use foundry_cheatcodes::{
     CheatcodeAnalysis, CheatcodesExecutor, EthCheatCtx, NestedEvmClosure, Wallets,
 };
@@ -377,8 +376,8 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
             let mut evm = new_eth_evm_with_inspector(db, evm_env, tx_env, &mut inspector);
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
-            let sub_evm_env = evm.to_evm_env();
             let sub_inner = evm.journaled_state.inner.clone();
+            let sub_evm_env = evm.to_evm_env();
             Ok((sub_evm_env, sub_inner))
         })
     }
@@ -390,10 +389,11 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         evm_env: EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
         tx_env: CTX::Tx,
         f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
-    ) -> Result<(), EVMError<DatabaseError>> {
+    ) -> Result<EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let mut evm = new_eth_evm_with_inspector(db, evm_env, tx_env, &mut inspector);
-        f(&mut evm)
+        f(&mut evm)?;
+        Ok(evm.to_evm_env())
     }
 
     fn transact_on_db(
@@ -414,12 +414,12 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         &mut self,
         cheats: &mut Cheatcodes,
         ecx: &mut CTX,
-        tx: &TransactionRequest,
+        tx_env: &CTX::Tx,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
-        db.transact_from_tx(tx, evm_env, inner, &mut inspector)
+        db.transact_from_tx(tx_env, evm_env, inner, &mut inspector)
     }
 
     fn console_log(&mut self, _cheats: &mut Cheatcodes, msg: &str) {

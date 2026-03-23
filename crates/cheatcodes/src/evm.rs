@@ -2,23 +2,20 @@
 
 use crate::{
     BroadcastableTransaction, Cheatcode, Cheatcodes, CheatcodesExecutor, CheatsCtxt, Error,
-    EthCheatCtx, Result,
-    Vm::*,
-    inspector::{BroadcastKind, RecordDebugStepInfo},
+    EthCheatCtx, Result, Vm::*, inspector::RecordDebugStepInfo,
 };
-use alloy_consensus::{
-    Transaction as TransactionTrait, TxEnvelope, transaction::SignerRecoverable,
-};
+use alloy_consensus::{TxEnvelope, transaction::SignerRecoverable};
 use alloy_evm::{EvmEnv, FromRecoveredTx};
 use alloy_genesis::{Genesis, GenesisAccount};
 use alloy_network::eip2718::EIP4844_TX_TYPE_ID;
 use alloy_primitives::{
-    Address, B256, Bytes, U256, hex, keccak256,
+    Address, B256, U256, hex, keccak256,
     map::{B256Map, HashMap},
 };
 use alloy_rlp::Decodable;
 use alloy_sol_types::SolValue;
 use foundry_common::{
+    TransactionMaybeSigned,
     fs::{read_json_file, write_json_file},
     slot_identifier::{
         ENCODING_BYTES, ENCODING_DYN_ARRAY, ENCODING_INPLACE, ENCODING_MAPPING, SlotIdentifier,
@@ -1124,19 +1121,15 @@ impl Cheatcode for broadcastRawTransactionCall {
         let tx = TxEnvelope::decode(&mut self.data.as_ref())
             .map_err(|err| fmt_err!("failed to decode RLP-encoded transaction: {err}"))?;
 
-        executor.transact_from_tx_on_db(ccx.state, ccx.ecx, &tx.clone().into())?;
+        let from = tx.recover_signer()?;
+        let tx_env = FromRecoveredTx::from_recovered_tx(&tx, from);
+
+        executor.transact_from_tx_on_db(ccx.state, ccx.ecx, &tx_env)?;
 
         if ccx.state.broadcast.is_some() {
-            let from = tx.recover_signer()?;
             ccx.state.broadcastable_transactions.push_back(BroadcastableTransaction {
                 rpc: ccx.ecx.db().active_fork_url(),
-                from,
-                to: Some(tx.kind()),
-                value: tx.value(),
-                input: tx.input().clone(),
-                nonce: tx.nonce(),
-                gas: Some(tx.gas_limit()),
-                kind: BroadcastKind::Signed(Bytes::copy_from_slice(&self.data)),
+                transaction: TransactionMaybeSigned::new_signed(tx)?,
             });
         }
 
@@ -1241,10 +1234,9 @@ impl Cheatcode for executeTransactionCall {
         };
 
         let mut res = None;
-        let mut nested_env = None;
         let mut cold_state = Some(cold_state);
         let modified_tx = modified_tx_env.clone();
-        {
+        let mut nested_evm_env = {
             let (db, _) = ccx.ecx.db_journal_inner_mut();
             executor.with_fresh_nested_evm(
                 ccx.state,
@@ -1257,12 +1249,11 @@ impl Cheatcode for executeTransactionCall {
                     // Set depth to 1 for proper trace collection.
                     evm.journal_inner_mut().depth = 1;
                     res = Some(evm.transact(modified_tx.clone()));
-                    nested_env = Some(evm.to_evm_env());
                     Ok(())
                 },
-            )?;
-        }
-        let (res, mut nested_evm_env) = (res.unwrap(), nested_env.unwrap());
+            )?
+        };
+        let res = res.unwrap();
 
         // Restore env, preserving cheatcode cfg/block changes from the nested EVM
         // but restoring the original tx and basefee (which we zeroed for the nested call)
