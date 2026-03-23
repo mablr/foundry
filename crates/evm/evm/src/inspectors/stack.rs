@@ -3,6 +3,7 @@ use super::{
     LogCollector, RevertDiagnostic, ScriptExecutionInspector, TracingInspector,
 };
 use alloy_evm::EvmEnv;
+use alloy_network::Network;
 use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256,
     map::{AddressHashMap, HashMap},
@@ -358,7 +359,7 @@ pub struct InspectorStackRefMut<'a> {
     pub inner: &'a mut InspectorStackInner,
 }
 
-impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
+impl<CTX: EthCheatCtx, N: Network> CheatcodesExecutor<CTX, N> for InspectorStackInner {
     fn with_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes,

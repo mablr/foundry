@@ -1,6 +1,11 @@
 use crate::inspector::Cheatcodes;
+use alloy_consensus::transaction::SignerRecoverable;
+use alloy_evm::FromRecoveredTx;
+use alloy_network::Network;
 use alloy_primitives::{Address, Bytes, U256};
-use foundry_evm_core::backend::DatabaseExt;
+use alloy_rlp::Decodable;
+use foundry_evm_core::{EthCheatCtx, FoundryContextExt};
+use foundry_primitives::FoundryTransactionBuilder;
 use revm::{
     context::ContextTr,
     inspector::JournalExt,
@@ -15,12 +20,21 @@ pub(crate) trait CommonCreateInput {
     fn init_code(&self) -> Bytes;
     fn scheme(&self) -> Option<CreateScheme>;
     fn set_caller(&mut self, caller: Address);
-    fn log_debug(&self, cheatcode: &mut Cheatcodes, scheme: &CreateScheme);
-    fn allow_cheatcodes<CTX: ContextTr<Journal: JournalExt, Db: DatabaseExt>>(
+    fn log_debug<CTX: FoundryContextExt, N: Network>(
         &self,
-        cheatcodes: &mut Cheatcodes,
+        cheatcode: &mut Cheatcodes<CTX, N>,
+        scheme: &CreateScheme,
+    );
+    fn allow_cheatcodes<CTX: EthCheatCtx, N: Network>(
+        &self,
+        cheatcodes: &mut Cheatcodes<CTX, N>,
         ecx: &mut CTX,
-    ) -> Address;
+    ) -> Address
+    where
+    N::TransactionRequest: FoundryTransactionBuilder<N>,
+    N::TxEnvelope: Decodable + SignerRecoverable,
+    CTX::Tx: FromRecoveredTx<N::TxEnvelope>,
+    ;
 }
 
 impl CommonCreateInput for &mut CreateInputs {
@@ -42,7 +56,11 @@ impl CommonCreateInput for &mut CreateInputs {
     fn set_caller(&mut self, caller: Address) {
         CreateInputs::set_call(self, caller);
     }
-    fn log_debug(&self, cheatcode: &mut Cheatcodes, scheme: &CreateScheme) {
+    fn log_debug<CTX: FoundryContextExt, N: Network>(
+        &self,
+        cheatcode: &mut Cheatcodes<CTX, N>,
+        scheme: &CreateScheme,
+    ) {
         let kind = match scheme {
             CreateScheme::Create => "create",
             CreateScheme::Create2 { .. } => "create2",
@@ -50,11 +68,15 @@ impl CommonCreateInput for &mut CreateInputs {
         };
         debug!(target: "cheatcodes", tx=?cheatcode.broadcastable_transactions.back().unwrap(), "broadcastable {kind}");
     }
-    fn allow_cheatcodes<CTX: ContextTr<Journal: JournalExt, Db: DatabaseExt>>(
+    fn allow_cheatcodes<CTX: EthCheatCtx, N: Network>(
         &self,
-        cheatcodes: &mut Cheatcodes,
+        cheatcodes: &mut Cheatcodes<CTX, N>,
         ecx: &mut CTX,
-    ) -> Address {
+    ) -> Address
+    where
+    N::TransactionRequest: FoundryTransactionBuilder<N>,
+    N::TxEnvelope: Decodable + SignerRecoverable,
+    CTX::Tx: FromRecoveredTx<N::TxEnvelope> {
         let caller = CreateInputs::caller(self);
         let old_nonce =
             ecx.journal().evm_state().get(&caller).map(|acc| acc.info.nonce).unwrap_or_default();
