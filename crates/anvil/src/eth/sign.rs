@@ -8,13 +8,9 @@ use alloy_signer_local::PrivateKeySigner;
 use foundry_primitives::{FoundryTxEnvelope, FoundryTypedTx};
 use tempo_primitives::TempoSignature;
 
-/// A transaction signer, generic over the network.
-///
-/// Modelled after alloy's `NetworkWallet<N>`: the
-/// [`sign_transaction_from`](Signer::sign_transaction_from) method takes an
-/// unsigned transaction and returns the fully-signed envelope in one step.
+/// Network-agnostic signing: messages, typed data, and hashes.
 #[async_trait::async_trait]
-pub trait AnvilSigner<N: Network>: Send + Sync {
+pub trait MessageSigner<N: Network>: Send + Sync {
     /// returns the available accounts for this signer
     fn accounts(&self) -> Vec<Address>;
 
@@ -36,7 +32,14 @@ pub trait AnvilSigner<N: Network>: Send + Sync {
 
     /// Signs the given hash.
     async fn sign_hash(&self, address: Address, hash: B256) -> Result<Signature, BlockchainError>;
+}
 
+/// A transaction signer, generic over the network.
+///
+/// Modelled after alloy's `NetworkWallet<N>`: the
+/// [`sign_transaction_from`](Signer::sign_transaction_from) method takes an
+/// unsigned transaction and returns the fully-signed envelope in one step.
+pub trait Signer<N: Network>: MessageSigner {
     /// Signs an unsigned transaction and returns the signed envelope.
     ///
     /// Mirrors `NetworkWallet::sign_transaction_from`.
@@ -62,7 +65,7 @@ impl DevSigner {
 }
 
 #[async_trait::async_trait]
-impl<N: Network> AnvilSigner<N> for DevSigner
+impl<N: Network> MessageSigner<N> for DevSigner
 where
     N::TxEnvelope: From<Signed<N::UnsignedTx>>,
     N::UnsignedTx: SignableTransaction<Signature>,
@@ -101,7 +104,9 @@ where
 
         Ok(signer.sign_hash(&hash).await?)
     }
+}
 
+impl Signer<foundry_primitives::FoundryNetwork> for DevSigner {
     fn sign_transaction_from(
         &self,
         sender: &Address,
@@ -114,16 +119,12 @@ where {
     }
 }
 
-/// Converts an unsigned [`FoundryTypedTx`] into a [`FoundryTxEnvelope`] using
-/// the provided signature.
+/// Builds a TxEnvelope from UnsignedTx with a zeroed signature.
 ///
-/// This is used for impersonated / unsigned transactions where no real signing
-/// is performed (the caller supplies a bypass or nil signature).
-pub fn build_typed_transaction(
-    request: FoundryTypedTx,
-    signature: Signature,
-) -> Result<FoundryTxEnvelope, BlockchainError> {
-    let tx = match request {
+/// Used for impersonated accounts, where transactions are accepted without a valid signature.
+pub fn build_impersonated(typed_tx: FoundryTypedTx) -> FoundryTxEnvelope {
+    let signature = Signature::new(Default::default(), Default::default(), false);
+    match typed_tx {
         FoundryTypedTx::Legacy(tx) => FoundryTxEnvelope::Legacy(tx.into_signed(signature)),
         FoundryTypedTx::Eip2930(tx) => FoundryTxEnvelope::Eip2930(tx.into_signed(signature)),
         FoundryTypedTx::Eip1559(tx) => FoundryTxEnvelope::Eip1559(tx.into_signed(signature)),
@@ -134,7 +135,5 @@ pub fn build_typed_transaction(
             let tempo_sig: TempoSignature = signature.into();
             FoundryTxEnvelope::Tempo(tx.into_signed(tempo_sig))
         }
-    };
-
-    Ok(tx)
+    }
 }
