@@ -1234,10 +1234,9 @@ impl Cheatcode for executeTransactionCall {
         };
 
         let mut res = None;
-        let mut nested_env = None;
         let mut cold_state = Some(cold_state);
         let modified_tx = modified_tx_env.clone();
-        {
+        let mut nested_evm_env = {
             let (db, _) = ccx.ecx.db_journal_inner_mut();
             executor.with_fresh_nested_evm(
                 ccx.state,
@@ -1250,12 +1249,11 @@ impl Cheatcode for executeTransactionCall {
                     // Set depth to 1 for proper trace collection.
                     evm.journal_inner_mut().depth = 1;
                     res = Some(evm.transact(modified_tx.clone()));
-                    nested_env = Some(evm.to_evm_env());
                     Ok(())
                 },
-            )?;
-        }
-        let (res, mut nested_evm_env) = (res.unwrap(), nested_env.unwrap());
+            )?
+        };
+        let res = res.unwrap();
 
         // Restore env, preserving cheatcode cfg/block changes from the nested EVM
         // but restoring the original tx and basefee (which we zeroed for the nested call)
