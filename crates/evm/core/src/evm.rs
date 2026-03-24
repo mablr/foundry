@@ -34,14 +34,12 @@ use revm::{
 pub fn new_eth_evm_with_inspector<'db, I: EthInspectorExt>(
     db: &'db mut dyn DatabaseExt,
     evm_env: EvmEnv,
-    tx_env: TxEnv,
     inspector: I,
 ) -> FoundryEvm<'db, I> {
     let eth_evm =
         alloy_evm::EthEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
     let mut inner = eth_evm.into_inner();
     inner.ctx.cfg.tx_chain_id_check = true;
-    inner.ctx.tx = tx_env;
 
     let mut evm = FoundryEvm { inner };
     evm.inspector().get_networks().inject_precompiles(evm.precompiles_mut());
@@ -240,7 +238,6 @@ pub fn with_cloned_context<CTX: EthCheatCtx>(
     f: impl FnOnce(
         &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
         EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
-        CTX::Tx,
         JournaledState,
     ) -> Result<
         (EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, JournaledState),
@@ -248,12 +245,11 @@ pub fn with_cloned_context<CTX: EthCheatCtx>(
     >,
 ) -> Result<(), EVMError<DatabaseError>> {
     let evm_env = ecx.evm_clone();
-    let tx_env = ecx.tx_clone();
 
     let (db, journal_inner) = ecx.db_journal_inner_mut();
     let journal_inner_clone = journal_inner.clone();
 
-    let (sub_evm_env, sub_inner) = f(db, evm_env, tx_env, journal_inner_clone)?;
+    let (sub_evm_env, sub_inner) = f(db, evm_env, journal_inner_clone)?;
 
     // Write back modified state. The db borrow was released when f returned.
     ecx.set_journal_inner(sub_inner);

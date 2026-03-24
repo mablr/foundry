@@ -119,7 +119,6 @@ pub trait CheatcodesExecutor<CTX: ContextTr> {
         cheats: &mut Cheatcodes,
         db: &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
         evm_env: EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
-        tx_env: CTX::Tx,
         f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
     ) -> Result<EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, EVMError<DatabaseError>>;
 
@@ -176,8 +175,8 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
         ecx: &mut CTX,
         f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
     ) -> Result<(), EVMError<DatabaseError>> {
-        with_cloned_context(ecx, |db, evm_env, tx_env, journal_inner| {
-            let mut evm = new_eth_evm_with_inspector(db, evm_env, tx_env, cheats);
+        with_cloned_context(ecx, |db, evm_env, journal_inner| {
+            let mut evm = new_eth_evm_with_inspector(db, evm_env, cheats);
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
             let sub_inner = evm.journaled_state.inner.clone();
@@ -191,10 +190,9 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
         cheats: &mut Cheatcodes,
         db: &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
         evm_env: EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
-        tx_env: CTX::Tx,
         f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
     ) -> Result<EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, EVMError<DatabaseError>> {
-        let mut evm = new_eth_evm_with_inspector(db, evm_env, tx_env, cheats);
+        let mut evm = new_eth_evm_with_inspector(db, evm_env, cheats);
         f(&mut evm)?;
         Ok(evm.to_evm_env())
     }
