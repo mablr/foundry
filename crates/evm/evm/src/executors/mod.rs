@@ -144,8 +144,7 @@ impl Executor {
     }
 
     fn clone_with_backend(&self, backend: Backend) -> Self {
-        let mut evm_env = self.evm_env.clone();
-        evm_env.cfg_env.spec = self.spec_id();
+        let evm_env = self.evm_env.clone();
         Self {
             backend: Arc::new(backend),
             evm_env,
