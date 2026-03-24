@@ -45,7 +45,7 @@ impl<N: Network> ScriptTransactionBuilder<N> {
                     )?;
                 }
             } else {
-                self.transaction.opcode = CallKind::Call;
+                self.transaction.call_kind = CallKind::Call;
                 self.transaction.contract_address = Some(to);
 
                 let Some(data) = self.transaction.transaction.input() else { return Ok(()) };
@@ -97,9 +97,9 @@ impl<N: Network> ScriptTransactionBuilder<N> {
         contracts: &BTreeMap<Address, &ContractData>,
     ) -> Result<()> {
         if is_create2 {
-            self.transaction.opcode = CallKind::Create2;
+            self.transaction.call_kind = CallKind::Create2;
         } else {
-            self.transaction.opcode = CallKind::Create;
+            self.transaction.call_kind = CallKind::Create;
         }
 
         let info = contracts.get(&address);

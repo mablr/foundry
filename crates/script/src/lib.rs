@@ -565,7 +565,7 @@ impl ScriptResult {
                             .find_by_creation_code(init_code.as_ref())
                             .map(|artifact| artifact.0.name.clone());
                         return Some(AdditionalContract {
-                            opcode: node.trace.kind,
+                            call_kind: node.trace.kind,
                             address: node.trace.address,
                             contract_name,
                             init_code,
