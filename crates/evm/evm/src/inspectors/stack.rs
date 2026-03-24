@@ -11,7 +11,6 @@ use foundry_cheatcodes::{
     CheatcodeAnalysis, CheatcodesExecutor, EthCheatCtx, NestedEvmClosure, Wallets,
 };
 use foundry_common::compile::Analysis;
-use foundry_compilers::ProjectPathsConfig;
 use foundry_evm_core::{
     FoundryBlock, FoundryInspectorExt, FoundryTransaction,
     backend::{DatabaseError, DatabaseExt, JournaledState},
@@ -318,12 +317,6 @@ pub struct InspectorStack {
     pub inner: InspectorStackInner,
 }
 
-impl InspectorStack {
-    pub fn paths_config(&self) -> Option<&ProjectPathsConfig> {
-        self.cheatcodes.as_ref().map(|c| &c.config.paths)
-    }
-}
-
 /// All used inpectors besides [Cheatcodes].
 ///
 /// See [`InspectorStack`].
@@ -452,27 +445,6 @@ impl InspectorStack {
     #[inline]
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Logs the status of the inspectors.
-    pub fn log_status(&self) {
-        trace!(enabled=%{
-            let mut enabled = Vec::with_capacity(16);
-            macro_rules! push {
-                ($($id:ident),* $(,)?) => {
-                    $(
-                        if self.$id.is_some() {
-                            enabled.push(stringify!($id));
-                        }
-                    )*
-                };
-            }
-            push!(cheatcodes, chisel_state, line_coverage, fuzzer, log_collector, printer, tracer);
-            if self.enable_isolation {
-                enabled.push("isolation");
-            }
-            format!("[{}]", enabled.join(", "))
-        });
     }
 
     /// Set the solar compiler instance.
