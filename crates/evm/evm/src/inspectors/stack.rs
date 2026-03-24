@@ -15,7 +15,7 @@ use foundry_evm_core::{
     FoundryBlock, FoundryInspectorExt, FoundryTransaction,
     backend::{DatabaseError, DatabaseExt, JournaledState},
     env::FoundryContextExt,
-    evm::{NestedEvm, new_eth_evm_with_inspector, with_cloned_context},
+    evm::{NestedEvm, new_revm_with_inspector, with_cloned_context},
 };
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_networks::NetworkConfigs;
@@ -366,7 +366,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
     ) -> Result<(), EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
-            let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector);
+            let mut evm = new_revm_with_inspector(db, evm_env, &mut inspector);
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
             let sub_inner = evm.journaled_state.inner.clone();
@@ -383,7 +383,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
     ) -> Result<EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
-        let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector);
+        let mut evm = new_revm_with_inspector(db, evm_env, &mut inspector);
         f(&mut evm)?;
         Ok(evm.to_evm_env())
     }
@@ -735,7 +735,7 @@ impl InspectorStackRefMut<'_> {
         let res = self.with_inspector(|mut inspector| {
             let (res, nested_env) = {
                 let (db, journal) = ecx.db_journal_inner_mut();
-                let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector);
+                let mut evm = new_revm_with_inspector(db, evm_env, &mut inspector);
 
                 evm.journal_inner_mut().state = {
                     let mut state = journal.state.clone();
@@ -759,7 +759,7 @@ impl InspectorStackRefMut<'_> {
                 // set depth to 1 to make sure traces are collected correctly
                 evm.journal_inner_mut().depth = 1;
 
-                let res = evm.transact(tx_env);
+                let res = evm.transact_raw(tx_env);
                 let nested_evm_env = evm.to_evm_env();
                 (res, nested_evm_env)
             };
