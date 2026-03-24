@@ -1235,23 +1235,16 @@ impl Cheatcode for executeTransactionCall {
 
         let mut res = None;
         let mut cold_state = Some(cold_state);
-        let modified_tx = modified_tx_env.clone();
         let mut nested_evm_env = {
             let (db, _) = ccx.ecx.db_journal_inner_mut();
-            executor.with_fresh_nested_evm(
-                ccx.state,
-                db,
-                modified_evm_env,
-                modified_tx_env,
-                &mut |evm| {
-                    // SAFETY: closure is called exactly once by the executor.
-                    evm.journal_inner_mut().state = cold_state.take().expect("called once");
-                    // Set depth to 1 for proper trace collection.
-                    evm.journal_inner_mut().depth = 1;
-                    res = Some(evm.transact(modified_tx.clone()));
-                    Ok(())
-                },
-            )?
+            executor.with_fresh_nested_evm(ccx.state, db, modified_evm_env, &mut |evm| {
+                // SAFETY: closure is called exactly once by the executor.
+                evm.journal_inner_mut().state = cold_state.take().expect("called once");
+                // Set depth to 1 for proper trace collection.
+                evm.journal_inner_mut().depth = 1;
+                res = Some(evm.transact(modified_tx_env.clone()));
+                Ok(())
+            })?
         };
         let res = res.unwrap();
 
