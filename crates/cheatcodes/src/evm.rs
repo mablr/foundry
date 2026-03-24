@@ -1242,7 +1242,7 @@ impl Cheatcode for executeTransactionCall {
                 evm.journal_inner_mut().state = cold_state.take().expect("called once");
                 // Set depth to 1 for proper trace collection.
                 evm.journal_inner_mut().depth = 1;
-                res = Some(evm.transact(modified_tx_env.clone()));
+                res = Some(evm.transact_raw(modified_tx_env.clone()));
                 Ok(())
             })?
         };

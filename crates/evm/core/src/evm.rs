@@ -31,6 +31,19 @@ use revm::{
     primitives::hardfork::SpecId,
 };
 
+pub fn new_revm_with_inspector<'db, I: EthInspectorExt>(
+    db: &'db mut dyn DatabaseExt,
+    evm_env: EvmEnv,
+    inspector: I,
+) -> EthRevmEvm<'db, I> {
+    let mut revm = alloy_evm::EthEvmFactory::default()
+        .create_evm_with_inspector(db, evm_env, inspector)
+        .into_inner();
+    revm.ctx.cfg.tx_chain_id_check = true;
+    revm.inspector.get_networks().inject_precompiles(&mut revm.precompiles);
+    revm
+}
+
 pub fn new_eth_evm_with_inspector<'db, I: EthInspectorExt>(
     db: &'db mut dyn DatabaseExt,
     evm_env: EvmEnv,
@@ -67,15 +80,16 @@ fn get_create2_factory_call_inputs(
     }
 }
 
+type EthRevmEvm<'db, I> = RevmEvm<
+    EthEvmContext<&'db mut dyn DatabaseExt>,
+    I,
+    EthInstructions<EthInterpreter, EthEvmContext<&'db mut dyn DatabaseExt>>,
+    PrecompilesMap,
+    EthFrame<EthInterpreter>,
+>;
+
 pub struct FoundryEvm<'db, I: EthInspectorExt> {
-    #[allow(clippy::type_complexity)]
-    inner: RevmEvm<
-        EthEvmContext<&'db mut dyn DatabaseExt>,
-        I,
-        EthInstructions<EthInterpreter, EthEvmContext<&'db mut dyn DatabaseExt>>,
-        PrecompilesMap,
-        EthFrame<EthInterpreter>,
-    >,
+    inner: EthRevmEvm<'db, I>,
 }
 
 impl<'db, I: EthInspectorExt> Evm for FoundryEvm<'db, I> {
@@ -176,7 +190,7 @@ pub trait NestedEvm {
     fn run_execution(&mut self, frame: FrameInput) -> Result<FrameResult, EVMError<DatabaseError>>;
 
     /// Executes a full transaction with the given tx env.
-    fn transact(
+    fn transact_raw(
         &mut self,
         tx: Self::Tx,
     ) -> Result<ResultAndState<HaltReason>, EVMError<DatabaseError>>;
@@ -185,13 +199,13 @@ pub trait NestedEvm {
     fn to_evm_env(self) -> EvmEnv<Self::Spec, Self::Block>;
 }
 
-impl<I: EthInspectorExt> NestedEvm for FoundryEvm<'_, I> {
+impl<'db, I: EthInspectorExt> NestedEvm for EthRevmEvm<'db, I> {
     type Tx = TxEnv;
     type Block = BlockEnv;
     type Spec = SpecId;
 
     fn journal_inner_mut(&mut self) -> &mut JournaledState {
-        &mut self.inner.ctx.journaled_state.inner
+        &mut self.ctx_mut().journaled_state.inner
     }
 
     fn run_execution(&mut self, frame: FrameInput) -> Result<FrameResult, EVMError<DatabaseError>> {
@@ -199,27 +213,33 @@ impl<I: EthInspectorExt> NestedEvm for FoundryEvm<'_, I> {
 
         // Create first frame
         let memory =
-            SharedMemory::new_with_buffer(self.inner.ctx().local().shared_memory_buffer().clone());
+            SharedMemory::new_with_buffer(self.ctx().local().shared_memory_buffer().clone());
         let first_frame_input = FrameInit { depth: 0, memory, frame_input: frame };
 
         // Run execution loop
-        let mut frame_result = handler.inspect_run_exec_loop(&mut self.inner, first_frame_input)?;
+        let mut frame_result = handler.inspect_run_exec_loop(self, first_frame_input)?;
 
         // Handle last frame result
-        handler.last_frame_result(&mut self.inner, &mut frame_result)?;
+        handler.last_frame_result(self, &mut frame_result)?;
 
         Ok(frame_result)
     }
 
-    fn transact(
+    fn transact_raw(
         &mut self,
         tx: TxEnv,
     ) -> Result<ResultAndState<HaltReason>, EVMError<DatabaseError>> {
-        Evm::transact_raw(self, tx)
+        self.set_tx(tx);
+
+        let mut handler = FoundryHandler::<I>::default();
+        let result = handler.inspect_run(self)?;
+
+        Ok(ResultAndState::new(result, self.ctx.journaled_state.inner.state.clone()))
     }
 
     fn to_evm_env(self) -> EvmEnv {
-        Evm::finish(self).1
+        let Context { block, cfg, .. } = self.ctx;
+        EvmEnv::new(cfg, block)
     }
 }
 
