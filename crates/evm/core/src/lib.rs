@@ -14,7 +14,6 @@ use revm::{
     context::{BlockEnv, CfgEnv, TxEnv},
     inspector::NoOpInspector,
     interpreter::CreateInputs,
-    primitives::hardfork::SpecId,
 };
 use revm_inspectors::access_list::AccessListInspector;
 
@@ -54,7 +53,7 @@ pub mod utils;
 /// network config, deployer address). It has no `Inspector<CTX>` supertrait so it can
 /// be used in generic code with `I: FoundryInspectorExt + Inspector<CTX>`.
 #[auto_impl(&mut, Box)]
-pub trait FoundryInspectorExt {
+pub trait InspectorExt {
     /// Determines whether the `DEFAULT_CREATE2_DEPLOYER` should be used for a CREATE2 frame.
     ///
     /// If this function returns true, we'll replace CREATE2 frame with a CALL frame to CREATE2
@@ -79,20 +78,18 @@ pub trait FoundryInspectorExt {
     }
 }
 
-/// Combined trait: `Inspector<Context<...>>` + [`FoundryInspectorExt`].
-///
-/// For generic multi-network code, use `I: FoundryInspectorExt + Inspector<CTX>` instead.
-pub trait EthInspectorExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
-    for<'a> Inspector<Context<BLOCK, TX, CfgEnv<SPEC>, &'a mut dyn DatabaseExt>> + FoundryInspectorExt
-{
-}
+/// The default Foundry Eth EVM context type, to be removed/refactored once foundry-evm is
+/// fully-generic.
+pub type EthEvmCtx<'db> = Context<BlockEnv, TxEnv, CfgEnv, &'db mut dyn DatabaseExt>;
 
-impl<BLOCK, TX, SPEC, T> EthInspectorExt<BLOCK, TX, SPEC> for T where
-    T: for<'a> Inspector<Context<BLOCK, TX, CfgEnv<SPEC>, &'a mut dyn DatabaseExt>>
-        + FoundryInspectorExt
-{
-}
+/// A combined inspector trait that integrates revm's [`Inspector`] with Foundry-specific
+/// extensions. Automatically implemented for any type that implements both [`Inspector<CTX>`]
+/// and [`InspectorExt`].
+pub trait FoundryInspectorExt<CTX: FoundryContextExt>: Inspector<CTX> + InspectorExt {}
 
-impl FoundryInspectorExt for NoOpInspector {}
+impl<CTX: FoundryContextExt, T> FoundryInspectorExt<CTX> for T where T: Inspector<CTX> + InspectorExt
+{}
 
-impl FoundryInspectorExt for AccessListInspector {}
+impl InspectorExt for NoOpInspector {}
+
+impl InspectorExt for AccessListInspector {}
