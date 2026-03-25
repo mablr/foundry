@@ -27,6 +27,7 @@ use revm::{
         result::{EVMError, ExecutionResult, Output},
     },
     context_interface::CreateScheme,
+    handler::EvmTr,
     inspector::JournalExt,
     interpreter::{
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Gas, InstructionResult,
@@ -362,7 +363,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         &mut self,
         cheats: &mut Cheatcodes,
         ecx: &mut CTX,
-        f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
+        f: NestedEvmClosure<'_, CTX::Tx>,
     ) -> Result<(), EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
@@ -370,7 +371,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
             let sub_inner = evm.journaled_state.inner.clone();
-            let sub_evm_env = evm.to_evm_env();
+            let sub_evm_env = evm.ctx_ref().evm_clone();
             Ok((sub_evm_env, sub_inner))
         })
     }
@@ -380,12 +381,12 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         cheats: &mut Cheatcodes,
         db: &mut dyn DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
         evm_env: EvmEnv<CTX::Spec, CTX::Block>,
-        f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
+        f: NestedEvmClosure<'_, CTX::Tx>,
     ) -> Result<EvmEnv<CTX::Spec, CTX::Block>, EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let mut evm = new_revm_with_inspector(db, evm_env, &mut inspector);
         f(&mut evm)?;
-        Ok(evm.to_evm_env())
+        Ok(evm.ctx_ref().evm_clone())
     }
 
     fn transact_on_db(
@@ -760,7 +761,7 @@ impl InspectorStackRefMut<'_> {
                 evm.journal_inner_mut().depth = 1;
 
                 let res = evm.transact_raw(tx_env);
-                let nested_evm_env = evm.to_evm_env();
+                let nested_evm_env = evm.ctx_ref().evm_clone();
                 (res, nested_evm_env)
             };
 
