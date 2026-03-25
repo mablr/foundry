@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    EthCheatCtx, EthInspectorExt,
+    EthInspectorExt, FoundryContextExt,
     backend::{DatabaseExt, JournaledState},
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
@@ -15,8 +15,8 @@ use foundry_fork_db::DatabaseError;
 use revm::{
     Context,
     context::{
-        BlockEnv, Cfg, CfgEnv, ContextSetters, ContextTr, CreateScheme, Evm as RevmEvm, JournalTr,
-        LocalContextTr, TxEnv,
+        BlockEnv, CfgEnv, ContextTr, CreateScheme, Evm as RevmEvm, JournalTr, LocalContextTr,
+        TxEnv,
         result::{EVMError, ExecResultAndState, ExecutionResult, HaltReason, ResultAndState},
     },
     handler::{
@@ -253,16 +253,16 @@ pub type NestedEvmClosure<'a, Block, Tx, Spec> =
 /// and cloned journal inner to the callback. The callback builds whatever EVM it
 /// needs, runs its operations, and returns `(result, modified_env, modified_journal)`.
 /// Modified state is written back after the callback returns.
-pub fn with_cloned_context<CTX: EthCheatCtx>(
+pub fn with_cloned_context<
+    CTX: FoundryContextExt<Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>,
+>(
     ecx: &mut CTX,
     f: impl FnOnce(
-        &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
-        EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
+        &mut dyn DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        EvmEnv<CTX::Spec, CTX::Block>,
         JournaledState,
-    ) -> Result<
-        (EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, JournaledState),
-        EVMError<DatabaseError>,
-    >,
+    )
+        -> Result<(EvmEnv<CTX::Spec, CTX::Block>, JournaledState), EVMError<DatabaseError>>,
 ) -> Result<(), EVMError<DatabaseError>> {
     let evm_env = ecx.evm_clone();
 

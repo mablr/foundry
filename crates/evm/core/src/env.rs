@@ -312,15 +312,6 @@ impl<TX: FoundryTransaction> FoundryTransaction for OpTransaction<TX> {
     }
 }
 
-/// Marker trait for Foundry's [`CfgEnv`] type, abstracting `Spec` type.
-pub trait FoundryCfg: Cfg + Clone + Debug {
-    type Spec: Into<SpecId> + Clone + Debug;
-}
-
-impl<SPEC: Into<SpecId> + Clone + Debug> FoundryCfg for CfgEnv<SPEC> {
-    type Spec = SPEC;
-}
-
 /// Extension trait providing mutable field access to block, tx, and cfg environments.
 ///
 /// [`ContextTr`] only exposes immutable references for block, tx, and cfg.
@@ -329,67 +320,86 @@ pub trait FoundryContextExt:
     ContextTr<
         Block: FoundryBlock + Clone,
         Tx: FoundryTransaction + Clone,
-        Cfg: FoundryCfg,
+        Cfg = CfgEnv<Self::Spec>,
         Journal: JournalExt,
     >
 {
+    /// Specification id type
+    ///
+    /// Bubbled-up from `ContextTr::Cfg` for convenience and simplified bounds.
+    type Spec: Into<SpecId> + Copy + Debug;
+
     /// Mutable reference to the block environment.
     fn block_mut(&mut self) -> &mut Self::Block;
+
     /// Mutable reference to the transaction environment.
     fn tx_mut(&mut self) -> &mut Self::Tx;
+
     /// Mutable reference to the configuration environment.
     fn cfg_mut(&mut self) -> &mut Self::Cfg;
+
     /// Mutable reference to the db and the journal inner.
     fn db_journal_inner_mut(&mut self) -> (&mut Self::Db, &mut JournaledState);
+
     /// Sets block environment.
     fn set_block(&mut self, block: Self::Block) {
         *self.block_mut() = block;
     }
+
     /// Sets transaction environment.
     fn set_tx(&mut self, tx: Self::Tx) {
         *self.tx_mut() = tx;
     }
+
     /// Sets configuration environment.
     fn set_cfg(&mut self, cfg: Self::Cfg) {
         *self.cfg_mut() = cfg;
     }
+
     /// Sets journal inner.
     fn set_journal_inner(&mut self, journal_inner: JournaledState) {
         *self.db_journal_inner_mut().1 = journal_inner;
     }
+
     /// Sets EVM environment.
-    fn set_evm(&mut self, evm_env: EvmEnv<<Self::Cfg as FoundryCfg>::Spec, Self::Block>)
-    where
-        Self::Cfg: From<CfgEnv<<Self::Cfg as FoundryCfg>::Spec>>,
-    {
-        *self.cfg_mut() = evm_env.cfg_env.into();
+    fn set_evm(&mut self, evm_env: EvmEnv<Self::Spec, Self::Block>) {
+        *self.cfg_mut() = evm_env.cfg_env;
         *self.block_mut() = evm_env.block_env;
     }
+
     /// Cloned transaction environment.
     fn tx_clone(&self) -> Self::Tx {
         self.tx().clone()
     }
+
     /// Cloned EVM environment (Cfg + Block).
-    fn evm_clone(&self) -> EvmEnv<<Self::Cfg as FoundryCfg>::Spec, Self::Block>
-    where
-        Self::Cfg: Into<CfgEnv<<Self::Cfg as FoundryCfg>::Spec>>,
-    {
-        EvmEnv::new(self.cfg().clone().into(), self.block().clone())
+    fn evm_clone(&self) -> EvmEnv<Self::Spec, Self::Block> {
+        EvmEnv::new(self.cfg().clone(), self.block().clone())
     }
 }
 
-impl<BLOCK: FoundryBlock + Clone, TX: FoundryTransaction + Clone, CFG: FoundryCfg, DB: Database, C>
-    FoundryContextExt for Context<BLOCK, TX, CFG, DB, Journal<DB>, C>
+impl<
+    BLOCK: FoundryBlock + Clone,
+    TX: FoundryTransaction + Clone,
+    SPEC: Into<SpecId> + Copy + Debug,
+    DB: Database,
+    C,
+> FoundryContextExt for Context<BLOCK, TX, CfgEnv<SPEC>, DB, Journal<DB>, C>
 {
+    type Spec = <Self::Cfg as Cfg>::Spec;
+
     fn block_mut(&mut self) -> &mut Self::Block {
         &mut self.block
     }
+
     fn tx_mut(&mut self) -> &mut Self::Tx {
         &mut self.tx
     }
+
     fn cfg_mut(&mut self) -> &mut Self::Cfg {
         &mut self.cfg
     }
+
     fn db_journal_inner_mut(&mut self) -> (&mut Self::Db, &mut JournaledState) {
         (&mut self.journaled_state.database, &mut self.journaled_state.inner)
     }
@@ -403,19 +413,21 @@ impl<BLOCK: FoundryBlock + Clone, TX: FoundryTransaction + Clone, CFG: FoundryCf
 /// Once cheatcodes are fully generic over network/environment types this alias will be removed.
 pub trait EthCheatCtx:
     FoundryContextExt<
+        Spec = SpecId,
         Block = BlockEnv,
         Tx = TxEnv,
         Cfg = CfgEnv,
-        Db: DatabaseExt<Self::Block, Self::Tx, <Self::Cfg as FoundryCfg>::Spec>,
+        Db: DatabaseExt<Self::Block, Self::Tx, Self::Spec>,
     >
 {
 }
 impl<CTX> EthCheatCtx for CTX where
     CTX: FoundryContextExt<
+            Spec = SpecId,
             Block = BlockEnv,
             Tx = TxEnv,
             Cfg = CfgEnv,
-            Db: DatabaseExt<Self::Block, Self::Tx, <Self::Cfg as FoundryCfg>::Spec>,
+            Db: DatabaseExt<Self::Block, Self::Tx, Self::Spec>,
         >
 {
 }

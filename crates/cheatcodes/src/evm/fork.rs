@@ -11,7 +11,7 @@ use alloy_rpc_types::Filter;
 use alloy_sol_types::SolValue;
 use foundry_common::provider::ProviderBuilder;
 use foundry_evm_core::{FoundryContextExt, backend::JournaledState, fork::CreateFork};
-use revm::context::{Cfg, ContextTr};
+use revm::context::ContextTr;
 
 impl Cheatcode for activeForkCall {
     fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
@@ -397,10 +397,7 @@ fn create_fork_request<CTX: EthCheatCtx>(
         enable_caching: !ccx.state.config.no_storage_caching
             && ccx.state.config.rpc_storage_caching.enable_for_endpoint(&url),
         url,
-        evm_env: EvmEnv {
-            cfg_env: ccx.ecx.cfg_mut().clone(),
-            block_env: ccx.ecx.block_mut().clone(),
-        },
+        evm_env: ccx.ecx.evm_clone(),
         evm_opts,
     };
     Ok(fork)
@@ -412,8 +409,8 @@ fn create_fork_request<CTX: EthCheatCtx>(
 fn fork_env_op<CTX: EthCheatCtx, T: SolValue>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     f: impl FnOnce(
-        &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
-        &mut EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
+        &mut dyn DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        &mut EvmEnv<CTX::Spec, CTX::Block>,
         &mut CTX::Tx,
         &mut JournaledState,
     ) -> eyre::Result<T>,
