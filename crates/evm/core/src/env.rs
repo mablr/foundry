@@ -289,13 +289,14 @@ impl<CTX> EthCheatCtx for CTX where
 {
 }
 
-/// Abstraction trait for converting an RPC transaction into a `TxEnv`.
+/// Abstraction trait for converting any RPC transaction into corresponding `TxEnv`.
 ///
 /// This trait bridges the gap between different network RPC transaction types and the EVM's
 /// `TxEnv`:
 /// - For [`alloy_rpc_types::Transaction`] (Ethereum): delegates to [`ToTxEnv`].
-/// - For [`AnyRpcTransaction`] (AnyNetwork): extracts the inner [`TxEnvelope`] via
-///   [`as_envelope()`](AnyTxEnvelope::as_envelope) then delegates to [`FromRecoveredTx`].
+/// - For [`AnyRpcTransaction`] (AnyNetwork): extracts the inner [`alloy_consensus::TxEnvelope`] via
+///   [`as_envelope()`](alloy_network::AnyTxEnvelope::as_envelope) then delegates to
+///   [`FromRecoveredTx`].
 /// - For [`op_alloy_rpc_types::Transaction`] (Optimism): delegates to [`ToTxEnv`].
 pub trait TryAnyToTxEnv<TxEnv> {
     /// Tries to convert this RPC transaction into a [`TxEnv`].
