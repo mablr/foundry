@@ -190,10 +190,6 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Deref
 pub trait NestedEvm {
     /// The transaction environment type.
     type Tx;
-    /// The block environment type.
-    type Block;
-    /// The EVM spec (hardfork) type.
-    type Spec;
 
     /// Returns a mutable reference to the journal inner state (`JournaledState`).
     fn journal_inner_mut(&mut self) -> &mut JournaledState;
@@ -206,17 +202,12 @@ pub trait NestedEvm {
         &mut self,
         tx: Self::Tx,
     ) -> Result<ResultAndState<HaltReason>, EVMError<DatabaseError>>;
-
-    /// Returns a snapshot of the current EVM environment (cfg + block).
-    fn to_evm_env(self) -> EvmEnv<Self::Spec, Self::Block>;
 }
 
 impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> NestedEvm
     for EthRevmEvm<'db, I>
 {
     type Tx = TxEnv;
-    type Block = BlockEnv;
-    type Spec = SpecId;
 
     fn journal_inner_mut(&mut self) -> &mut JournaledState {
         &mut self.ctx_mut().journaled_state.inner
@@ -241,7 +232,7 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Neste
 
     fn transact_raw(
         &mut self,
-        tx: TxEnv,
+        tx: Self::Tx,
     ) -> Result<ResultAndState<HaltReason>, EVMError<DatabaseError>> {
         self.set_tx(tx);
 
@@ -250,18 +241,11 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Neste
 
         Ok(ResultAndState::new(result, self.ctx.journaled_state.inner.state.clone()))
     }
-
-    fn to_evm_env(self) -> EvmEnv {
-        let Context { block, cfg, .. } = self.ctx;
-        EvmEnv::new(cfg, block)
-    }
 }
 
 /// Closure type used by `CheatcodesExecutor` methods that run nested EVM operations.
-pub type NestedEvmClosure<'a, Block, Tx, Spec> =
-    &'a mut dyn FnMut(
-        &mut dyn NestedEvm<Block = Block, Tx = Tx, Spec = Spec>,
-    ) -> Result<(), EVMError<DatabaseError>>;
+pub type NestedEvmClosure<'a, Tx> =
+    &'a mut dyn FnMut(&mut dyn NestedEvm<Tx = Tx>) -> Result<(), EVMError<DatabaseError>>;
 
 /// Clones the current context (env + journal), passes the database, cloned env,
 /// and cloned journal inner to the callback. The callback builds whatever EVM it
