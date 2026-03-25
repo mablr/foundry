@@ -8,13 +8,7 @@
 use crate::constants::DEFAULT_CREATE2_DEPLOYER;
 use alloy_primitives::{Address, map::HashMap};
 use auto_impl::auto_impl;
-use backend::DatabaseExt;
-use revm::{
-    Context, Inspector,
-    context::{BlockEnv, CfgEnv, TxEnv},
-    inspector::NoOpInspector,
-    interpreter::CreateInputs,
-};
+use revm::{Inspector, inspector::NoOpInspector, interpreter::CreateInputs};
 use revm_inspectors::access_list::AccessListInspector;
 
 /// Map keyed by breakpoints char to their location (contract address, pc)
@@ -77,10 +71,6 @@ pub trait InspectorExt {
         DEFAULT_CREATE2_DEPLOYER
     }
 }
-
-/// The default Foundry Eth EVM context type, to be removed/refactored once foundry-evm is
-/// fully-generic.
-pub type EthEvmCtx<'db> = Context<BlockEnv, TxEnv, CfgEnv, &'db mut dyn DatabaseExt>;
 
 /// A combined inspector trait that integrates revm's [`Inspector`] with Foundry-specific
 /// extensions. Automatically implemented for any type that implements both [`Inspector<CTX>`]

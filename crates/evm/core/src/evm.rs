@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    EthCheatCtx, EthEvmCtx, FoundryInspectorExt,
+    EthCheatCtx, FoundryInspectorExt,
     backend::{DatabaseExt, JournaledState},
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
@@ -31,7 +31,10 @@ use revm::{
     primitives::hardfork::SpecId,
 };
 
-pub fn new_revm_with_inspector<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>>(
+pub fn new_revm_with_inspector<
+    'db,
+    I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+>(
     db: &'db mut dyn DatabaseExt,
     evm_env: EvmEnv,
     inspector: I,
@@ -44,7 +47,10 @@ pub fn new_revm_with_inspector<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>>(
     revm
 }
 
-pub fn new_eth_evm_with_inspector<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>>(
+pub fn new_eth_evm_with_inspector<
+    'db,
+    I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+>(
     db: &'db mut dyn DatabaseExt,
     evm_env: EvmEnv,
     inspector: I,
@@ -88,11 +94,13 @@ type EthRevmEvm<'db, I> = RevmEvm<
     EthFrame<EthInterpreter>,
 >;
 
-pub struct FoundryEvm<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> {
+pub struct FoundryEvm<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> {
     inner: EthRevmEvm<'db, I>,
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> Evm for FoundryEvm<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Evm
+    for FoundryEvm<'db, I>
+{
     type Precompiles = PrecompilesMap;
     type Inspector = I;
     type DB = &'db mut dyn DatabaseExt;
@@ -157,7 +165,9 @@ impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> Evm for FoundryEvm<'db, I> {
     }
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> Deref for FoundryEvm<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Deref
+    for FoundryEvm<'db, I>
+{
     type Target = Context<BlockEnv, TxEnv, CfgEnv, &'db mut dyn DatabaseExt>;
 
     fn deref(&self) -> &Self::Target {
@@ -165,7 +175,9 @@ impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> Deref for FoundryEvm<'db, I> {
     }
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> DerefMut for FoundryEvm<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> DerefMut
+    for FoundryEvm<'db, I>
+{
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner.ctx
     }
@@ -199,7 +211,9 @@ pub trait NestedEvm {
     fn to_evm_env(self) -> EvmEnv<Self::Spec, Self::Block>;
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> NestedEvm for EthRevmEvm<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> NestedEvm
+    for EthRevmEvm<'db, I>
+{
     type Tx = TxEnv;
     type Block = BlockEnv;
     type Spec = SpecId;
@@ -278,12 +292,14 @@ pub fn with_cloned_context<CTX: EthCheatCtx>(
     Ok(())
 }
 
-pub struct FoundryHandler<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> {
+pub struct FoundryHandler<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> {
     create2_overrides: Vec<(usize, CallInputs)>,
     _phantom: PhantomData<(&'db mut dyn DatabaseExt, I)>,
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> Default for FoundryHandler<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Default
+    for FoundryHandler<'db, I>
+{
     fn default() -> Self {
         Self { create2_overrides: Vec::new(), _phantom: PhantomData }
     }
@@ -291,7 +307,9 @@ impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> Default for FoundryHandler<'db
 
 // Blanket Handler implementation for FoundryHandler, needed for implementing the InspectorHandler
 // trait.
-impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> Handler for FoundryHandler<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Handler
+    for FoundryHandler<'db, I>
+{
     type Evm = RevmEvm<
         EthEvmContext<&'db mut dyn DatabaseExt>,
         I,
@@ -303,7 +321,7 @@ impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> Handler for FoundryHandler<'db
     type HaltReason = HaltReason;
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> FoundryHandler<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> FoundryHandler<'db, I> {
     /// Handles CREATE2 frame initialization, potentially transforming it to use the CREATE2
     /// factory.
     fn handle_create_frame(
@@ -397,7 +415,9 @@ impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> FoundryHandler<'db, I> {
     }
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmCtx<'db>>> InspectorHandler for FoundryHandler<'db, I> {
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> InspectorHandler
+    for FoundryHandler<'db, I>
+{
     type IT = EthInterpreter;
 
     fn inspect_run_exec_loop(
