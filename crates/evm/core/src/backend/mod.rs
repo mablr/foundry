@@ -1,7 +1,7 @@
 //! Foundry's main executor backend abstraction and implementation.
 
 use crate::{
-    EthInspectorExt, FoundryBlock, FoundryTransaction, TryAnyIntoTxEnv,
+    EthInspectorExt, FoundryBlock, FoundryTransaction, TryAnyToTxEnv,
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, TEST_CONTRACT_ADDRESS},
     evm::new_eth_evm_with_inspector,
     fork::{CreateFork, ForkId, MultiFork},
@@ -474,7 +474,7 @@ pub struct Backend<N: Network = AnyNetwork> {
 
 impl<N: Network> Backend<N>
 where
-    N::TxEnvelope: TryAnyIntoTxEnv,
+    N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
 {
     /// Creates a new Backend with a spawned multi fork thread.
     ///
@@ -927,7 +927,7 @@ where
 
 impl<N: Network> DatabaseExt for Backend<N>
 where
-    N::TxEnvelope: TryAnyIntoTxEnv,
+    N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
 {
     fn snapshot_state(&mut self, journaled_state: &JournaledState, evm_env: &EvmEnv) -> U256 {
         trace!("create snapshot");
@@ -1515,7 +1515,7 @@ where
 
 impl<N: Network> DatabaseRef for Backend<N>
 where
-    N::TxEnvelope: TryAnyIntoTxEnv,
+    N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
 {
     type Error = DatabaseError;
 
@@ -1554,7 +1554,7 @@ where
 
 impl<N: Network> DatabaseCommit for Backend<N>
 where
-    N::TxEnvelope: TryAnyIntoTxEnv,
+    N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
 {
     fn commit(&mut self, changes: Map<Address, Account>) {
         if let Some(db) = self.active_fork_db_mut() {
@@ -1567,7 +1567,7 @@ where
 
 impl<N: Network> Database for Backend<N>
 where
-    N::TxEnvelope: TryAnyIntoTxEnv,
+    N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
 {
     type Error = DatabaseError;
     fn basic(&mut self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
@@ -2009,9 +2009,9 @@ fn commit_transaction<N: Network>(
     inspector: &mut dyn EthInspectorExt,
 ) -> eyre::Result<()>
 where
-    N::TxEnvelope: TryAnyIntoTxEnv,
+    N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
 {
-    *tx_env = tx.as_ref().try_into_tx_env(tx.from())?;
+    *tx_env = tx.try_any_to_tx_env()?;
 
     let now = Instant::now();
     let res = {
