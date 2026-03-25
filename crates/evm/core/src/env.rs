@@ -5,8 +5,12 @@ pub use alloy_evm::EvmEnv;
 use alloy_evm::FromRecoveredTx;
 use alloy_network::AnyTxEnvelope;
 use alloy_primitives::{Address, B256, Bytes, U256};
+use op_revm::{
+    OpTransaction,
+    transaction::{OpTxTr, deposit::DEPOSIT_TRANSACTION_TYPE},
+};
 use revm::{
-    Context, Database,
+    Context, Database, Journal,
     context::{Block, BlockEnv, Cfg, CfgEnv, Transaction, TxEnv},
     context_interface::{ContextTr, transaction::AccessList},
     inspector::JournalExt,
@@ -125,6 +129,45 @@ pub trait FoundryTransaction: Transaction {
 
     /// Sets the max fee per blob gas.
     fn set_max_fee_per_blob_gas(&mut self, max_fee_per_blob_gas: u128);
+
+    // `OpTransaction` methods
+
+    /// Enveloped transaction bytes.
+    fn enveloped_tx(&self) -> Option<&Bytes> {
+        None
+    }
+
+    /// Set Enveloped transaction bytes.
+    fn set_enveloped_tx(&mut self, _bytes: Bytes) {}
+
+    /// Source hash of the deposit transaction.
+    fn source_hash(&self) -> Option<B256> {
+        None
+    }
+
+    /// Sets source hash of the deposit transaction.
+    fn set_source_hash(&mut self, _source_hash: B256) {}
+
+    /// Mint of the deposit transaction
+    fn mint(&self) -> Option<u128> {
+        None
+    }
+
+    /// Sets mint of the deposit transaction.
+    fn set_mint(&mut self, _mint: u128) {}
+
+    /// Whether the transaction is a system transaction
+    fn is_system_transaction(&self) -> bool {
+        false
+    }
+
+    /// Sets whether the transaction is a system transaction
+    fn set_system_transaction(&mut self, _is_system_transaction: bool) {}
+
+    /// Returns `true` if transaction is of type [`DEPOSIT_TRANSACTION_TYPE`].
+    fn is_deposit(&self) -> bool {
+        self.tx_type() == DEPOSIT_TRANSACTION_TYPE
+    }
 }
 
 impl FoundryTransaction for TxEnv {
@@ -178,6 +221,94 @@ impl FoundryTransaction for TxEnv {
 
     fn set_max_fee_per_blob_gas(&mut self, max_fee_per_blob_gas: u128) {
         self.max_fee_per_blob_gas = max_fee_per_blob_gas;
+    }
+}
+
+impl<TX: FoundryTransaction> FoundryTransaction for OpTransaction<TX> {
+    fn set_tx_type(&mut self, tx_type: u8) {
+        self.base.set_tx_type(tx_type);
+    }
+
+    fn set_caller(&mut self, caller: Address) {
+        self.base.set_caller(caller);
+    }
+
+    fn set_gas_limit(&mut self, gas_limit: u64) {
+        self.base.set_gas_limit(gas_limit);
+    }
+
+    fn set_gas_price(&mut self, gas_price: u128) {
+        self.base.set_gas_price(gas_price);
+    }
+
+    fn set_kind(&mut self, kind: TxKind) {
+        self.base.set_kind(kind);
+    }
+
+    fn set_value(&mut self, value: U256) {
+        self.base.set_value(value);
+    }
+
+    fn set_data(&mut self, data: Bytes) {
+        self.base.set_data(data);
+    }
+
+    fn set_nonce(&mut self, nonce: u64) {
+        self.base.set_nonce(nonce);
+    }
+
+    fn set_chain_id(&mut self, chain_id: Option<u64>) {
+        self.base.set_chain_id(chain_id);
+    }
+
+    fn set_access_list(&mut self, access_list: AccessList) {
+        self.base.set_access_list(access_list);
+    }
+
+    fn set_gas_priority_fee(&mut self, gas_priority_fee: Option<u128>) {
+        self.base.set_gas_priority_fee(gas_priority_fee);
+    }
+
+    fn set_blob_hashes(&mut self, _blob_hashes: Vec<B256>) {}
+
+    fn set_max_fee_per_blob_gas(&mut self, _max_fee_per_blob_gas: u128) {}
+
+    fn enveloped_tx(&self) -> Option<&Bytes> {
+        OpTxTr::enveloped_tx(self)
+    }
+
+    fn set_enveloped_tx(&mut self, bytes: Bytes) {
+        self.enveloped_tx = Some(bytes);
+    }
+
+    fn source_hash(&self) -> Option<B256> {
+        OpTxTr::source_hash(self)
+    }
+
+    fn set_source_hash(&mut self, source_hash: B256) {
+        if self.tx_type() == DEPOSIT_TRANSACTION_TYPE {
+            self.deposit.source_hash = source_hash;
+        }
+    }
+
+    fn mint(&self) -> Option<u128> {
+        OpTxTr::mint(self)
+    }
+
+    fn set_mint(&mut self, mint: u128) {
+        if self.tx_type() == DEPOSIT_TRANSACTION_TYPE {
+            self.deposit.mint = Some(mint);
+        }
+    }
+
+    fn is_system_transaction(&self) -> bool {
+        OpTxTr::is_system_transaction(self)
+    }
+
+    fn set_system_transaction(&mut self, is_system_transaction: bool) {
+        if self.tx_type() == DEPOSIT_TRANSACTION_TYPE {
+            self.deposit.is_system_transaction = is_system_transaction;
+        }
     }
 }
 
@@ -247,8 +378,8 @@ pub trait FoundryContextExt:
     }
 }
 
-impl<BLOCK: FoundryBlock + Clone, TX: FoundryTransaction + Clone, CFG: FoundryCfg, DB: Database>
-    FoundryContextExt for Context<BLOCK, TX, CFG, DB>
+impl<BLOCK: FoundryBlock + Clone, TX: FoundryTransaction + Clone, CFG: FoundryCfg, DB: Database, C>
+    FoundryContextExt for Context<BLOCK, TX, CFG, DB, Journal<DB>, C>
 {
     fn block_mut(&mut self) -> &mut Self::Block {
         &mut self.block
