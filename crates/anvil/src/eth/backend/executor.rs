@@ -1,7 +1,4 @@
-use crate::{
-    eth::backend::{cheats::CheatsManager, env::Env},
-    mem::inspector::AnvilInspector,
-};
+use crate::{eth::backend::cheats::CheatsManager, mem::inspector::AnvilInspector};
 use alloy_consensus::{Eip658Value, Transaction, TransactionEnvelope, transaction::Either};
 use alloy_eips::{
     Encodable2718, eip2935, eip4788,
@@ -358,26 +355,24 @@ pub fn build_tx_env_for_pending(
 /// Creates a database with given database and inspector.
 pub fn new_eth_evm_with_inspector<DB, I>(
     db: DB,
-    env: &Env,
+    evm_env: &EvmEnv,
     inspector: I,
+    is_optimism: bool,
 ) -> EitherEvm<DB, I, PrecompilesMap>
 where
     DB: Database<Error = DatabaseError> + Debug,
     I: Inspector<EthEvmContext<DB>> + Inspector<OpContext<DB>>,
 {
-    if env.networks.is_optimism() {
+    if is_optimism {
         let evm_env = EvmEnv::new(
-            env.evm_env
-                .cfg_env
-                .clone()
-                .with_spec_and_mainnet_gas_params(op_revm::OpSpecId::ISTHMUS),
-            env.evm_env.block_env.clone(),
+            evm_env.cfg_env.clone().with_spec_and_mainnet_gas_params(op_revm::OpSpecId::ISTHMUS),
+            evm_env.block_env.clone(),
         );
         EitherEvm::Op(OpEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector))
     } else {
         EitherEvm::Eth(EthEvmFactory::default().create_evm_with_inspector(
             db,
-            env.evm_env.clone(),
+            evm_env.clone(),
             inspector,
         ))
     }
