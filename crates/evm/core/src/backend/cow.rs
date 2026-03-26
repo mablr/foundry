@@ -2,14 +2,14 @@
 
 use super::BackendError;
 use crate::{
-    EthInspectorExt,
+    FoundryInspectorExt,
     backend::{
         Backend, DatabaseExt, JournaledState, LocalForkId, RevertStateSnapshotAction,
         diagnostic::RevertDiagnostic,
     },
     fork::{CreateFork, ForkId},
 };
-use alloy_evm::{Evm, EvmEnv};
+use alloy_evm::{Evm, EvmEnv, eth::EthEvmContext};
 use alloy_genesis::GenesisAccount;
 use alloy_primitives::{Address, B256, TxKind, U256};
 use eyre::WrapErr;
@@ -63,7 +63,7 @@ impl<'a> CowBackend<'a> {
     /// Note: in case there are any cheatcodes executed that modify the environment, this will
     /// update the given `env` with the new values.
     #[instrument(name = "inspect", level = "debug", skip_all)]
-    pub fn inspect<I: EthInspectorExt>(
+    pub fn inspect<I: for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>>(
         &mut self,
         evm_env: &mut EvmEnv,
         tx_env: &mut TxEnv,
@@ -198,7 +198,7 @@ impl DatabaseExt for CowBackend<'_> {
         evm_env: EvmEnv,
         tx_env: TxEnv,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn EthInspectorExt,
+        inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
     ) -> eyre::Result<()> {
         self.backend_mut().transact(id, transaction, evm_env, tx_env, journaled_state, inspector)
     }
@@ -208,7 +208,7 @@ impl DatabaseExt for CowBackend<'_> {
         tx_env: &TxEnv,
         evm_env: EvmEnv,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn EthInspectorExt,
+        inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
     ) -> eyre::Result<()> {
         self.backend_mut().transact_from_tx(tx_env, evm_env, journaled_state, inspector)
     }
