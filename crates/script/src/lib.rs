@@ -15,7 +15,7 @@ use crate::runner::ScriptRunner;
 use alloy_json_abi::{Function, JsonAbi};
 use alloy_network::Ethereum;
 use alloy_primitives::{
-    Address, Bytes, Log, TxKind, U256, hex,
+    Address, Bytes, Log, U256, hex,
     map::{AddressHashMap, HashMap},
 };
 use alloy_signer::Signer;
@@ -458,20 +458,23 @@ impl ScriptArgs {
         };
 
         for (data, to) in result.transactions.iter().flat_map(|txes| {
-            txes.iter().filter_map(|tx| (tx.input.len() > max_size).then_some((&tx.input, tx.to)))
+            txes.iter().filter_map(|tx| {
+                tx.transaction
+                    .input()
+                    .filter(|data| data.len() > max_size)
+                    .map(|data| (data, tx.transaction.to()))
+            })
         }) {
             let mut offset = 0;
 
             // Find if it's a CREATE or CREATE2. Otherwise, skip transaction.
-            if let Some(TxKind::Call(to)) = to {
+            if let Some(to) = to {
                 if to == create2_deployer {
                     // Size of the salt prefix.
                     offset = 32;
                 } else {
                     continue;
                 }
-            } else if let Some(TxKind::Create) = to {
-                // Pass
             }
 
             // Find artifact with a deployment code same as the data.
@@ -540,7 +543,7 @@ pub struct ScriptResult {
     pub gas_used: u64,
     pub labeled_addresses: AddressHashMap<String>,
     #[serde(skip)]
-    pub transactions: Option<BroadcastableTransactions>,
+    pub transactions: Option<BroadcastableTransactions<Ethereum>>,
     pub returned: Bytes,
     pub address: Option<Address>,
     #[serde(skip)]
@@ -562,7 +565,7 @@ impl ScriptResult {
                             .find_by_creation_code(init_code.as_ref())
                             .map(|artifact| artifact.0.name.clone());
                         return Some(AdditionalContract {
-                            opcode: node.trace.kind,
+                            call_kind: node.trace.kind,
                             address: node.trace.address,
                             contract_name,
                             init_code,
