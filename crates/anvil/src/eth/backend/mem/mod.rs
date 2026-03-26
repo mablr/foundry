@@ -44,7 +44,7 @@ use alloy_eips::{
     eip7685::EMPTY_REQUESTS_HASH, eip7840::BlobParams, eip7910::SystemContract,
 };
 use alloy_evm::{
-    Database, Evm, FromRecoveredTx,
+    Database, Evm, EvmEnv, FromRecoveredTx,
     block::BlockExecutor,
     eth::EthEvmContext,
     overrides::{OverrideBlockHashes, apply_state_overrides},
@@ -1017,7 +1017,12 @@ impl<N: Network> Backend<N> {
             + Inspector<OpContext<WrapDatabaseRef<&'db DB>>>,
         WrapDatabaseRef<&'db DB>: Database<Error = DatabaseError>,
     {
-        let mut evm = new_eth_evm_with_inspector(WrapDatabaseRef(db), env, inspector);
+        let mut evm = new_eth_evm_with_inspector(
+            WrapDatabaseRef(db),
+            &env.evm_env,
+            inspector,
+            env.networks.is_optimism(),
+        );
         self.env.read().networks.inject_precompiles(evm.precompiles_mut());
 
         if let Some(factory) = &self.precompile_factory {
@@ -2227,8 +2232,12 @@ where
                 }
 
                 // 2. Create EVM
-                let env_struct = Env::new(env.evm_env.clone(), Default::default(), env.networks);
-                let mut evm = new_eth_evm_with_inspector(&mut **db, &env_struct, inspector);
+                let mut evm = new_eth_evm_with_inspector(
+                    &mut **db,
+                    &env.evm_env,
+                    inspector,
+                    env.networks.is_optimism(),
+                );
 
                 // 3. Inject precompiles (once, before the tx loop)
                 env.networks.inject_precompiles(evm.precompiles_mut());
@@ -2289,7 +2298,6 @@ where
 
                     // Build the per-tx env
                     let tx_env = build_tx_env_for_pending(pending, &cheats, networks, &env.evm_env);
-                    let full_env = Env::new(env.evm_env.clone(), tx_env.clone(), networks);
 
                     // Gas limit checks (same logic as TransactionExecutor::next)
                     let cumulative_gas =
@@ -2321,7 +2329,7 @@ where
 
                     // Validate
                     if let Err(err) =
-                        self.validate_pool_transaction_for(pending, &account, &full_env)
+                        self.validate_pool_transaction_for(pending, &account, &env.evm_env)
                     {
                         warn!(target: "backend", "Skipping invalid tx execution [{:?}] {}", pool_tx.hash(), err);
                         invalid.push(pool_tx.clone());
@@ -2653,8 +2661,12 @@ where
             inspector = inspector.with_trace_printer();
         }
 
-        let env_struct = Env::new(env.evm_env.clone(), Default::default(), env.networks);
-        let mut evm = new_eth_evm_with_inspector(&mut cache_db, &env_struct, inspector);
+        let mut evm = new_eth_evm_with_inspector(
+            &mut cache_db,
+            &env.evm_env,
+            inspector,
+            env.networks.is_optimism(),
+        );
 
         env.networks.inject_precompiles(evm.precompiles_mut());
         if let Some(factory) = &self.precompile_factory {
@@ -2709,7 +2721,6 @@ where
             };
 
             let tx_env = build_tx_env_for_pending(pending, &cheats, networks, &env.evm_env);
-            let full_env = Env::new(env.evm_env.clone(), tx_env.clone(), networks);
 
             let cumulative_gas =
                 executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);
@@ -2733,7 +2744,7 @@ where
                 continue;
             }
 
-            if let Err(err) = self.validate_pool_transaction_for(pending, &account, &full_env) {
+            if let Err(err) = self.validate_pool_transaction_for(pending, &account, &env.evm_env) {
                 warn!(target: "backend", "Skipping invalid tx execution [{:?}] {}", pool_tx.hash(), err);
                 continue;
             }
@@ -3239,9 +3250,12 @@ where
                 inspector_replay = inspector_replay.with_trace_printer();
             }
 
-            let env_struct = Env::new(env.evm_env.clone(), Default::default(), env.networks);
-            let mut evm_replay =
-                new_eth_evm_with_inspector(&mut cache_db, &env_struct, inspector_replay);
+            let mut evm_replay = new_eth_evm_with_inspector(
+                &mut cache_db,
+                &env.evm_env,
+                inspector_replay,
+                env.networks.is_optimism(),
+            );
 
             env.networks.inject_precompiles(evm_replay.precompiles_mut());
             if let Some(factory) = &self.precompile_factory {
@@ -3291,7 +3305,6 @@ where
                 };
 
                 let tx_env = build_tx_env_for_pending(pending, &cheats, networks, &env.evm_env);
-                let full_env = Env::new(env.evm_env.clone(), tx_env.clone(), networks);
 
                 let cumulative_gas =
                     replay_executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);
@@ -3314,7 +3327,7 @@ where
                     continue;
                 }
 
-                if self.validate_pool_transaction_for(pending, &account, &full_env).is_err() {
+                if self.validate_pool_transaction_for(pending, &account, &env.evm_env).is_err() {
                     continue;
                 }
 
@@ -4193,14 +4206,14 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
         let address = *tx.sender();
         let account = self.get_account(address).await?;
         let env = self.next_env();
-        Ok(self.validate_pool_transaction_for(tx, &account, &env)?)
+        Ok(self.validate_pool_transaction_for(tx, &account, &env.evm_env)?)
     }
 
     fn validate_pool_transaction_for(
         &self,
         pending: &PendingTransaction<FoundryTxEnvelope>,
         account: &AccountInfo,
-        env: &Env,
+        evm_env: &EvmEnv,
     ) -> Result<(), InvalidTransactionError> {
         let tx = &pending.transaction;
 
@@ -4209,9 +4222,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
             if chain_id.to::<u64>() != tx_chain_id {
                 if let FoundryTxEnvelope::Legacy(tx) = tx.as_ref() {
                     // <https://github.com/ethereum/EIPs/blob/master/EIPS/eip-155.md>
-                    if env.evm_env.cfg_env.spec >= SpecId::SPURIOUS_DRAGON
-                        && tx.chain_id().is_none()
-                    {
+                    if evm_env.cfg_env.spec >= SpecId::SPURIOUS_DRAGON && tx.chain_id().is_none() {
                         warn!(target: "backend", ?chain_id, ?tx_chain_id, "incompatible EIP155-based V");
                         return Err(InvalidTransactionError::IncompatibleEIP155);
                     }
@@ -4231,7 +4242,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
         }
 
         // EIP-4844 structural validation
-        if env.evm_env.cfg_env.spec >= SpecId::CANCUN && tx.is_eip4844() {
+        if evm_env.cfg_env.spec >= SpecId::CANCUN && tx.is_eip4844() {
             // Heavy (blob validation) checks
             let blob_tx = match tx.as_ref() {
                 FoundryTxEnvelope::Eip4844(tx) => tx.tx(),
@@ -4260,9 +4271,8 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
         }
 
         // EIP-3860 initcode size validation, respects --code-size-limit / --disable-code-size-limit
-        if env.evm_env.cfg_env.spec >= SpecId::SHANGHAI && tx.kind() == TxKind::Create {
-            let max_initcode_size = env
-                .evm_env
+        if evm_env.cfg_env.spec >= SpecId::SHANGHAI && tx.kind() == TxKind::Create {
+            let max_initcode_size = evm_env
                 .cfg_env
                 .limit_contract_code_size
                 .map(|limit| limit.saturating_mul(2))
@@ -4281,8 +4291,8 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
             }
 
             // Check tx gas limit against block gas limit, if block gas limit is set.
-            if !env.evm_env.cfg_env.disable_block_gas_limit
-                && tx.gas_limit() > env.evm_env.block_env.gas_limit
+            if !evm_env.cfg_env.disable_block_gas_limit
+                && tx.gas_limit() > evm_env.block_env.gas_limit
             {
                 warn!(target: "backend", "[{:?}] gas too high", tx.hash());
                 return Err(InvalidTransactionError::GasTooHigh(ErrDetail {
@@ -4291,8 +4301,8 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
             }
 
             // Check tx gas limit against tx gas limit cap (Osaka hard fork and later).
-            if env.evm_env.cfg_env.tx_gas_limit_cap.is_none()
-                && tx.gas_limit() > env.evm_env.cfg_env().tx_gas_limit_cap()
+            if evm_env.cfg_env.tx_gas_limit_cap.is_none()
+                && tx.gas_limit() > evm_env.cfg_env().tx_gas_limit_cap()
             {
                 warn!(target: "backend", "[{:?}] gas too high", tx.hash());
                 return Err(InvalidTransactionError::GasTooHigh(ErrDetail {
@@ -4301,9 +4311,9 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
             }
 
             // EIP-1559 fee validation (London hard fork and later).
-            if env.evm_env.cfg_env.spec >= SpecId::LONDON {
-                if tx.max_fee_per_gas() < env.evm_env.block_env.basefee.into() && !is_deposit_tx {
-                    warn!(target: "backend", "max fee per gas={}, too low, block basefee={}", tx.max_fee_per_gas(), env.evm_env.block_env.basefee);
+            if evm_env.cfg_env.spec >= SpecId::LONDON {
+                if tx.max_fee_per_gas() < evm_env.block_env.basefee.into() && !is_deposit_tx {
+                    warn!(target: "backend", "max fee per gas={}, too low, block basefee={}", tx.max_fee_per_gas(), evm_env.block_env.basefee);
                     return Err(InvalidTransactionError::FeeCapTooLow);
                 }
 
@@ -4317,10 +4327,10 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
             }
 
             // EIP-4844 blob fee validation
-            if env.evm_env.cfg_env.spec >= SpecId::CANCUN
+            if evm_env.cfg_env.spec >= SpecId::CANCUN
                 && tx.is_eip4844()
                 && let Some(max_fee_per_blob_gas) = tx.max_fee_per_blob_gas()
-                && let Some(blob_gas_and_price) = &env.evm_env.block_env.blob_excess_gas_and_price
+                && let Some(blob_gas_and_price) = &evm_env.block_env.blob_excess_gas_and_price
                 && max_fee_per_blob_gas < blob_gas_and_price.blob_gasprice
             {
                 warn!(target: "backend", "max fee per blob gas={}, too low, block blob gas price={}", max_fee_per_blob_gas, blob_gas_and_price.blob_gasprice);
@@ -4371,9 +4381,9 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
         &self,
         tx: &PendingTransaction<FoundryTxEnvelope>,
         account: &AccountInfo,
-        env: &Env,
+        evm_env: &EvmEnv,
     ) -> Result<(), InvalidTransactionError> {
-        self.validate_pool_transaction_for(tx, account, env)?;
+        self.validate_pool_transaction_for(tx, account, evm_env)?;
         if tx.nonce() > account.nonce {
             return Err(InvalidTransactionError::NonceTooHigh);
         }
