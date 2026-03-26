@@ -409,7 +409,7 @@ fn create_fork_request<CTX: EthCheatCtx>(
 fn fork_env_op<CTX: EthCheatCtx, T: SolValue>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     f: impl FnOnce(
-        &mut dyn DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        &mut CTX::Db,
         &mut EvmEnv<CTX::Spec, CTX::Block>,
         &mut CTX::Tx,
         &mut JournaledState,
