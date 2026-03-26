@@ -12,7 +12,7 @@ use foundry_cheatcodes::{
 };
 use foundry_common::compile::Analysis;
 use foundry_evm_core::{
-    FoundryBlock, FoundryInspectorExt, FoundryTransaction,
+    FoundryBlock, FoundryTransaction, InspectorExt,
     backend::{DatabaseError, DatabaseExt, JournaledState},
     env::FoundryContextExt,
     evm::{NestedEvm, new_revm_with_inspector, with_cloned_context},
@@ -27,6 +27,7 @@ use revm::{
         result::{EVMError, ExecutionResult, Output},
     },
     context_interface::CreateScheme,
+    handler::EvmTr,
     inspector::JournalExt,
     interpreter::{
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Gas, InstructionResult,
@@ -338,7 +339,7 @@ pub struct InspectorStackInner {
     pub script_execution_inspector: Option<Box<ScriptExecutionInspector>>,
     pub tracer: Option<Box<TracingInspector>>,
 
-    // EthInspectorExt and other internal data.
+    // FoundryInspectorExt and other internal data.
     pub enable_isolation: bool,
     pub networks: NetworkConfigs,
     pub create2_deployer: Address,
@@ -362,7 +363,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         &mut self,
         cheats: &mut Cheatcodes,
         ecx: &mut CTX,
-        f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
+        f: NestedEvmClosure<'_, CTX::Tx>,
     ) -> Result<(), EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
@@ -370,7 +371,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
             let sub_inner = evm.journaled_state.inner.clone();
-            let sub_evm_env = evm.to_evm_env();
+            let sub_evm_env = evm.ctx_ref().evm_clone();
             Ok((sub_evm_env, sub_inner))
         })
     }
@@ -380,12 +381,12 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         cheats: &mut Cheatcodes,
         db: &mut dyn DatabaseExt<CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
         evm_env: EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
-        f: NestedEvmClosure<'_, CTX::Block, CTX::Tx, <CTX::Cfg as Cfg>::Spec>,
+        f: NestedEvmClosure<'_, CTX::Tx>,
     ) -> Result<EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let mut evm = new_revm_with_inspector(db, evm_env, &mut inspector);
         f(&mut evm)?;
-        Ok(evm.to_evm_env())
+        Ok(evm.ctx_ref().evm_clone())
     }
 
     fn transact_on_db(
@@ -416,7 +417,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
 
     fn console_log(&mut self, msg: &str) {
         if let Some(ref mut collector) = self.log_collector {
-            FoundryInspectorExt::console_log(&mut **collector, msg);
+            InspectorExt::console_log(&mut **collector, msg);
         }
     }
 
@@ -760,7 +761,7 @@ impl InspectorStackRefMut<'_> {
                 evm.journal_inner_mut().depth = 1;
 
                 let res = evm.transact_raw(tx_env);
-                let nested_evm_env = evm.to_evm_env();
+                let nested_evm_env = evm.ctx_ref().evm_clone();
                 (res, nested_evm_env)
             };
 
@@ -1132,7 +1133,7 @@ impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStackRefMut<'_> {
     }
 }
 
-impl FoundryInspectorExt for InspectorStackRefMut<'_> {
+impl InspectorExt for InspectorStackRefMut<'_> {
     fn should_use_create2_factory(&mut self, depth: usize, inputs: &CreateInputs) -> bool {
         call_inspectors!(
             #[ret]
@@ -1144,7 +1145,7 @@ impl FoundryInspectorExt for InspectorStackRefMut<'_> {
     }
 
     fn console_log(&mut self, msg: &str) {
-        call_inspectors!([&mut self.log_collector], |inspector| FoundryInspectorExt::console_log(
+        call_inspectors!([&mut self.log_collector], |inspector| InspectorExt::console_log(
             inspector, msg
         ));
     }
@@ -1202,7 +1203,7 @@ impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStack {
     }
 }
 
-impl FoundryInspectorExt for InspectorStack {
+impl InspectorExt for InspectorStack {
     fn should_use_create2_factory(&mut self, depth: usize, inputs: &CreateInputs) -> bool {
         self.as_mut().should_use_create2_factory(depth, inputs)
     }
