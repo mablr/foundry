@@ -8,7 +8,7 @@ use crate::{
         backend::{
             cheats::{CheatEcrecover, CheatsManager},
             db::{AnvilCacheDB, Db, MaybeFullDatabase, SerializableState, StateDb},
-            executor::{AnvilBlockExecutorFactory, AnvilExecutionCtx, build_tx_env_for_pending},
+            executor::{AnvilBlockExecutor, build_tx_env_for_pending},
             fork::ClientFork,
             genesis::GenesisConfig,
             mem::{
@@ -114,7 +114,7 @@ use revm::{
     context::{Block as RevmBlock, BlockEnv, Cfg, TxEnv},
     context_interface::{
         block::BlobExcessGasAndPrice,
-        result::{ExecutionResult, Output, ResultAndState},
+        result::{ExecutionResult, HaltReason, Output, ResultAndState},
     },
     database::{CacheDB, DbAccount, WrapDatabaseRef},
     interpreter::InstructionResult,
@@ -1173,7 +1173,7 @@ impl<N: Network> Backend<N> {
                 (InstructionResult::Revert, gas_used, Some(Output::Call(output)))
             }
             ExecutionResult::Halt { reason, gas_used } => {
-                (op_haltreason_to_instruction_result(reason), gas_used, None)
+                (reason.into_instruction_result(), gas_used, None)
             }
         };
         drop(evm);
@@ -1207,7 +1207,7 @@ impl<N: Network> Backend<N> {
                 (InstructionResult::Revert, gas_used, Some(Output::Call(output)))
             }
             ExecutionResult::Halt { reason, gas_used } => {
-                (op_haltreason_to_instruction_result(reason), gas_used, None)
+                (reason.into_instruction_result(), gas_used, None)
             }
         };
         drop(evm);
@@ -1988,7 +1988,7 @@ impl<N: Network> Backend<N> {
                 (InstructionResult::Revert, gas_used, Some(Output::Call(output)), None)
             }
             ExecutionResult::Halt { reason, gas_used } => {
-                let eth_reason = op_haltreason_to_instruction_result(reason);
+                let eth_reason = reason.into_instruction_result();
                 (eth_reason, gas_used, None, None)
             }
         };
@@ -2249,9 +2249,8 @@ where
                     });
                 }
 
-                // 4. Create executor via AnvilBlockExecutorFactory
-                let exec_ctx = AnvilExecutionCtx { parent_hash: best_hash, is_prague, is_cancun };
-                let mut executor = AnvilBlockExecutorFactory::create_executor(evm, exec_ctx);
+                // 4. Create executor
+                let mut executor = AnvilBlockExecutor::new(evm, best_hash, spec_id);
                 executor.apply_pre_execution_changes().expect("pre-execution changes failed");
 
                 // 5. Per-tx loop
@@ -2369,7 +2368,7 @@ where
                                     Vec::new(),
                                 ),
                                 ExecutionResult::Halt { reason, gas_used: _ } => {
-                                    (op_haltreason_to_instruction_result(reason), None, Vec::new())
+                                    (reason.into_instruction_result(), None, Vec::new())
                                 }
                             };
 
@@ -2671,8 +2670,7 @@ where
             });
         }
 
-        let exec_ctx = AnvilExecutionCtx { parent_hash, is_prague, is_cancun };
-        let mut executor = AnvilBlockExecutorFactory::create_executor(evm, exec_ctx);
+        let mut executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id);
         executor.apply_pre_execution_changes().expect("pre-execution changes failed");
 
         let mut transaction_infos: Vec<TransactionInfo> = Vec::new();
@@ -2762,7 +2760,7 @@ where
                             (InstructionResult::Revert, Some(Output::Call(output)), Vec::new())
                         }
                         ExecutionResult::Halt { reason, gas_used: _ } => {
-                            (op_haltreason_to_instruction_result(reason), None, Vec::new())
+                            (reason.into_instruction_result(), None, Vec::new())
                         }
                     };
 
@@ -3016,7 +3014,7 @@ where
                     (InstructionResult::Revert, gas_used, Some(Output::Call(output)))
                 }
                 ExecutionResult::Halt { reason, gas_used } => {
-                    (op_haltreason_to_instruction_result(reason), gas_used, None)
+                    (reason.into_instruction_result(), gas_used, None)
                 }
             };
 
@@ -3228,7 +3226,6 @@ where
 
             let spec_id = *evm_env.spec_id();
             let is_cancun = spec_id >= SpecId::CANCUN;
-            let is_prague = spec_id >= SpecId::PRAGUE;
             let gas_limit = evm_env.block_env.gas_limit;
 
             let mut inspector_replay = AnvilInspector::default().with_tracing();
@@ -3265,10 +3262,8 @@ where
                 });
             }
 
-            let exec_ctx =
-                AnvilExecutionCtx { parent_hash: block.header.parent_hash, is_prague, is_cancun };
             let mut replay_executor =
-                AnvilBlockExecutorFactory::create_executor(evm_replay, exec_ctx);
+                AnvilBlockExecutor::new(evm_replay, block.header.parent_hash, spec_id);
             replay_executor.apply_pre_execution_changes().expect("pre-execution changes failed");
 
             let blob_params = self.blob_params();
@@ -4527,10 +4522,26 @@ pub fn is_arbitrum(chain_id: u64) -> bool {
     false
 }
 
-pub fn op_haltreason_to_instruction_result(op_reason: OpHaltReason) -> InstructionResult {
-    match op_reason {
-        OpHaltReason::Base(eth_h) => eth_h.into(),
-        OpHaltReason::FailedDeposit => InstructionResult::Stop,
+/// Converts a halt reason into an [`InstructionResult`].
+///
+/// Abstracts over network-specific halt reason types (`HaltReason`, `OpHaltReason`)
+/// so that anvil code doesn't need to match on each variant directly.
+pub trait IntoInstructionResult {
+    fn into_instruction_result(self) -> InstructionResult;
+}
+
+impl IntoInstructionResult for HaltReason {
+    fn into_instruction_result(self) -> InstructionResult {
+        self.into()
+    }
+}
+
+impl IntoInstructionResult for OpHaltReason {
+    fn into_instruction_result(self) -> InstructionResult {
+        match self {
+            Self::Base(eth_h) => eth_h.into(),
+            Self::FailedDeposit => InstructionResult::Stop,
+        }
     }
 }
 
