@@ -46,6 +46,7 @@ sol! {
 ///
 /// This struct contains only the transaction options relevant to ERC20 token interactions
 #[derive(Debug, Clone, Args)]
+#[command(next_help_heading = "Transaction options")]
 pub struct Erc20TxOpts {
     /// Gas limit for the transaction.
     #[arg(long, env = "ETH_GAS_LIMIT")]

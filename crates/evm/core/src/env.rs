@@ -1,9 +1,8 @@
 use std::fmt::Debug;
 
-use alloy_consensus::{TxEnvelope, Typed2718};
 pub use alloy_evm::EvmEnv;
-use alloy_evm::FromRecoveredTx;
-use alloy_network::AnyTxEnvelope;
+use alloy_evm::{FromRecoveredTx, ToTxEnv};
+use alloy_network::{AnyRpcTransaction, TransactionResponse};
 use alloy_primitives::{Address, B256, Bytes, U256};
 use op_revm::{
     OpTransaction,
@@ -432,31 +431,150 @@ impl<CTX> EthCheatCtx for CTX where
 {
 }
 
-/// Abstraction trait for converting a transaction envelope into a [`TxEnv`].
+/// Abstraction trait for converting any RPC transaction into corresponding `TxEnv`.
 ///
-/// This trait bridges the gap between different network envelope types and the EVM's `TxEnv`:
-/// - For [`TxEnvelope`] (Ethereum): delegates directly to [`FromRecoveredTx`].
-/// - For [`AnyTxEnvelope`]: extracts the inner [`TxEnvelope`] via
-///   [`as_envelope()`](AnyTxEnvelope::as_envelope) then delegates to [`FromRecoveredTx`].
-pub trait TryAnyIntoTxEnv {
-    /// Tries to convert this transaction envelope into a [`TxEnv`] given the recovered sender
-    /// address.
-    fn try_into_tx_env(&self, sender: Address) -> eyre::Result<TxEnv>;
+/// This trait bridges the gap between different network RPC transaction types and the EVM's
+/// `TxEnv`:
+/// - For [`alloy_rpc_types::Transaction`] (Ethereum): delegates to [`ToTxEnv`].
+/// - For [`AnyRpcTransaction`] (AnyNetwork): extracts the inner [`alloy_consensus::TxEnvelope`] via
+///   [`as_envelope()`](alloy_network::AnyTxEnvelope::as_envelope) then delegates to
+///   [`FromRecoveredTx`].
+/// - For [`op_alloy_rpc_types::Transaction`] (Optimism): delegates to [`ToTxEnv`].
+pub trait TryAnyToTxEnv<TxEnv> {
+    /// Tries to convert this RPC transaction into a [`TxEnv`].
+    fn try_any_to_tx_env(&self) -> eyre::Result<TxEnv>;
 }
 
-impl TryAnyIntoTxEnv for TxEnvelope {
-    fn try_into_tx_env(&self, sender: Address) -> eyre::Result<TxEnv> {
-        Ok(TxEnv::from_recovered_tx(self, sender))
+impl TryAnyToTxEnv<TxEnv> for alloy_rpc_types::Transaction {
+    fn try_any_to_tx_env(&self) -> eyre::Result<TxEnv> {
+        Ok(self.as_recovered().to_tx_env())
     }
 }
 
-impl TryAnyIntoTxEnv for AnyTxEnvelope {
-    fn try_into_tx_env(&self, sender: Address) -> eyre::Result<TxEnv> {
-        match self {
-            Self::Ethereum(envelope) => envelope.try_into_tx_env(sender),
-            Self::Unknown(tx) => {
-                eyre::bail!("cannot convert unknown transaction type (0x{:02x}) to TxEnv", tx.ty())
-            }
+impl TryAnyToTxEnv<TxEnv> for AnyRpcTransaction {
+    fn try_any_to_tx_env(&self) -> eyre::Result<TxEnv> {
+        if let Some(envelope) = self.as_envelope() {
+            Ok(TxEnv::from_recovered_tx(envelope, self.from()))
+        } else {
+            eyre::bail!("cannot convert unknown transaction type to TxEnv")
         }
+    }
+}
+
+impl TryAnyToTxEnv<OpTransaction<TxEnv>> for op_alloy_rpc_types::Transaction {
+    fn try_any_to_tx_env(&self) -> eyre::Result<OpTransaction<TxEnv>> {
+        Ok(self.as_recovered().to_tx_env())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_consensus::{Sealed, Signed, TxEip1559, transaction::Recovered};
+    use alloy_network::{AnyTxEnvelope, AnyTxType, UnknownTxEnvelope, UnknownTypedTransaction};
+    use alloy_primitives::Signature;
+    use alloy_rpc_types::{Transaction, TransactionInfo};
+    use alloy_serde::WithOtherFields;
+    use op_alloy_consensus::{OpTxEnvelope, TxDeposit, transaction::OpTransactionInfo};
+
+    fn make_signed_eip1559() -> Signed<TxEip1559> {
+        Signed::new_unchecked(
+            TxEip1559 {
+                chain_id: 1,
+                nonce: 42,
+                gas_limit: 21001,
+                to: TxKind::Call(Address::with_last_byte(0xBB)),
+                value: U256::from(101),
+                ..Default::default()
+            },
+            Signature::new(U256::ZERO, U256::ZERO, false),
+            B256::ZERO,
+        )
+    }
+
+    #[test]
+    fn try_any_to_tx_env_for_eth_and_any_transactions() {
+        let from = Address::random();
+        let signed_tx = make_signed_eip1559();
+        let tx = Transaction::from_transaction(
+            Recovered::new_unchecked(signed_tx.into(), from),
+            TransactionInfo::default(),
+        );
+        let tx_env: TxEnv = tx.try_any_to_tx_env().unwrap();
+
+        assert_eq!(tx_env.caller, from);
+        assert_eq!(tx_env.nonce, 42);
+        assert_eq!(tx_env.gas_limit, 21001);
+        assert_eq!(tx_env.value, U256::from(101));
+        assert_eq!(tx_env.kind, TxKind::Call(Address::with_last_byte(0xBB)));
+
+        // Wrap as AnyRpcTransaction (Ethereum variant) via From<Transaction<TxEnvelope>>.
+        let any_tx = <AnyRpcTransaction as From<Transaction>>::from(tx);
+        let any_tx_env: TxEnv = any_tx.try_any_to_tx_env().unwrap();
+
+        // TxEnv from AnyRpcTransaction must be the same
+        assert_eq!(tx_env, any_tx_env);
+    }
+
+    #[test]
+    fn try_any_to_tx_env_for_op_transactions() {
+        let from = Address::random();
+        let signed_tx = make_signed_eip1559();
+
+        // Build the eth TxEnv to compare against op base
+        let eth_tx = Transaction::from_transaction(
+            Recovered::new_unchecked(signed_tx.clone().into(), from),
+            TransactionInfo::default(),
+        );
+        let expected_base: TxEnv = eth_tx.try_any_to_tx_env().unwrap();
+
+        let op_tx = op_alloy_rpc_types::Transaction::from_transaction(
+            Recovered::new_unchecked(signed_tx.into(), from),
+            OpTransactionInfo::default(),
+        );
+        let op_tx_env: OpTransaction<TxEnv> = op_tx.try_any_to_tx_env().unwrap();
+
+        assert_eq!(op_tx_env.base, expected_base);
+
+        // Test with Deposit tx
+        let op_deposit_tx = op_alloy_rpc_types::Transaction::from_transaction(
+            Recovered::new_unchecked(
+                OpTxEnvelope::Deposit(Sealed::new(TxDeposit {
+                    from,
+                    mint: 1111,
+                    ..Default::default()
+                })),
+                from,
+            ),
+            OpTransactionInfo::default(),
+        );
+        let op_deposit_tx_env: OpTransaction<TxEnv> = op_deposit_tx.try_any_to_tx_env().unwrap();
+
+        assert_eq!(op_deposit_tx_env.deposit.mint, Some(1111));
+        assert_eq!(op_deposit_tx_env.base.caller, from);
+    }
+
+    #[test]
+    fn try_any_to_tx_env_unknown_envelope_errors() {
+        let unknown = AnyTxEnvelope::Unknown(UnknownTxEnvelope {
+            hash: B256::ZERO,
+            inner: UnknownTypedTransaction {
+                ty: AnyTxType(0xFF),
+                fields: Default::default(),
+                memo: Default::default(),
+            },
+        });
+        let from = Address::random();
+        let any_tx = AnyRpcTransaction::new(WithOtherFields::new(Transaction {
+            inner: Recovered::new_unchecked(unknown, from),
+            block_hash: None,
+            block_number: None,
+            transaction_index: None,
+            effective_gas_price: None,
+            block_timestamp: None,
+        }));
+
+        let result = any_tx.try_any_to_tx_env().unwrap_err();
+        assert!(result.to_string().contains("unknown transaction type"));
     }
 }

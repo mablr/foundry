@@ -638,7 +638,7 @@ impl InspectorStackRefMut<'_> {
         ecx: &mut CTX,
         inputs: &CallInputs,
         outcome: &mut CallOutcome,
-    ) -> CallOutcome {
+    ) {
         let result = outcome.result.result;
         call_inspectors!(
             #[ret]
@@ -658,7 +658,7 @@ impl InspectorStackRefMut<'_> {
                 let different = outcome.result.result != result
                     || (outcome.result.result == InstructionResult::Revert
                         && outcome.output() != previous_outcome.output());
-                different.then_some(outcome.clone())
+                different.then_some(())
             },
         );
 
@@ -666,8 +666,6 @@ impl InspectorStackRefMut<'_> {
         if result.is_revert() && self.reverter.is_none() {
             self.reverter = Some(inputs.target_address);
         }
-
-        outcome.clone()
     }
 
     fn do_create_end<CTX: EthCheatCtx>(
@@ -675,7 +673,7 @@ impl InspectorStackRefMut<'_> {
         ecx: &mut CTX,
         call: &CreateInputs,
         outcome: &mut CreateOutcome,
-    ) -> CreateOutcome {
+    ) {
         let result = outcome.result.result;
         call_inspectors!(
             #[ret]
@@ -689,11 +687,9 @@ impl InspectorStackRefMut<'_> {
                 let different = outcome.result.result != result
                     || (outcome.result.result == InstructionResult::Revert
                         && outcome.output() != previous_outcome.output());
-                different.then_some(outcome.clone())
+                different.then_some(())
             },
         );
-
-        outcome.clone()
     }
 
     fn transact_inner<CTX: EthCheatCtx>(

@@ -27,7 +27,7 @@ use crate::{
         sign::build_impersonated,
     },
     mem::{
-        inspector::AnvilInspector,
+        inspector::{AnvilInspector, InspectorTxConfig},
         storage::{BlockchainStorage, InMemoryBlockStates, MinedBlockOutcome},
     },
 };
@@ -2263,6 +2263,13 @@ where
                 let networks = env.networks;
                 let mut cumulative_blob_gas_used = if is_cancun { Some(0u64) } else { None };
 
+                let inspector_tx_config = InspectorTxConfig {
+                    print_traces: self.print_traces,
+                    print_logs: self.print_logs,
+                    enable_steps_tracing: self.enable_steps_tracing,
+                    call_trace_decoder: self.call_trace_decoder.clone(),
+                };
+
                 for pool_tx in pool_transactions {
                     let pending = &pool_tx.pending_transaction;
                     let sender = *pending.sender();
@@ -2334,38 +2341,10 @@ where
 
                             executor.commit_transaction(result).expect("commit failed");
 
-                            // Drain per-tx traces from inspector
-                            let insp = executor.evm_mut().inspector_mut();
-
-                            // Print before draining so the tracer is still populated.
-                            if self.print_traces {
-                                insp.print_traces(self.call_trace_decoder.clone());
-                            }
-                            insp.print_logs();
-
-                            let traces = insp
-                                .tracer
-                                .take()
-                                .map(|t| t.into_traces().into_nodes())
-                                .unwrap_or_default();
-
-                            // Reinstall tracer for next tx
-                            if self.enable_steps_tracing {
-                                insp.tracer = Some(TracingInspector::new(
-                                    TracingInspectorConfig::all().with_state_diffs(),
-                                ));
-                            } else {
-                                insp.tracer = Some(TracingInspector::new(
-                                    TracingInspectorConfig::all().set_steps(false),
-                                ));
-                            }
-                            // Reset log collector for next tx
-                            if self.print_logs {
-                                insp.log_collector =
-                                    Some(foundry_evm::inspectors::LogCollector::Capture {
-                                        logs: Vec::new(),
-                                    });
-                            }
+                            let traces = executor
+                                .evm_mut()
+                                .inspector_mut()
+                                .finish_transaction(&inspector_tx_config);
 
                             // Track blob gas
                             if is_cancun {
@@ -2705,6 +2684,13 @@ where
         let networks = env.networks;
         let mut cumulative_blob_gas_used = if is_cancun { Some(0u64) } else { None };
 
+        let inspector_tx_config = InspectorTxConfig {
+            print_traces: self.print_traces,
+            print_logs: self.print_logs,
+            enable_steps_tracing: self.enable_steps_tracing,
+            call_trace_decoder: self.call_trace_decoder.clone(),
+        };
+
         for pool_tx in pool_transactions {
             let pending = &pool_tx.pending_transaction;
             let sender = *pending.sender();
@@ -2763,33 +2749,8 @@ where
 
                     executor.commit_transaction(result).expect("commit failed");
 
-                    let insp = executor.evm_mut().inspector_mut();
-
-                    if self.print_traces {
-                        insp.print_traces(self.call_trace_decoder.clone());
-                    }
-                    insp.print_logs();
-
-                    let traces = insp
-                        .tracer
-                        .take()
-                        .map(|t| t.into_traces().into_nodes())
-                        .unwrap_or_default();
-
-                    if self.enable_steps_tracing {
-                        insp.tracer = Some(TracingInspector::new(
-                            TracingInspectorConfig::all().with_state_diffs(),
-                        ));
-                    } else {
-                        insp.tracer = Some(TracingInspector::new(
-                            TracingInspectorConfig::all().set_steps(false),
-                        ));
-                    }
-                    if self.print_logs {
-                        insp.log_collector = Some(foundry_evm::inspectors::LogCollector::Capture {
-                            logs: Vec::new(),
-                        });
-                    }
+                    let traces =
+                        executor.evm_mut().inspector_mut().finish_transaction(&inspector_tx_config);
 
                     if is_cancun {
                         cumulative_blob_gas_used =
@@ -3308,6 +3269,13 @@ where
             let networks = env.networks;
             let mut cumulative_blob_gas_used = if is_cancun { Some(0u64) } else { None };
 
+            let inspector_tx_config = InspectorTxConfig {
+                print_traces: self.print_traces,
+                print_logs: self.print_logs,
+                enable_steps_tracing: self.enable_steps_tracing,
+                call_trace_decoder: self.call_trace_decoder.clone(),
+            };
+
             for pool_tx in pool_txs {
                 let pending = &pool_tx.pending_transaction;
                 let sender = *pending.sender();
@@ -3357,26 +3325,10 @@ where
                 {
                     replay_executor.commit_transaction(result).expect("commit failed");
 
-                    let insp = replay_executor.evm_mut().inspector_mut();
-                    insp.print_logs();
-                    if self.print_traces {
-                        insp.print_traces(self.call_trace_decoder.clone());
-                    }
-                    insp.tracer.take();
-                    if self.enable_steps_tracing {
-                        insp.tracer = Some(TracingInspector::new(
-                            TracingInspectorConfig::all().with_state_diffs(),
-                        ));
-                    } else {
-                        insp.tracer = Some(TracingInspector::new(
-                            TracingInspectorConfig::all().set_steps(false),
-                        ));
-                    }
-                    if self.print_logs {
-                        insp.log_collector = Some(foundry_evm::inspectors::LogCollector::Capture {
-                            logs: Vec::new(),
-                        });
-                    }
+                    replay_executor
+                        .evm_mut()
+                        .inspector_mut()
+                        .finish_transaction(&inspector_tx_config);
 
                     if is_cancun {
                         cumulative_blob_gas_used =
