@@ -624,14 +624,14 @@ impl<N: Network> Backend<N> {
     }
 
     /// Returns the environment for the next block
-    fn next_env(&self) -> Env {
-        let mut env = self.env.read().clone();
+    fn next_evm_env(&self) -> EvmEnv {
+        let mut evm_env = self.env.read().evm_env.clone();
         // increase block number for this block
-        env.evm_env.block_env.number = env.evm_env.block_env.number.saturating_add(U256::from(1));
-        env.evm_env.block_env.basefee = self.base_fee();
-        env.evm_env.block_env.blob_excess_gas_and_price = self.excess_blob_gas_and_price();
-        env.evm_env.block_env.timestamp = U256::from(self.time.current_call_timestamp());
-        env
+        evm_env.block_env.number = evm_env.block_env.number.saturating_add(U256::from(1));
+        evm_env.block_env.basefee = self.base_fee();
+        evm_env.block_env.blob_excess_gas_and_price = self.excess_blob_gas_and_price();
+        evm_env.block_env.timestamp = U256::from(self.time.current_call_timestamp());
+        evm_env
     }
 
     /// Builds [`Inspector`] with the configured options.
@@ -1961,7 +1961,7 @@ impl<N: Network> Backend<N> {
         (InstructionResult, Option<Output>, u64, State, Vec<revm::primitives::Log>),
         BlockchainError,
     > {
-        let evm_env = self.next_env().evm_env;
+        let evm_env = self.next_evm_env();
         let mut tx_env: OpTransaction<TxEnv> = FromRecoveredTx::from_recovered_tx(
             tx.pending_transaction.transaction.as_ref(),
             *tx.pending_transaction.sender(),
@@ -2621,7 +2621,7 @@ where
         F: FnOnce(Box<dyn MaybeFullDatabase + '_>, BlockInfo) -> T,
     {
         let db = self.db.read().await;
-        let evm_env = self.next_env().evm_env;
+        let evm_env = self.next_evm_env();
 
         let mut cache_db = AnvilCacheDB::new(&*db);
 
@@ -3182,7 +3182,7 @@ where
             + Inspector<OpContext<WrapDatabaseRef<&'a CacheDB<Box<&'a StateDb>>>>>
             + 'a,
         for<'a> F:
-            FnOnce(ResultAndState<OpHaltReason>, CacheDB<Box<&'a StateDb>>, I, TxEnv, Env) -> T,
+            FnOnce(ResultAndState<OpHaltReason>, CacheDB<Box<&'a StateDb>>, I, TxEnv, EvmEnv) -> T,
     {
         let block = {
             let storage = self.blockchain.storage.read();
@@ -3221,14 +3221,14 @@ where
             let mut cache_db = AnvilCacheDB::new(Box::new(parent_state));
 
             // configure the blockenv for the block of the transaction
-            let mut env = self.env.read().clone();
+            let mut evm_env = self.env.read().evm_env.clone();
 
-            env.evm_env.block_env = block_env_from_header(&block.header);
+            evm_env.block_env = block_env_from_header(&block.header);
 
-            let spec_id = *env.evm_env.spec_id();
+            let spec_id = *evm_env.spec_id();
             let is_cancun = spec_id >= SpecId::CANCUN;
             let is_prague = spec_id >= SpecId::PRAGUE;
-            let gas_limit = env.evm_env.block_env.gas_limit;
+            let gas_limit = evm_env.block_env.gas_limit;
 
             let mut inspector_replay = AnvilInspector::default().with_tracing();
             if self.enable_steps_tracing {
@@ -3243,12 +3243,12 @@ where
 
             let mut evm_replay = new_eth_evm_with_inspector(
                 &mut cache_db,
-                &env.evm_env,
+                &evm_env,
                 inspector_replay,
-                env.networks.is_optimism(),
+                self.is_optimism(),
             );
 
-            env.networks.inject_precompiles(evm_replay.precompiles_mut());
+            self.env.read().networks.inject_precompiles(evm_replay.precompiles_mut());
             if let Some(factory) = &self.precompile_factory {
                 evm_replay.precompiles_mut().extend_precompiles(factory.precompiles());
             }
@@ -3299,12 +3299,12 @@ where
                 let cumulative_gas =
                     replay_executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);
                 let max_block_gas = cumulative_gas.saturating_add(pending.transaction.gas_limit());
-                if !env.evm_env.cfg_env.disable_block_gas_limit && max_block_gas > gas_limit {
+                if !evm_env.cfg_env.disable_block_gas_limit && max_block_gas > gas_limit {
                     continue;
                 }
 
-                if env.evm_env.cfg_env.tx_gas_limit_cap.is_none()
-                    && pending.transaction.gas_limit() > env.evm_env.cfg_env.tx_gas_limit_cap()
+                if evm_env.cfg_env.tx_gas_limit_cap.is_none()
+                    && pending.transaction.gas_limit() > evm_env.cfg_env.tx_gas_limit_cap()
                 {
                     continue;
                 }
@@ -3317,7 +3317,7 @@ where
                     continue;
                 }
 
-                if self.validate_pool_transaction_for(pending, &account, &env.evm_env).is_err() {
+                if self.validate_pool_transaction_for(pending, &account, &evm_env).is_err() {
                     continue;
                 }
 
@@ -3352,18 +3352,17 @@ where
                 target_tx.transaction.as_ref(),
                 *target_tx.sender(),
             );
-            if env.networks.is_optimism() {
+            if self.is_optimism() {
                 tx_env.enveloped_tx = Some(target_tx.transaction.encoded_2718().into());
             }
 
-            let mut evm =
-                self.new_eth_evm_with_inspector_ref(&cache_db, &env.evm_env, &mut inspector);
+            let mut evm = self.new_eth_evm_with_inspector_ref(&cache_db, &evm_env, &mut inspector);
 
             let result = evm
                 .transact(tx_env.clone())
                 .map_err(|err| BlockchainError::Message(err.to_string()))?;
 
-            Ok(f(result, cache_db, inspector, tx_env.base, env))
+            Ok(f(result, cache_db, inspector, tx_env.base, evm_env))
         };
 
         let read_guard = self.states.upgradable_read();
@@ -3393,12 +3392,12 @@ where
         let trace = self.replay_tx_with_inspector(
             hash,
             inspector,
-            |result, cache_db, mut inspector, tx_env, env| {
+            |result, cache_db, mut inspector, tx_env, evm_env| {
                 inspector
                     .json_result(
                         result,
                         &alloy_evm::IntoTxEnv::into_tx_env(tx_env),
-                        &env.evm_env.block_env,
+                        &evm_env.block_env,
                         &cache_db,
                     )
                     .map_err(|e| BlockchainError::Message(e.to_string()))
@@ -4196,7 +4195,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
     ) -> Result<(), BlockchainError> {
         let address = *tx.sender();
         let account = self.get_account(address).await?;
-        Ok(self.validate_pool_transaction_for(tx, &account, &self.next_env().evm_env)?)
+        Ok(self.validate_pool_transaction_for(tx, &account, &self.next_evm_env())?)
     }
 
     fn validate_pool_transaction_for(
