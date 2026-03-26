@@ -9,7 +9,7 @@ use crate::{
     utils::get_blob_base_fee_update_fraction,
 };
 use alloy_consensus::{BlockHeader, Typed2718};
-use alloy_evm::{Evm, EvmEnv, eth::EthEvmContext};
+use alloy_evm::{Evm, EvmEnv, EvmFactory, eth::EthEvmContext};
 use alloy_genesis::GenesisAccount;
 use alloy_network::{AnyNetwork, BlockResponse, Network, TransactionResponse};
 use alloy_primitives::{Address, B256, TxKind, U256, keccak256, uint};
@@ -23,7 +23,6 @@ use revm::{
     context::{BlockEnv, JournalInner, TxEnv},
     context_interface::{journaled_state::account::JournaledAccountTr, result::ResultAndState},
     database::{CacheDB, DatabaseRef},
-    inspector::NoOpInspector,
     precompile::{PrecompileSpecId, Precompiles},
     primitives::{HashMap as Map, KECCAK_EMPTY, Log, hardfork::SpecId},
     state::{Account, AccountInfo, EvmState, EvmStorageSlot},
@@ -881,47 +880,60 @@ where
     pub fn replay_until(
         &mut self,
         id: LocalForkId,
-        mut evm_env: EvmEnv,
-        mut tx_env: TxEnv,
+        evm_env: EvmEnv,
         tx_hash: B256,
         journaled_state: &mut JournaledState,
     ) -> eyre::Result<Option<N::TransactionResponse>> {
         trace!(?id, ?tx_hash, "replay until transaction");
 
         let persistent_accounts = self.inner.persistent_accounts.clone();
-        let fork_id = self.ensure_fork_id(id)?.clone();
 
         let fork = self.inner.get_fork_by_id_mut(id)?;
         let full_block =
             fork.backend().get_full_block(evm_env.block_env.number.saturating_to::<u64>())?;
 
-        for tx in full_block.transactions().txns() {
-            // System transactions such as on L2s don't contain any pricing info so we skip them
-            // otherwise this would cause reverts
-            if is_known_system_sender(tx.from()) || tx.ty() == SYSTEM_TRANSACTION_TYPE {
-                trace!(tx=?tx.tx_hash(), "skipping system transaction");
-                continue;
-            }
+        // Collect non-system transactions up to and including the target.
+        let txs = full_block
+            .transactions()
+            .txns()
+            .filter(|tx| !is_known_system_sender(tx.from()) && tx.ty() != SYSTEM_TRANSACTION_TYPE);
 
+        let mut txs_to_replay = Vec::new();
+        let mut target_tx = None;
+        for tx in txs {
             if tx.tx_hash() == tx_hash {
-                // found the target transaction
-                return Ok(Some(tx.clone()));
+                target_tx = Some(tx.clone());
+                break;
             }
-            trace!(tx=?tx.tx_hash(), "committing transaction");
-
-            commit_transaction(
-                tx,
-                &mut evm_env,
-                &mut tx_env,
-                journaled_state,
-                fork,
-                &fork_id,
-                &persistent_accounts,
-                &mut NoOpInspector,
-            )?;
+            txs_to_replay.push(tx.clone());
         }
 
-        Ok(None)
+        // Replay all preceding transactions using a single EVM + cloned ForkDB.
+        if !txs_to_replay.is_empty() {
+            let now = Instant::now();
+
+            // Clone the fork's CacheDB once. The underlying SharedBackend is Arc-backed,
+            // so only the local cache layer is actually duplicated.
+            let replay_db = fork.db.clone();
+            let mut evm = alloy_evm::EthEvmFactory::default().create_evm(replay_db, evm_env);
+
+            for tx in &txs_to_replay {
+                let tx_env: TxEnv = tx.as_ref().try_into_tx_env(tx.from())?;
+                trace!(tx=?tx.tx_hash(), "committing transaction");
+                evm.transact_commit(tx_env).wrap_err("backend: failed committing transaction")?;
+            }
+
+            // Extract the DB back and replace the fork's database with the replayed state.
+            fork.db = evm.into_db();
+
+            // Refresh journaled states from the updated database, preserving persistent
+            // accounts (cheatcode address, CREATE2 deployer, test contract, etc.).
+            fork.refresh_journaled_states(journaled_state, &persistent_accounts)?;
+
+            trace!(elapsed=?now.elapsed(), count=txs_to_replay.len(), "replayed transactions");
+        }
+
+        Ok(target_tx)
     }
 }
 
@@ -1277,7 +1289,7 @@ where
             .update_block_env(self.inner.ensure_fork_id(id).cloned()?, evm_env.block_env.clone());
 
         // replay all transactions that came before
-        self.replay_until(id, evm_env.clone(), tx_env.clone(), transaction, journaled_state)?;
+        self.replay_until(id, evm_env.clone(), transaction, journaled_state)?;
 
         Ok(())
     }
@@ -1633,6 +1645,18 @@ impl<N: Network> Fork<N> {
             return true;
         }
         is_contract_in_state(&self.journaled_state.state, acc)
+    }
+
+    /// Refreshes the given journaled state and the fork's own journaled state from the
+    /// database, preserving persistent accounts.
+    fn refresh_journaled_states(
+        &mut self,
+        journaled_state: &mut JournaledState,
+        persistent_accounts: &HashSet<Address>,
+    ) -> Result<(), BackendError> {
+        update_state(&mut journaled_state.state, &mut self.db, Some(persistent_accounts))?;
+        update_state(&mut self.journaled_state.state, &mut self.db, Some(persistent_accounts))?;
+        Ok(())
     }
 }
 
@@ -2061,11 +2085,7 @@ fn apply_state_changeset<N: Network>(
 ) -> Result<(), BackendError> {
     // commit the state and update the loaded accounts
     fork.db.commit(state);
-
-    update_state(&mut journaled_state.state, &mut fork.db, Some(persistent_accounts))?;
-    update_state(&mut fork.journaled_state.state, &mut fork.db, Some(persistent_accounts))?;
-
-    Ok(())
+    fork.refresh_journaled_states(journaled_state, persistent_accounts)
 }
 
 #[cfg(test)]
