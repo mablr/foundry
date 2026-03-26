@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -13,7 +14,7 @@ use alloy_evm::{Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::Precom
 use alloy_primitives::{Address, Bytes, U256};
 use foundry_fork_db::DatabaseError;
 use revm::{
-    Context,
+    Context, Database,
     context::{
         BlockEnv, CfgEnv, ContextTr, CreateScheme, Evm as RevmEvm, JournalTr, LocalContextTr,
         TxEnv,
@@ -32,13 +33,13 @@ use revm::{
 };
 
 pub fn new_revm_with_inspector<
-    'db,
-    I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+    DB: Database<Error = DatabaseError> + Debug,
+    I: FoundryInspectorExt<EthEvmContext<DB>>,
 >(
-    db: &'db mut dyn DatabaseExt,
+    db: DB,
     evm_env: EvmEnv,
     inspector: I,
-) -> EthRevmEvm<'db, I> {
+) -> EthRevmEvm<DB, I> {
     let mut revm = alloy_evm::EthEvmFactory::default()
         .create_evm_with_inspector(db, evm_env, inspector)
         .into_inner();
@@ -48,13 +49,13 @@ pub fn new_revm_with_inspector<
 }
 
 pub fn new_eth_evm_with_inspector<
-    'db,
-    I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+    DB: Database<Error = DatabaseError> + Debug,
+    I: FoundryInspectorExt<EthEvmContext<DB>>,
 >(
-    db: &'db mut dyn DatabaseExt,
+    db: DB,
     evm_env: EvmEnv,
     inspector: I,
-) -> FoundryEvm<'db, I> {
+) -> FoundryEvm<DB, I> {
     let eth_evm =
         alloy_evm::EthEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
     let mut inner = eth_evm.into_inner();
@@ -86,24 +87,27 @@ fn get_create2_factory_call_inputs(
     }
 }
 
-type EthRevmEvm<'db, I> = RevmEvm<
-    EthEvmContext<&'db mut dyn DatabaseExt>,
+type EthRevmEvm<DB, I> = RevmEvm<
+    EthEvmContext<DB>,
     I,
-    EthInstructions<EthInterpreter, EthEvmContext<&'db mut dyn DatabaseExt>>,
+    EthInstructions<EthInterpreter, EthEvmContext<DB>>,
     PrecompilesMap,
     EthFrame<EthInterpreter>,
 >;
 
-pub struct FoundryEvm<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> {
-    inner: EthRevmEvm<'db, I>,
+pub struct FoundryEvm<
+    DB: Database<Error = DatabaseError> + Debug,
+    I: FoundryInspectorExt<EthEvmContext<DB>>,
+> {
+    inner: EthRevmEvm<DB, I>,
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Evm
-    for FoundryEvm<'db, I>
+impl<DB: Database<Error = DatabaseError> + Debug, I: FoundryInspectorExt<EthEvmContext<DB>>> Evm
+    for FoundryEvm<DB, I>
 {
     type Precompiles = PrecompilesMap;
     type Inspector = I;
-    type DB = &'db mut dyn DatabaseExt;
+    type DB = DB;
     type Error = EVMError<DatabaseError>;
     type HaltReason = HaltReason;
     type Spec = SpecId;
@@ -140,7 +144,7 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Evm
     ) -> Result<ResultAndState<Self::HaltReason>, Self::Error> {
         self.inner.set_tx(tx);
 
-        let mut handler = FoundryHandler::<I>::default();
+        let mut handler = FoundryHandler::<DB, I>::default();
         let result = handler.inspect_run(&mut self.inner)?;
 
         Ok(ResultAndState::new(result, self.inner.ctx.journaled_state.inner.state.clone()))
@@ -165,18 +169,18 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Evm
     }
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Deref
-    for FoundryEvm<'db, I>
+impl<DB: Database<Error = DatabaseError> + Debug, I: FoundryInspectorExt<EthEvmContext<DB>>> Deref
+    for FoundryEvm<DB, I>
 {
-    type Target = Context<BlockEnv, TxEnv, CfgEnv, &'db mut dyn DatabaseExt>;
+    type Target = Context<BlockEnv, TxEnv, CfgEnv, DB>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner.ctx
     }
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> DerefMut
-    for FoundryEvm<'db, I>
+impl<DB: Database<Error = DatabaseError> + Debug, I: FoundryInspectorExt<EthEvmContext<DB>>>
+    DerefMut for FoundryEvm<DB, I>
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner.ctx
@@ -204,8 +208,8 @@ pub trait NestedEvm {
     ) -> Result<ResultAndState<HaltReason>, EVMError<DatabaseError>>;
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> NestedEvm
-    for EthRevmEvm<'db, I>
+impl<DB: Database<Error = DatabaseError> + Debug, I: FoundryInspectorExt<EthEvmContext<DB>>>
+    NestedEvm for EthRevmEvm<DB, I>
 {
     type Tx = TxEnv;
 
@@ -214,7 +218,7 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Neste
     }
 
     fn run_execution(&mut self, frame: FrameInput) -> Result<FrameResult, EVMError<DatabaseError>> {
-        let mut handler = FoundryHandler::<I>::default();
+        let mut handler = FoundryHandler::<DB, I>::default();
 
         // Create first frame
         let memory =
@@ -236,7 +240,7 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Neste
     ) -> Result<ResultAndState<HaltReason>, EVMError<DatabaseError>> {
         self.set_tx(tx);
 
-        let mut handler = FoundryHandler::<I>::default();
+        let mut handler = FoundryHandler::<DB, I>::default();
         let result = handler.inspect_run(self)?;
 
         Ok(ResultAndState::new(result, self.ctx.journaled_state.inner.state.clone()))
@@ -276,13 +280,16 @@ pub fn with_cloned_context<
     Ok(())
 }
 
-pub struct FoundryHandler<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> {
+pub struct FoundryHandler<
+    DB: Database<Error = DatabaseError> + Debug,
+    I: FoundryInspectorExt<EthEvmContext<DB>>,
+> {
     create2_overrides: Vec<(usize, CallInputs)>,
-    _phantom: PhantomData<(&'db mut dyn DatabaseExt, I)>,
+    _phantom: PhantomData<(DB, I)>,
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Default
-    for FoundryHandler<'db, I>
+impl<DB: Database<Error = DatabaseError> + Debug, I: FoundryInspectorExt<EthEvmContext<DB>>> Default
+    for FoundryHandler<DB, I>
 {
     fn default() -> Self {
         Self { create2_overrides: Vec::new(), _phantom: PhantomData }
@@ -291,13 +298,13 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Defau
 
 // Blanket Handler implementation for FoundryHandler, needed for implementing the InspectorHandler
 // trait.
-impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Handler
-    for FoundryHandler<'db, I>
+impl<DB: Database<Error = DatabaseError> + Debug, I: FoundryInspectorExt<EthEvmContext<DB>>> Handler
+    for FoundryHandler<DB, I>
 {
     type Evm = RevmEvm<
-        EthEvmContext<&'db mut dyn DatabaseExt>,
+        EthEvmContext<DB>,
         I,
-        EthInstructions<EthInterpreter, EthEvmContext<&'db mut dyn DatabaseExt>>,
+        EthInstructions<EthInterpreter, EthEvmContext<DB>>,
         PrecompilesMap,
         EthFrame<EthInterpreter>,
     >;
@@ -305,7 +312,9 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Handl
     type HaltReason = HaltReason;
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> FoundryHandler<'db, I> {
+impl<DB: Database<Error = DatabaseError> + Debug, I: FoundryInspectorExt<EthEvmContext<DB>>>
+    FoundryHandler<DB, I>
+{
     /// Handles CREATE2 frame initialization, potentially transforming it to use the CREATE2
     /// factory.
     fn handle_create_frame(
@@ -399,8 +408,8 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Found
     }
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> InspectorHandler
-    for FoundryHandler<'db, I>
+impl<DB: Database<Error = DatabaseError> + Debug, I: FoundryInspectorExt<EthEvmContext<DB>>>
+    InspectorHandler for FoundryHandler<DB, I>
 {
     type IT = EthInterpreter;
 
