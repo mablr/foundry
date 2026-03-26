@@ -25,7 +25,7 @@ use foundry_common::{
 use foundry_compilers::artifacts::EvmVersion;
 use foundry_evm_core::{
     FoundryBlock, FoundryTransaction,
-    backend::{DatabaseExt, RevertStateSnapshotAction},
+    backend::{DatabaseError, DatabaseExt, RevertStateSnapshotAction},
     constants::{CALLER, CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS, TEST_CONTRACT_ADDRESS},
     env::FoundryContextExt,
     utils::get_blob_base_fee_update_fraction_by_spec_id,
@@ -35,6 +35,7 @@ use foundry_primitives::FoundryTxEnvelope;
 use itertools::Itertools;
 use rand::Rng;
 use revm::{
+    Database,
     bytecode::Bytecode,
     context::{Block, Cfg, ContextTr, JournalTr, Transaction, TxEnv, result::ExecutionResult},
     inspector::JournalExt,
@@ -254,7 +255,7 @@ impl Cheatcode for addrCall {
 }
 
 impl Cheatcode for getNonce_0Call {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
+    fn apply_stateful<CTX: ContextTr<Db: Database<Error = DatabaseError>>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -264,7 +265,7 @@ impl Cheatcode for getNonce_0Call {
 }
 
 impl Cheatcode for getNonce_1Call {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
+    fn apply_stateful<CTX: ContextTr<Db: Database<Error = DatabaseError>>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -274,7 +275,7 @@ impl Cheatcode for getNonce_1Call {
 }
 
 impl Cheatcode for loadCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
+    fn apply_stateful<CTX: ContextTr<Db: Database<Error = DatabaseError>>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -652,7 +653,7 @@ impl Cheatcode for getBlobBaseFeeCall {
 }
 
 impl Cheatcode for dealCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt, Journal: JournalExt>>(
+    fn apply_stateful<CTX: ContextTr<Db: Database<Error = DatabaseError>, Journal: JournalExt>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -666,7 +667,7 @@ impl Cheatcode for dealCall {
 }
 
 impl Cheatcode for etchCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
+    fn apply_stateful<CTX: ContextTr<Db: Database<Error = DatabaseError>>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -681,7 +682,7 @@ impl Cheatcode for etchCall {
 }
 
 impl Cheatcode for resetNonceCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt, Journal: JournalExt>>(
+    fn apply_stateful<CTX: ContextTr<Db: Database<Error = DatabaseError>, Journal: JournalExt>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -699,7 +700,7 @@ impl Cheatcode for resetNonceCall {
 }
 
 impl Cheatcode for setNonceCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt, Journal: JournalExt>>(
+    fn apply_stateful<CTX: ContextTr<Db: Database<Error = DatabaseError>, Journal: JournalExt>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -718,7 +719,7 @@ impl Cheatcode for setNonceCall {
 }
 
 impl Cheatcode for setNonceUnsafeCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt, Journal: JournalExt>>(
+    fn apply_stateful<CTX: ContextTr<Db: Database<Error = DatabaseError>, Journal: JournalExt>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -730,7 +731,7 @@ impl Cheatcode for setNonceUnsafeCall {
 }
 
 impl Cheatcode for storeCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
+    fn apply_stateful<CTX: ContextTr<Db: Database<Error = DatabaseError>>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
@@ -935,12 +936,13 @@ impl Cheatcode for revertToStateAndDeleteCall {
 
 // Deprecated in favor of `deleteStateSnapshotCall`
 impl Cheatcode for deleteSnapshotCall {
-    fn apply_stateful<CTX: FoundryContextExt<Db: DatabaseExt>>(
+    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
         &self,
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
         let Self { snapshotId } = self;
-        inner_delete_state_snapshot(ccx, *snapshotId)
+        let result = ccx.ecx.db_mut().delete_state_snapshot(*snapshotId);
+        Ok(result.abi_encode())
     }
 }
 
@@ -950,7 +952,8 @@ impl Cheatcode for deleteStateSnapshotCall {
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
         let Self { snapshotId } = self;
-        inner_delete_state_snapshot(ccx, *snapshotId)
+        let result = ccx.ecx.db_mut().delete_state_snapshot(*snapshotId);
+        Ok(result.abi_encode())
     }
 }
 
@@ -961,7 +964,8 @@ impl Cheatcode for deleteSnapshotsCall {
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
         let Self {} = self;
-        inner_delete_state_snapshots(ccx)
+        ccx.ecx.db_mut().delete_state_snapshots();
+        Ok(Default::default())
     }
 }
 
@@ -971,7 +975,8 @@ impl Cheatcode for deleteStateSnapshotsCall {
         ccx: &mut CheatsCtxt<'_, CTX>,
     ) -> Result {
         let Self {} = self;
-        inner_delete_state_snapshots(ccx)
+        ccx.ecx.db_mut().delete_state_snapshots();
+        Ok(Default::default())
     }
 }
 
@@ -993,10 +998,7 @@ impl Cheatcode for stopAndReturnStateDiffCall {
 }
 
 impl Cheatcode for getStateDiffCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
-    ) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let mut diffs = String::new();
         let state_diffs = get_recorded_state_diffs(ccx);
         for (address, state_diffs) in state_diffs {
@@ -1008,20 +1010,14 @@ impl Cheatcode for getStateDiffCall {
 }
 
 impl Cheatcode for getStateDiffJsonCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
-    ) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let state_diffs = get_recorded_state_diffs(ccx);
         Ok(serde_json::to_string(&state_diffs)?.abi_encode())
     }
 }
 
 impl Cheatcode for getStorageSlotsCall {
-    fn apply_stateful<CTX: ContextTr<Db: DatabaseExt>>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
-    ) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { target, variableName } = self;
 
         let storage_layout = get_contract_data(ccx, *target)
@@ -1393,7 +1389,7 @@ impl Cheatcode for getEvmVersionCall {
     }
 }
 
-pub(super) fn get_nonce<CTX: ContextTr<Db: DatabaseExt>>(
+pub(super) fn get_nonce<CTX: ContextTr<Db: Database<Error = DatabaseError>>>(
     ccx: &mut CheatsCtxt<'_, CTX>,
     address: &Address,
 ) -> Result {
@@ -1452,21 +1448,6 @@ fn inner_revert_to_state_and_delete<CTX: EthCheatCtx>(
     } else {
         Ok(false.abi_encode())
     }
-}
-
-fn inner_delete_state_snapshot<CTX: ContextTr<Db: DatabaseExt>>(
-    ccx: &mut CheatsCtxt<'_, CTX>,
-    snapshot_id: U256,
-) -> Result {
-    let result = ccx.ecx.db_mut().delete_state_snapshot(snapshot_id);
-    Ok(result.abi_encode())
-}
-
-fn inner_delete_state_snapshots<CTX: ContextTr<Db: DatabaseExt>>(
-    ccx: &mut CheatsCtxt<'_, CTX>,
-) -> Result {
-    ccx.ecx.db_mut().delete_state_snapshots();
-    Ok(Default::default())
 }
 
 fn inner_value_snapshot<CTX>(
@@ -1632,7 +1613,9 @@ fn read_callers(state: &Cheatcodes, default_sender: &Address, call_depth: usize)
 }
 
 /// Ensures the `Account` is loaded and touched.
-pub(super) fn journaled_account<CTX: ContextTr<Db: DatabaseExt, Journal: JournalExt>>(
+pub(super) fn journaled_account<
+    CTX: ContextTr<Db: Database<Error = DatabaseError>, Journal: JournalExt>,
+>(
     ecx: &mut CTX,
     addr: Address,
 ) -> Result<&mut Account> {
@@ -1640,7 +1623,7 @@ pub(super) fn journaled_account<CTX: ContextTr<Db: DatabaseExt, Journal: Journal
     Ok(ecx.journal_mut().evm_state_mut().get_mut(&addr).expect("account is loaded"))
 }
 
-pub(super) fn ensure_loaded_account<CTX: ContextTr<Db: DatabaseExt>>(
+pub(super) fn ensure_loaded_account<CTX: ContextTr<Db: Database<Error = DatabaseError>>>(
     ecx: &mut CTX,
     addr: Address,
 ) -> Result<()> {
@@ -1685,7 +1668,7 @@ fn genesis_account(account: &Account) -> GenesisAccount {
 }
 
 /// Helper function to returns state diffs recorded for each changed account.
-fn get_recorded_state_diffs<CTX: ContextTr<Db: DatabaseExt>>(
+fn get_recorded_state_diffs<CTX: ContextTr>(
     ccx: &mut CheatsCtxt<'_, CTX>,
 ) -> BTreeMap<Address, AccountStateDiffs> {
     let mut state_diffs: BTreeMap<Address, AccountStateDiffs> = BTreeMap::default();
@@ -1864,7 +1847,7 @@ const EIP1822_PROXIABLE_SLOT: &str =
     "c5f16f0fcc639fa48a6947836d9850f504798523bf8c9a3a87d5876cf622bcf7";
 
 /// Helper function to get the contract data from the deployed code at an address.
-fn get_contract_data<'a, CTX: ContextTr<Db: DatabaseExt>>(
+fn get_contract_data<'a, CTX: ContextTr>(
     ccx: &'a mut CheatsCtxt<'_, CTX>,
     address: Address,
 ) -> Option<(&'a foundry_compilers::ArtifactId, &'a foundry_common::contracts::ContractData)> {
