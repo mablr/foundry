@@ -5,7 +5,7 @@ use crate::{
     EthCheatCtx, Result, Vm::*, inspector::RecordDebugStepInfo,
 };
 use alloy_consensus::{TxEnvelope, transaction::SignerRecoverable};
-use alloy_evm::{EvmEnv, FromRecoveredTx};
+use alloy_evm::FromRecoveredTx;
 use alloy_genesis::{Genesis, GenesisAccount};
 use alloy_network::eip2718::EIP4844_TX_TYPE_ID;
 use alloy_primitives::{
@@ -516,7 +516,7 @@ impl Cheatcode for difficultyCall {
     fn apply_stateful<CTX: FoundryContextExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { newDifficulty } = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() < SpecId::MERGE,
+            (*ccx.ecx.cfg().spec()).into() < SpecId::MERGE,
             "`difficulty` is not supported after the Paris hard fork, use `prevrandao` instead; \
              see EIP-4399: https://eips.ethereum.org/EIPS/eip-4399"
         );
@@ -538,7 +538,7 @@ impl Cheatcode for prevrandao_0Call {
     fn apply_stateful<CTX: FoundryContextExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { newPrevrandao } = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() >= SpecId::MERGE,
+            (*ccx.ecx.cfg().spec()).into() >= SpecId::MERGE,
             "`prevrandao` is not supported before the Paris hard fork, use `difficulty` instead; \
              see EIP-4399: https://eips.ethereum.org/EIPS/eip-4399"
         );
@@ -551,7 +551,7 @@ impl Cheatcode for prevrandao_1Call {
     fn apply_stateful<CTX: FoundryContextExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { newPrevrandao } = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() >= SpecId::MERGE,
+            (*ccx.ecx.cfg().spec()).into() >= SpecId::MERGE,
             "`prevrandao` is not supported before the Paris hard fork, use `difficulty` instead; \
              see EIP-4399: https://eips.ethereum.org/EIPS/eip-4399"
         );
@@ -564,7 +564,7 @@ impl Cheatcode for blobhashesCall {
     fn apply_stateful<CTX: FoundryContextExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { hashes } = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() >= SpecId::CANCUN,
+            (*ccx.ecx.cfg().spec()).into() >= SpecId::CANCUN,
             "`blobhashes` is not supported before the Cancun hard fork; \
              see EIP-4844: https://eips.ethereum.org/EIPS/eip-4844"
         );
@@ -576,10 +576,10 @@ impl Cheatcode for blobhashesCall {
 }
 
 impl Cheatcode for getBlobhashesCall {
-    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: FoundryContextExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self {} = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() >= SpecId::CANCUN,
+            (*ccx.ecx.cfg().spec()).into() >= SpecId::CANCUN,
             "`getBlobhashes` is not supported before the Cancun hard fork; \
              see EIP-4844: https://eips.ethereum.org/EIPS/eip-4844"
         );
@@ -630,12 +630,12 @@ impl Cheatcode for blobBaseFeeCall {
     fn apply_stateful<CTX: FoundryContextExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { newBlobBaseFee } = self;
         ensure!(
-            ccx.ecx.cfg().spec().into() >= SpecId::CANCUN,
+            (*ccx.ecx.cfg().spec()).into() >= SpecId::CANCUN,
             "`blobBaseFee` is not supported before the Cancun hard fork; \
              see EIP-4844: https://eips.ethereum.org/EIPS/eip-4844"
         );
 
-        let spec: SpecId = ccx.ecx.cfg().spec().into();
+        let spec: SpecId = (*ccx.ecx.cfg().spec()).into();
         ccx.ecx.block_mut().set_blob_excess_gas_and_price(
             (*newBlobBaseFee).to(),
             get_blob_base_fee_update_fraction_by_spec_id(spec),
@@ -1387,8 +1387,8 @@ impl Cheatcode for setEvmVersionCall {
 }
 
 impl Cheatcode for getEvmVersionCall {
-    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
-        let spec: SpecId = ccx.ecx.cfg().spec().into();
+    fn apply_stateful<CTX: FoundryContextExt>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+        let spec = (*ccx.ecx.cfg().spec()).into();
         Ok(spec.to_string().to_lowercase().abi_encode())
     }
 }
@@ -1402,8 +1402,7 @@ pub(super) fn get_nonce<CTX: ContextTr<Db: DatabaseExt>>(
 }
 
 fn inner_snapshot_state<CTX: EthCheatCtx>(ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
-    let evm_env =
-        EvmEnv { cfg_env: ccx.ecx.cfg_mut().clone(), block_env: ccx.ecx.block_mut().clone() };
+    let evm_env = ccx.ecx.evm_clone();
     let (db, inner) = ccx.ecx.db_journal_inner_mut();
     let id = db.snapshot_state(inner, &evm_env);
     Ok(id.abi_encode())
