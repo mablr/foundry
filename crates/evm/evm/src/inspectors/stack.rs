@@ -2,8 +2,10 @@ use super::{
     Cheatcodes, CheatsConfig, ChiselState, CustomPrintTracer, Fuzzer, LineCoverageCollector,
     LogCollector, RevertDiagnostic, ScriptExecutionInspector, TracingInspector,
 };
-use alloy_evm::EvmEnv;
-use alloy_network::Network;
+use alloy_consensus::transaction::SignerRecoverable;
+use alloy_evm::{EvmEnv, FromRecoveredTx};
+use alloy_network::{Ethereum, Network};
+use alloy_rlp::Decodable;
 use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256,
     map::{AddressHashMap, HashMap},
@@ -21,10 +23,11 @@ use foundry_evm_core::{
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::{SparsedTraceArena, TraceMode};
+use foundry_primitives::FoundryTransactionBuilder;
 use revm::{
-    Inspector,
+    Context, Inspector,
     context::{
-        Block, BlockEnv, Cfg, ContextTr, JournalTr, Transaction, TxEnv,
+        Block, BlockEnv, Cfg, CfgEnv, ContextTr, JournalTr, Transaction, TxEnv,
         result::{EVMError, ExecutionResult, Output},
     },
     context_interface::CreateScheme,
@@ -38,6 +41,7 @@ use revm::{
 };
 use revm_inspectors::edge_cov::EdgeCovInspector;
 use std::{
+    fmt::Debug,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -281,13 +285,16 @@ macro_rules! call_inspectors {
 }
 
 /// The collected results of [`InspectorStack`].
-pub struct InspectorData {
+pub struct InspectorData<
+    CTX: FoundryContextExt = Context<BlockEnv, TxEnv, CfgEnv>,
+    N: Network = Ethereum,
+> {
     pub logs: Vec<Log>,
     pub labels: AddressHashMap<String>,
     pub traces: Option<SparsedTraceArena>,
     pub line_coverage: Option<HitMaps>,
     pub edge_coverage: Option<Vec<u8>>,
-    pub cheatcodes: Option<Box<Cheatcodes>>,
+    pub cheatcodes: Option<Box<Cheatcodes<CTX, N>>>,
     pub chisel_state: Option<(Vec<U256>, Vec<u8>)>,
     pub reverter: Option<Address>,
 }
@@ -313,10 +320,39 @@ pub struct InnerContextData {
 /// us ability to create and execute separate EVM frames from inside cheatcodes while still having
 /// access to entire stack of inspectors and correctly handling traces, logs, debugging info
 /// collection, etc.
-#[derive(Clone, Debug, Default)]
-pub struct InspectorStack {
-    pub cheatcodes: Option<Box<Cheatcodes>>,
+pub struct InspectorStack<
+    CTX: FoundryContextExt = Context<BlockEnv, TxEnv, CfgEnv>,
+    N: Network = Ethereum,
+> {
+    pub cheatcodes: Option<Box<Cheatcodes<CTX, N>>>,
     pub inner: InspectorStackInner,
+}
+
+impl<CTX: FoundryContextExt, N: Network> Clone for InspectorStack<CTX, N>
+where
+    Cheatcodes<CTX, N>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self { cheatcodes: self.cheatcodes.clone(), inner: self.inner.clone() }
+    }
+}
+
+impl<CTX: FoundryContextExt, N: Network> Debug for InspectorStack<CTX, N>
+where
+    Cheatcodes<CTX, N>: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InspectorStack")
+            .field("cheatcodes", &self.cheatcodes)
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
+impl<CTX: FoundryContextExt, N: Network> Default for InspectorStack<CTX, N> {
+    fn default() -> Self {
+        Self { cheatcodes: None, inner: InspectorStackInner::default() }
+    }
 }
 
 /// All used inpectors besides [Cheatcodes].
@@ -354,15 +390,19 @@ pub struct InspectorStackInner {
 
 /// Struct keeping mutable references to both parts of [InspectorStack] and implementing
 /// [revm::Inspector]. This struct can be obtained via [InspectorStack::as_mut].
-pub struct InspectorStackRefMut<'a> {
-    pub cheatcodes: Option<&'a mut Cheatcodes>,
+pub struct InspectorStackRefMut<
+    'a,
+    CTX: FoundryContextExt = Context<BlockEnv, TxEnv, CfgEnv>,
+    N: Network = Ethereum,
+> {
+    pub cheatcodes: Option<&'a mut Cheatcodes<CTX, N>>,
     pub inner: &'a mut InspectorStackInner,
 }
 
 impl<CTX: EthCheatCtx, N: Network> CheatcodesExecutor<CTX, N> for InspectorStackInner {
     fn with_nested_evm(
         &mut self,
-        cheats: &mut Cheatcodes,
+        cheats: &mut Cheatcodes<CTX, N>,
         ecx: &mut CTX,
         f: NestedEvmClosure<'_, CTX::Tx>,
     ) -> Result<(), EVMError<DatabaseError>> {
@@ -379,7 +419,7 @@ impl<CTX: EthCheatCtx, N: Network> CheatcodesExecutor<CTX, N> for InspectorStack
 
     fn with_fresh_nested_evm(
         &mut self,
-        cheats: &mut Cheatcodes,
+        cheats: &mut Cheatcodes<CTX, N>,
         db: &mut dyn DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
         evm_env: EvmEnv<CTX::Spec, CTX::Block>,
         f: NestedEvmClosure<'_, CTX::Tx>,
@@ -392,7 +432,7 @@ impl<CTX: EthCheatCtx, N: Network> CheatcodesExecutor<CTX, N> for InspectorStack
 
     fn transact_on_db(
         &mut self,
-        cheats: &mut Cheatcodes,
+        cheats: &mut Cheatcodes<CTX, N>,
         ecx: &mut CTX,
         fork_id: Option<U256>,
         transaction: B256,
@@ -406,7 +446,7 @@ impl<CTX: EthCheatCtx, N: Network> CheatcodesExecutor<CTX, N> for InspectorStack
 
     fn transact_from_tx_on_db(
         &mut self,
-        cheats: &mut Cheatcodes,
+        cheats: &mut Cheatcodes<CTX, N>,
         ecx: &mut CTX,
         tx_env: &CTX::Tx,
     ) -> eyre::Result<()> {
@@ -438,7 +478,7 @@ impl<CTX: EthCheatCtx, N: Network> CheatcodesExecutor<CTX, N> for InspectorStack
     }
 }
 
-impl InspectorStack {
+impl<CTX: FoundryContextExt, N: Network> InspectorStack<CTX, N> {
     /// Creates a new inspector stack.
     ///
     /// Note that the stack is empty by default, and you must add inspectors to it.
@@ -457,14 +497,17 @@ impl InspectorStack {
 
     /// Set variables from an environment for the relevant inspectors.
     #[inline]
-    pub fn set_env(&mut self, evm_env: &EvmEnv, tx_env: &TxEnv) {
-        self.set_block(&evm_env.block_env);
+    pub fn set_env(&mut self, evm_env: &EvmEnv, tx_env: &TxEnv)
+    where
+        CTX::Block: From<BlockEnv>,
+    {
+        self.set_block(&evm_env.block_env.clone().into());
         self.set_gas_price(tx_env.gas_price);
     }
 
     /// Sets the block for the relevant inspectors.
     #[inline]
-    pub fn set_block(&mut self, block: &BlockEnv) {
+    pub fn set_block(&mut self, block: &CTX::Block) {
         if let Some(cheatcodes) = &mut self.cheatcodes {
             cheatcodes.block = Some(block.clone());
         }
@@ -480,7 +523,7 @@ impl InspectorStack {
 
     /// Set the cheatcodes inspector.
     #[inline]
-    pub fn set_cheatcodes(&mut self, cheatcodes: Cheatcodes) {
+    pub fn set_cheatcodes(&mut self, cheatcodes: Cheatcodes<CTX, N>) {
         self.cheatcodes = Some(cheatcodes.into());
     }
 
@@ -569,12 +612,12 @@ impl InspectorStack {
     }
 
     #[inline(always)]
-    fn as_mut(&mut self) -> InspectorStackRefMut<'_> {
+    fn as_mut(&mut self) -> InspectorStackRefMut<'_, CTX, N> {
         InspectorStackRefMut { cheatcodes: self.cheatcodes.as_deref_mut(), inner: &mut self.inner }
     }
 
     /// Collects all the data gathered during inspection into a single struct.
-    pub fn collect(self) -> InspectorData {
+    pub fn collect(self) -> InspectorData<CTX, N> {
         let Self {
             mut cheatcodes,
             inner:
@@ -623,18 +666,18 @@ impl InspectorStack {
     }
 }
 
-impl InspectorStackRefMut<'_> {
+impl<CTX: EthCheatCtx, N: Network> InspectorStackRefMut<'_, CTX, N> {
     /// Adjusts the EVM data for the inner EVM context.
     /// Should be called on the top-level call of inner context (depth == 0 &&
     /// self.in_inner_context) Decreases sender nonce for CALLs to keep backwards compatibility
     /// Updates tx.origin to the value before entering inner context
-    fn adjust_evm_data_for_inner_context<CTX: FoundryContextExt>(&mut self, ecx: &mut CTX) {
+    fn adjust_evm_data_for_inner_context(&mut self, ecx: &mut CTX) {
         let inner_context_data =
             self.inner_context_data.as_ref().expect("should be called in inner context");
         ecx.tx_mut().set_caller(inner_context_data.original_origin);
     }
 
-    fn do_call_end<CTX: EthCheatCtx>(
+    fn do_call_end(
         &mut self,
         ecx: &mut CTX,
         inputs: &CallInputs,
@@ -671,7 +714,7 @@ impl InspectorStackRefMut<'_> {
         outcome.clone()
     }
 
-    fn do_create_end<CTX: EthCheatCtx>(
+    fn do_create_end(
         &mut self,
         ecx: &mut CTX,
         call: &CreateInputs,
@@ -697,7 +740,7 @@ impl InspectorStackRefMut<'_> {
         outcome.clone()
     }
 
-    fn transact_inner<CTX: EthCheatCtx>(
+    fn transact_inner(
         &mut self,
         ecx: &mut CTX,
         kind: TxKind,
@@ -837,7 +880,7 @@ impl InspectorStackRefMut<'_> {
 
     /// Moves out of references, constructs a new [`InspectorStackRefMut`] and runs the given
     /// closure with it.
-    fn with_inspector<O>(&mut self, f: impl FnOnce(InspectorStackRefMut<'_>) -> O) -> O {
+    fn with_inspector<O>(&mut self, f: impl FnOnce(InspectorStackRefMut<'_, CTX, N>) -> O) -> O {
         let mut cheatcodes = self
             .cheatcodes
             .as_deref_mut()
@@ -856,7 +899,7 @@ impl InspectorStackRefMut<'_> {
     }
 
     /// Invoked at the beginning of a new top-level (0 depth) frame.
-    fn top_level_frame_start<CTX: ContextTr<Journal: JournalExt>>(&mut self, ecx: &mut CTX) {
+    fn top_level_frame_start(&mut self, ecx: &mut CTX) {
         if self.enable_isolation {
             // If we're in isolation mode, we need to keep track of the state at the beginning of
             // the frame to be able to roll back on revert
@@ -865,7 +908,7 @@ impl InspectorStackRefMut<'_> {
     }
 
     /// Invoked at the end of root frame.
-    fn top_level_frame_end<CTX: ContextTr<Journal: JournalExt>>(
+    fn top_level_frame_end(
         &mut self,
         ecx: &mut CTX,
         result: InstructionResult,
@@ -894,7 +937,7 @@ impl InspectorStackRefMut<'_> {
     // delegate to `InspectorStackRefMut` in this case.
 
     #[inline(always)]
-    fn step_inlined<CTX: EthCheatCtx>(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step_inlined(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -913,7 +956,7 @@ impl InspectorStackRefMut<'_> {
     }
 
     #[inline(always)]
-    fn step_end_inlined<CTX: EthCheatCtx>(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step_end_inlined(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -929,7 +972,14 @@ impl InspectorStackRefMut<'_> {
     }
 }
 
-impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStackRefMut<'_> {
+impl<CTX: EthCheatCtx, N: Network> Inspector<CTX> for InspectorStackRefMut<'_, CTX, N>
+where
+    N::TransactionRequest: FoundryTransactionBuilder<N>,
+    N::TxEnvelope: Decodable + SignerRecoverable,
+    CTX::Tx: FromRecoveredTx<N::TxEnvelope>,
+    for<'b> Cheatcodes<CTX, N>:
+        Inspector<Context<BlockEnv, TxEnv, CfgEnv, &'b mut dyn DatabaseExt>>,
+{
     fn initialize_interp(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         call_inspectors!(
             [
@@ -1134,7 +1184,7 @@ impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStackRefMut<'_> {
     }
 }
 
-impl FoundryInspectorExt for InspectorStackRefMut<'_> {
+impl<CTX: FoundryContextExt, N: Network> FoundryInspectorExt for InspectorStackRefMut<'_, CTX, N> {
     fn should_use_create2_factory(&mut self, depth: usize, inputs: &CreateInputs) -> bool {
         call_inspectors!(
             #[ret]
@@ -1160,7 +1210,14 @@ impl FoundryInspectorExt for InspectorStackRefMut<'_> {
     }
 }
 
-impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStack {
+impl<CTX: EthCheatCtx, N: Network> Inspector<CTX> for InspectorStack<CTX, N>
+where
+    N::TransactionRequest: FoundryTransactionBuilder<N>,
+    N::TxEnvelope: Decodable + SignerRecoverable,
+    CTX::Tx: FromRecoveredTx<N::TxEnvelope>,
+    for<'b> Cheatcodes<CTX, N>:
+        Inspector<Context<BlockEnv, TxEnv, CfgEnv, &'b mut dyn DatabaseExt>>,
+{
     fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         self.as_mut().step_inlined(interpreter, ecx)
     }
@@ -1204,7 +1261,7 @@ impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStack {
     }
 }
 
-impl FoundryInspectorExt for InspectorStack {
+impl<CTX: FoundryContextExt, N: Network> FoundryInspectorExt for InspectorStack<CTX, N> {
     fn should_use_create2_factory(&mut self, depth: usize, inputs: &CreateInputs) -> bool {
         self.as_mut().should_use_create2_factory(depth, inputs)
     }
@@ -1218,7 +1275,7 @@ impl FoundryInspectorExt for InspectorStack {
     }
 }
 
-impl<'a> Deref for InspectorStackRefMut<'a> {
+impl<'a, CTX: FoundryContextExt, N: Network> Deref for InspectorStackRefMut<'a, CTX, N> {
     type Target = &'a mut InspectorStackInner;
 
     fn deref(&self) -> &Self::Target {
@@ -1226,13 +1283,13 @@ impl<'a> Deref for InspectorStackRefMut<'a> {
     }
 }
 
-impl DerefMut for InspectorStackRefMut<'_> {
+impl<CTX: FoundryContextExt, N: Network> DerefMut for InspectorStackRefMut<'_, CTX, N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl Deref for InspectorStack {
+impl<CTX: FoundryContextExt, N: Network> Deref for InspectorStack<CTX, N> {
     type Target = InspectorStackInner;
 
     fn deref(&self) -> &Self::Target {
@@ -1240,7 +1297,7 @@ impl Deref for InspectorStack {
     }
 }
 
-impl DerefMut for InspectorStack {
+impl<CTX: FoundryContextExt, N: Network> DerefMut for InspectorStack<CTX, N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }

@@ -23,10 +23,12 @@ foundry-evm-coverage.workspace = true
 foundry-evm-fuzz.workspace = true
 foundry-evm-networks.workspace = true
 foundry-evm-traces.workspace = true
+foundry-primitives.workspace = true
 
 alloy-dyn-abi = { workspace = true, features = ["arbitrary", "eip712"] }
 alloy-evm.workspace = true
 alloy-json-abi.workspace = true
+alloy-consensus.workspace = true
 alloy-network.workspace = true
 alloy-primitives = { workspace = true, features = [
     "serde",
@@ -34,6 +36,7 @@ alloy-primitives = { workspace = true, features = [
     "arbitrary",
     "rlp",
 ] }
+alloy-rlp.workspace = true
 alloy-rpc-types.workspace = true
 alloy-sol-types.workspace = true
 revm = { workspace = true, default-features = false, features = [

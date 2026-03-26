@@ -4852,11 +4852,13 @@ dependencies = [
 name = "foundry-evm"
 version = "1.6.0"
 dependencies = [
+ "alloy-consensus",
  "alloy-dyn-abi",
  "alloy-evm",
  "alloy-json-abi",
  "alloy-network",
  "alloy-primitives",
+ "alloy-rlp",
  "alloy-rpc-types",
  "alloy-sol-types",
  "eyre",
@@ -4869,6 +4871,7 @@ dependencies = [
  "foundry-evm-fuzz",
  "foundry-evm-networks",
  "foundry-evm-traces",
+ "foundry-primitives",
  "indicatif",
  "parking_lot",
  "proptest",

@@ -1194,6 +1194,7 @@ where
     N::TransactionRequest: FoundryTransactionBuilder<N>,
     N::TxEnvelope: Decodable + SignerRecoverable,
     CTX::Tx: FromRecoveredTx<N::TxEnvelope>,
+    for<'a> Self: Inspector<Context<BlockEnv, TxEnv, CfgEnv, &'a mut dyn DatabaseExt>>,
 {
     fn initialize_interp(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         // When the first interpreter is initialized we've circumvented the balance and gas checks,
