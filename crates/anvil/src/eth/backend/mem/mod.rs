@@ -8,7 +8,6 @@ use crate::{
         backend::{
             cheats::{CheatEcrecover, CheatsManager},
             db::{AnvilCacheDB, Db, MaybeFullDatabase, SerializableState, StateDb},
-            env::Env,
             executor::{AnvilBlockExecutorFactory, AnvilExecutionCtx, build_tx_env_for_pending},
             fork::ClientFork,
             genesis::GenesisConfig,
@@ -101,6 +100,7 @@ use foundry_evm::{
         get_blob_base_fee_update_fraction_by_spec_id,
     },
 };
+use foundry_evm_networks::NetworkConfigs;
 use foundry_primitives::{
     FoundryNetwork, FoundryReceiptEnvelope, FoundryTransactionRequest, FoundryTxEnvelope,
     FoundryTxReceipt, get_deposit_tx_parts,
@@ -205,8 +205,10 @@ pub struct Backend<N: Network> {
     blockchain: Blockchain<N>,
     /// Historic states of previous blocks.
     states: Arc<RwLock<InMemoryBlockStates>>,
-    /// Env data of the chain
-    env: Arc<RwLock<Env>>,
+    /// EVM environment data of the chain (block env, cfg env).
+    evm_env: Arc<RwLock<EvmEnv>>,
+    /// Network configuration (optimism, custom precompiles, etc.)
+    networks: NetworkConfigs,
     /// This is set if this is currently forked off another client.
     fork: Arc<RwLock<Option<ClientFork>>>,
     /// Provides time related info, like timestamp.
@@ -247,7 +249,8 @@ impl<N: Network> Clone for Backend<N> {
             db: self.db.clone(),
             blockchain: self.blockchain.clone(),
             states: self.states.clone(),
-            env: self.env.clone(),
+            evm_env: self.evm_env.clone(),
+            networks: self.networks,
             fork: self.fork.clone(),
             time: self.time.clone(),
             cheats: self.cheats.clone(),
@@ -286,7 +289,7 @@ impl<N: Network> Backend<N> {
             return true;
         }
         // Ensure EIP-3607 is disabled
-        self.env.write().evm_env.cfg_env.disable_eip3607 = true;
+        self.evm_env.write().cfg_env.disable_eip3607 = true;
         self.cheats.impersonate(addr)
     }
 
@@ -355,9 +358,9 @@ impl<N: Network> Backend<N> {
         &self.fees
     }
 
-    /// The env data of the blockchain
-    pub fn env(&self) -> &Arc<RwLock<Env>> {
-        &self.env
+    /// The EVM environment data of the blockchain
+    pub fn evm_env(&self) -> &Arc<RwLock<EvmEnv>> {
+        &self.evm_env
     }
 
     /// Returns the current best hash of the chain
@@ -372,21 +375,21 @@ impl<N: Network> Backend<N> {
 
     /// Sets the block number
     pub fn set_block_number(&self, number: u64) {
-        self.env.write().evm_env.block_env.number = U256::from(number);
+        self.evm_env.write().block_env.number = U256::from(number);
     }
 
     /// Returns the client coinbase address.
     pub fn coinbase(&self) -> Address {
-        self.env.read().evm_env.block_env.beneficiary
+        self.evm_env.read().block_env.beneficiary
     }
 
     /// Returns the client coinbase address.
     pub fn chain_id(&self) -> U256 {
-        U256::from(self.env.read().evm_env.cfg_env.chain_id)
+        U256::from(self.evm_env.read().cfg_env.chain_id)
     }
 
     pub fn set_chain_id(&self, chain_id: u64) {
-        self.env.write().evm_env.cfg_env.chain_id = chain_id;
+        self.evm_env.write().cfg_env.chain_id = chain_id;
     }
 
     /// Returns the genesis data for the Beacon API.
@@ -406,7 +409,7 @@ impl<N: Network> Backend<N> {
 
     /// Sets the coinbase address
     pub fn set_coinbase(&self, address: Address) {
-        self.env.write().evm_env.block_env.beneficiary = address;
+        self.evm_env.write().block_env.beneficiary = address;
     }
 
     /// Sets the nonce of the given address
@@ -436,7 +439,7 @@ impl<N: Network> Backend<N> {
 
     /// Returns the configured specid
     pub fn spec_id(&self) -> SpecId {
-        *self.env.read().evm_env.spec_id()
+        *self.evm_env.read().spec_id()
     }
 
     /// Returns true for post London
@@ -466,7 +469,7 @@ impl<N: Network> Backend<N> {
 
     /// Returns true if op-stack deposits are active
     pub fn is_optimism(&self) -> bool {
-        self.env.read().networks.is_optimism()
+        self.networks.is_optimism()
     }
 
     /// Returns the precompiles for the current spec.
@@ -480,7 +483,7 @@ impl<N: Network> Backend<N> {
         }
 
         // Extend with configured network precompiles.
-        precompiles_map.extend(self.env.read().networks.precompiles());
+        precompiles_map.extend(self.networks.precompiles());
 
         if let Some(factory) = &self.precompile_factory {
             for (address, precompile) in factory.precompiles() {
@@ -563,12 +566,12 @@ impl<N: Network> Backend<N> {
 
     /// Returns the block gas limit
     pub fn gas_limit(&self) -> u64 {
-        self.env.read().evm_env.block_env.gas_limit
+        self.evm_env.read().block_env.gas_limit
     }
 
     /// Sets the block gas limit
     pub fn set_gas_limit(&self, gas_limit: u64) {
-        self.env.write().evm_env.block_env.gas_limit = gas_limit;
+        self.evm_env.write().block_env.gas_limit = gas_limit;
     }
 
     /// Returns the current base fee
@@ -625,7 +628,7 @@ impl<N: Network> Backend<N> {
 
     /// Returns the environment for the next block
     fn next_evm_env(&self) -> EvmEnv {
-        let mut evm_env = self.env.read().evm_env.clone();
+        let mut evm_env = self.evm_env.read().clone();
         // increase block number for this block
         evm_env.block_env.number = evm_env.block_env.number.saturating_add(U256::from(1));
         evm_env.block_env.basefee = self.base_fee();
@@ -1017,7 +1020,7 @@ impl<N: Network> Backend<N> {
     {
         let mut evm =
             new_eth_evm_with_inspector(WrapDatabaseRef(db), evm_env, inspector, self.is_optimism());
-        self.env.write().networks.inject_precompiles(evm.precompiles_mut());
+        self.networks.inject_precompiles(evm.precompiles_mut());
 
         if let Some(factory) = &self.precompile_factory {
             evm.precompiles_mut().extend_precompiles(factory.precompiles());
@@ -1080,7 +1083,7 @@ impl<N: Network> Backend<N> {
         } = fee_details;
 
         let gas_limit = gas.unwrap_or(block_env.gas_limit);
-        let mut evm_env = self.env.read().evm_env.clone();
+        let mut evm_env = self.evm_env.read().clone();
         evm_env.block_env = block_env;
         // we want to disable this in eth_call, since this is common practice used by other node
         // impls and providers <https://github.com/foundry-rs/foundry/issues/4388>
@@ -1435,7 +1438,7 @@ impl<N: Network> Backend<N> {
         let mut results = Vec::new();
 
         // Configure the block environment
-        let mut evm_env = self.env.read().evm_env.clone();
+        let mut evm_env = self.evm_env.read().clone();
         evm_env.block_env = block_env_from_header(&block.header);
 
         // Execute each transaction in the block with tracing
@@ -1575,7 +1578,8 @@ impl<N: Network> Backend<N> {
     #[expect(clippy::too_many_arguments)]
     pub async fn with_genesis(
         db: Arc<AsyncRwLock<Box<dyn Db>>>,
-        env: Arc<RwLock<Env>>,
+        env: Arc<RwLock<EvmEnv>>,
+        networks: NetworkConfigs,
         genesis: GenesisConfig,
         fees: FeeManager,
         fork: Arc<RwLock<Option<ClientFork>>>,
@@ -1595,9 +1599,8 @@ impl<N: Network> Backend<N> {
             trace!(target: "backend", "using forked blockchain at {}", fork.block_number());
             Blockchain::forked(fork.block_number(), fork.block_hash(), fork.total_difficulty())
         } else {
-            let env = env.read();
             Blockchain::new(
-                &env.evm_env,
+                &env.read(),
                 fees.is_eip1559().then(|| fees.base_fee()),
                 genesis.timestamp,
                 genesis.number,
@@ -1607,8 +1610,7 @@ impl<N: Network> Backend<N> {
         // Sync EVM block.number with genesis for non-fork mode.
         // Fork mode syncs in setup_fork_db_config() instead.
         if fork.read().is_none() {
-            let mut write_env = env.write();
-            write_env.evm_env.block_env.number = U256::from(genesis.number);
+            env.write().block_env.number = U256::from(genesis.number);
         }
 
         let start_timestamp = if let Some(fork) = fork.read().as_ref() {
@@ -1645,7 +1647,8 @@ impl<N: Network> Backend<N> {
             db,
             blockchain,
             states: Arc::new(RwLock::new(states)),
-            env,
+            evm_env: env,
+            networks,
             fork,
             time: TimeManager::new(start_timestamp),
             cheats: Default::default(),
@@ -1737,7 +1740,7 @@ impl<N: Network> Backend<N> {
     pub async fn reset_fork(&self, forking: Forking) -> Result<(), BlockchainError> {
         if !self.is_fork() {
             if let Some(eth_rpc_url) = forking.json_rpc_url.clone() {
-                let mut env = self.env.read().clone();
+                let mut evm_env = self.evm_env.read().clone();
 
                 let (db, config) = {
                     let mut node_config = self.node_config.write().await;
@@ -1746,14 +1749,14 @@ impl<N: Network> Backend<N> {
                     // `setup_fork_db_config`
                     node_config.base_fee.take();
 
-                    node_config.setup_fork_db_config(eth_rpc_url, &mut env, &self.fees).await?
+                    node_config.setup_fork_db_config(eth_rpc_url, &mut evm_env, &self.fees).await?
                 };
 
                 *self.db.write().await = Box::new(db);
 
                 let fork = ClientFork::new(config, Arc::clone(&self.db));
 
-                *self.env.write() = env;
+                *self.evm_env.write() = evm_env;
                 *self.fork.write() = Some(fork);
             } else {
                 return Err(RpcError::invalid_params(
@@ -1788,19 +1791,19 @@ impl<N: Network> Backend<N> {
                     }
 
                     let gas_limit = self.node_config.read().await.fork_gas_limit(&fork_block);
-                    let mut env = self.env.write();
+                    let mut env = self.evm_env.write();
 
-                    env.evm_env.cfg_env.chain_id = fork.chain_id();
-                    env.evm_env.block_env = BlockEnv {
+                    env.cfg_env.chain_id = fork.chain_id();
+                    env.block_env = BlockEnv {
                         number: U256::from(fork_block_number),
                         timestamp: U256::from(fork_block.header.timestamp()),
                         gas_limit,
                         difficulty: fork_block.header.difficulty(),
                         prevrandao: Some(fork_block.header.mix_hash().unwrap_or_default()),
                         // Keep previous `beneficiary` and `basefee` value
-                        beneficiary: env.evm_env.block_env.beneficiary,
-                        basefee: env.evm_env.block_env.basefee,
-                        ..env.evm_env.block_env.clone()
+                        beneficiary: env.block_env.beneficiary,
+                        basefee: env.block_env.basefee,
+                        ..env.block_env.clone()
                     };
 
                     // this is the base fee of the current block, but we need the base fee of
@@ -1844,25 +1847,27 @@ impl<N: Network> Backend<N> {
         // Clear the fork if any exists
         *self.fork.write() = None;
 
-        // Get environment and genesis config
-        let env = self.env.read().clone();
         let genesis_timestamp = self.genesis.timestamp;
         let genesis_number = self.genesis.number;
 
         // Reset environment to genesis state
         {
-            let mut env = self.env.write();
-            env.evm_env.block_env.number = U256::from(genesis_number);
-            env.evm_env.block_env.timestamp = U256::from(genesis_timestamp);
+            let mut env = self.evm_env.write();
+            env.block_env.number = U256::from(genesis_number);
+            env.block_env.timestamp = U256::from(genesis_timestamp);
             // Reset other block env fields to their defaults
-            env.evm_env.block_env.basefee = self.fees.base_fee();
-            env.evm_env.block_env.prevrandao = Some(B256::ZERO);
+            env.block_env.basefee = self.fees.base_fee();
+            env.block_env.prevrandao = Some(B256::ZERO);
         }
 
         // Clear all storage and reinitialize with genesis
         let base_fee = if self.fees.is_eip1559() { Some(self.fees.base_fee()) } else { None };
-        *self.blockchain.storage.write() =
-            BlockchainStorage::new(&env.evm_env, base_fee, genesis_timestamp, genesis_number);
+        *self.blockchain.storage.write() = BlockchainStorage::new(
+            &self.evm_env.read(),
+            base_fee,
+            genesis_timestamp,
+            genesis_number,
+        );
         self.states.write().clear();
 
         // Clear the database
@@ -1894,14 +1899,14 @@ impl<N: Network> Backend<N> {
         let mut node_config = self.node_config.write().await;
         node_config.fork_choice = Some(ForkChoice::Block(fork_block_number as i128));
 
-        let mut env = self.env.read().clone();
+        let mut evm_env = self.evm_env.read().clone();
         let (forked_db, client_fork_config) =
-            node_config.setup_fork_db_config(fork_url, &mut env, &self.fees).await?;
+            node_config.setup_fork_db_config(fork_url, &mut evm_env, &self.fees).await?;
 
         *self.db.write().await = Box::new(forked_db);
         let fork = ClientFork::new(client_fork_config, Arc::clone(&self.db));
         *self.fork.write() = Some(fork);
-        *self.env.write() = env;
+        *self.evm_env.write() = evm_env;
 
         Ok(())
     }
@@ -1936,8 +1941,8 @@ impl<N: Network> Backend<N> {
             let reset_time = block.header.timestamp();
             self.time.reset(reset_time);
 
-            let mut env = self.env.write();
-            env.evm_env.block_env = BlockEnv {
+            let mut env = self.evm_env.write();
+            env.block_env = BlockEnv {
                 number: U256::from(num),
                 timestamp: U256::from(block.header.timestamp()),
                 difficulty: block.header.difficulty(),
@@ -1945,8 +1950,8 @@ impl<N: Network> Backend<N> {
                 prevrandao: Some(block.header.mix_hash().unwrap_or_default()),
                 gas_limit: block.header.gas_limit(),
                 // Keep previous `beneficiary` and `basefee` value
-                beneficiary: env.evm_env.block_env.beneficiary,
-                basefee: env.evm_env.block_env.basefee,
+                beneficiary: env.block_env.beneficiary,
+                basefee: env.block_env.basefee,
                 ..Default::default()
             }
         }
@@ -2151,34 +2156,33 @@ where
             let current_base_fee = self.base_fee();
             let current_excess_blob_gas_and_price = self.excess_blob_gas_and_price();
 
-            let mut env = self.env.read().clone();
+            let mut evm_env = self.evm_env.read().clone();
 
-            if env.evm_env.block_env.basefee == 0 {
+            if evm_env.block_env.basefee == 0 {
                 // this is an edge case because the evm fails if `tx.effective_gas_price < base_fee`
                 // 0 is only possible if it's manually set
-                env.evm_env.cfg_env.disable_base_fee = true;
+                evm_env.cfg_env.disable_base_fee = true;
             }
 
             let block_number = self.blockchain.storage.read().best_number.saturating_add(1);
 
             // increase block number for this block
-            if is_arbitrum(env.evm_env.cfg_env.chain_id) {
+            if is_arbitrum(evm_env.cfg_env.chain_id) {
                 // Temporary set `env.block.number` to `block_number` for Arbitrum chains.
-                env.evm_env.block_env.number = U256::from(block_number);
+                evm_env.block_env.number = U256::from(block_number);
             } else {
-                env.evm_env.block_env.number =
-                    env.evm_env.block_env.number.saturating_add(U256::from(1));
+                evm_env.block_env.number = evm_env.block_env.number.saturating_add(U256::from(1));
             }
 
-            env.evm_env.block_env.basefee = current_base_fee;
-            env.evm_env.block_env.blob_excess_gas_and_price = current_excess_blob_gas_and_price;
+            evm_env.block_env.basefee = current_base_fee;
+            evm_env.block_env.blob_excess_gas_and_price = current_excess_blob_gas_and_price;
 
             let best_hash = self.blockchain.storage.read().best_hash;
 
             let mut input = Vec::with_capacity(40);
             input.extend_from_slice(best_hash.as_slice());
             input.extend_from_slice(&block_number.to_le_bytes());
-            env.evm_env.block_env.prevrandao = Some(keccak256(&input));
+            evm_env.block_env.prevrandao = Some(keccak256(&input));
 
             if self.prune_state_history_config.is_state_history_supported() {
                 let db = self.db.read().await.current_state();
@@ -2192,24 +2196,21 @@ where
                 // finally set the next block timestamp, this is done just before execution, because
                 // there can be concurrent requests that can delay acquiring the db lock and we want
                 // to ensure the timestamp is as close as possible to the actual execution.
-                env.evm_env.block_env.timestamp = U256::from(self.time.next_timestamp());
+                evm_env.block_env.timestamp = U256::from(self.time.next_timestamp());
 
-                let spec_id = *env.evm_env.spec_id();
+                let spec_id = *evm_env.spec_id();
                 let is_shanghai = spec_id >= SpecId::SHANGHAI;
                 let is_cancun = spec_id >= SpecId::CANCUN;
                 let is_prague = spec_id >= SpecId::PRAGUE;
-                let gas_limit = env.evm_env.block_env.gas_limit;
-                let difficulty = env.evm_env.block_env.difficulty;
-                let mix_hash = env.evm_env.block_env.prevrandao;
-                let beneficiary = env.evm_env.block_env.beneficiary;
-                let timestamp = env.evm_env.block_env.timestamp;
-                let base_fee = if spec_id >= SpecId::LONDON {
-                    Some(env.evm_env.block_env.basefee)
-                } else {
-                    None
-                };
+                let gas_limit = evm_env.block_env.gas_limit;
+                let difficulty = evm_env.block_env.difficulty;
+                let mix_hash = evm_env.block_env.prevrandao;
+                let beneficiary = evm_env.block_env.beneficiary;
+                let timestamp = evm_env.block_env.timestamp;
+                let base_fee =
+                    if spec_id >= SpecId::LONDON { Some(evm_env.block_env.basefee) } else { None };
                 let excess_blob_gas =
-                    if is_cancun { env.evm_env.block_env.blob_excess_gas() } else { None };
+                    if is_cancun { evm_env.block_env.blob_excess_gas() } else { None };
 
                 // 1. Build inspector (per-block, NOT per-tx)
                 let mut inspector = AnvilInspector::default().with_tracing();
@@ -2226,13 +2227,13 @@ where
                 // 2. Create EVM
                 let mut evm = new_eth_evm_with_inspector(
                     &mut **db,
-                    &env.evm_env,
+                    &evm_env,
                     inspector,
-                    env.networks.is_optimism(),
+                    self.networks.is_optimism(),
                 );
 
                 // 3. Inject precompiles (once, before the tx loop)
-                env.networks.inject_precompiles(evm.precompiles_mut());
+                self.networks.inject_precompiles(evm.precompiles_mut());
                 if let Some(factory) = &self.precompile_factory {
                     evm.precompiles_mut().extend_precompiles(factory.precompiles());
                 }
@@ -2295,14 +2296,14 @@ where
                         executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);
                     let max_block_gas =
                         cumulative_gas.saturating_add(pending.transaction.gas_limit());
-                    if !env.evm_env.cfg_env.disable_block_gas_limit && max_block_gas > gas_limit {
+                    if !evm_env.cfg_env.disable_block_gas_limit && max_block_gas > gas_limit {
                         trace!(target: "backend", tx_gas_limit = %pending.transaction.gas_limit(), ?pool_tx, "block gas limit exhausting, skipping transaction");
                         continue;
                     }
 
                     // Osaka EIP-7825 tx gas limit cap check
-                    if env.evm_env.cfg_env.tx_gas_limit_cap.is_none()
-                        && pending.transaction.gas_limit() > env.evm_env.cfg_env.tx_gas_limit_cap()
+                    if evm_env.cfg_env.tx_gas_limit_cap.is_none()
+                        && pending.transaction.gas_limit() > evm_env.cfg_env.tx_gas_limit_cap()
                     {
                         trace!(target: "backend", tx_gas_limit = %pending.transaction.gas_limit(), ?pool_tx, "transaction gas limit exhausting, skipping transaction");
                         continue;
@@ -2320,7 +2321,7 @@ where
 
                     // Validate
                     if let Err(err) =
-                        self.validate_pool_transaction_for(pending, &account, &env.evm_env)
+                        self.validate_pool_transaction_for(pending, &account, &evm_env)
                     {
                         warn!(target: "backend", "Skipping invalid tx execution [{:?}] {}", pool_tx.hash(), err);
                         invalid.push(pool_tx.clone());
@@ -2527,10 +2528,10 @@ where
             }
 
             // we intentionally set the difficulty to `0` for newer blocks
-            env.evm_env.block_env.difficulty = U256::from(0);
+            evm_env.block_env.difficulty = U256::from(0);
 
             // update env with new values
-            *self.env.write() = env;
+            *self.evm_env.write() = evm_env;
 
             let timestamp = utc_from_secs(header.timestamp);
 
@@ -2562,7 +2563,7 @@ where
 
         self.fees.set_blob_excess_gas_and_price(BlobExcessGasAndPrice::new(
             next_block_excess_blob_gas,
-            get_blob_base_fee_update_fraction_by_spec_id(*self.env.read().evm_env.spec_id()),
+            get_blob_base_fee_update_fraction_by_spec_id(*self.evm_env.read().spec_id()),
         ));
 
         // notify all listeners
@@ -2654,7 +2655,7 @@ where
         let mut evm =
             new_eth_evm_with_inspector(&mut cache_db, &evm_env, inspector, self.is_optimism());
 
-        self.env.read().networks.inject_precompiles(evm.precompiles_mut());
+        self.networks.inject_precompiles(evm.precompiles_mut());
         if let Some(factory) = &self.precompile_factory {
             evm.precompiles_mut().extend_precompiles(factory.precompiles());
         }
@@ -3087,7 +3088,7 @@ where
         }
 
         let db = self.db.read().await;
-        let block = self.env.read().evm_env.block_env.clone();
+        let block = self.evm_env.read().block_env.clone();
         Ok(f(Box::new(&**db), block))
     }
 
@@ -3221,7 +3222,7 @@ where
             let mut cache_db = AnvilCacheDB::new(Box::new(parent_state));
 
             // configure the blockenv for the block of the transaction
-            let mut evm_env = self.env.read().evm_env.clone();
+            let mut evm_env = self.evm_env.read().clone();
 
             evm_env.block_env = block_env_from_header(&block.header);
 
@@ -3248,7 +3249,7 @@ where
                 self.is_optimism(),
             );
 
-            self.env.read().networks.inject_precompiles(evm_replay.precompiles_mut());
+            self.networks.inject_precompiles(evm_replay.precompiles_mut());
             if let Some(factory) = &self.precompile_factory {
                 evm_replay.precompiles_mut().extend_precompiles(factory.precompiles());
             }
@@ -3493,14 +3494,14 @@ where
             self.blockchain.storage.write().unwind_to(common_block.header.number(), hash);
 
             // Set environment back to common block
-            let mut env = self.env.write();
-            env.evm_env.block_env.number = U256::from(common_block.header.number());
-            env.evm_env.block_env.timestamp = U256::from(common_block.header.timestamp());
-            env.evm_env.block_env.gas_limit = common_block.header.gas_limit();
-            env.evm_env.block_env.difficulty = common_block.header.difficulty();
-            env.evm_env.block_env.prevrandao = common_block.header.mix_hash();
+            let mut env = self.evm_env.write();
+            env.block_env.number = U256::from(common_block.header.number());
+            env.block_env.timestamp = U256::from(common_block.header.timestamp());
+            env.block_env.gas_limit = common_block.header.gas_limit();
+            env.block_env.difficulty = common_block.header.difficulty();
+            env.block_env.prevrandao = common_block.header.mix_hash();
 
-            self.time.reset(env.evm_env.block_env.timestamp.saturating_to());
+            self.time.reset(env.block_env.timestamp.saturating_to());
         }
 
         {
@@ -3547,7 +3548,7 @@ impl Backend<FoundryNetwork> {
         &self,
         preserve_historical_states: bool,
     ) -> Result<SerializableState, BlockchainError> {
-        let at = self.env.read().evm_env.block_env.clone();
+        let at = self.evm_env.read().block_env.clone();
         let best_number = self.blockchain.storage.read().best_number;
         let blocks = self.blockchain.storage.read().serialized_blocks();
         let transactions = self.blockchain.storage.read().serialized_transactions();
@@ -3590,7 +3591,7 @@ impl Backend<FoundryNetwork> {
         self.blockchain.storage.write().load_transactions(state.transactions.clone());
         // reset the block env
         if let Some(block) = state.block.clone() {
-            self.env.write().evm_env.block_env = block.clone();
+            self.evm_env.write().block_env = block.clone();
 
             // Set the current best block number.
             // Defaults to block number for compatibility with existing state files.
@@ -3652,7 +3653,7 @@ impl Backend<FoundryNetwork> {
             self.fees.set_blob_excess_gas_and_price(BlobExcessGasAndPrice::new(
                 next_block_excess_blob_gas,
                 get_blob_base_fee_update_fraction(
-                    self.env.read().evm_env.cfg_env.chain_id,
+                    self.evm_env.read().cfg_env.chain_id,
                     header.timestamp,
                 ),
             ));
