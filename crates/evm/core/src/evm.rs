@@ -255,12 +255,10 @@ pub type NestedEvmClosure<'a, Tx> =
 /// and cloned journal inner to the callback. The callback builds whatever EVM it
 /// needs, runs its operations, and returns `(result, modified_env, modified_journal)`.
 /// Modified state is written back after the callback returns.
-pub fn with_cloned_context<
-    CTX: FoundryContextExt<Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>,
->(
+pub fn with_cloned_context<CTX: FoundryContextExt>(
     ecx: &mut CTX,
     f: impl FnOnce(
-        &mut dyn DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        &mut CTX::Db,
         EvmEnv<CTX::Spec, CTX::Block>,
         JournaledState,
     )

@@ -379,7 +379,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
     fn with_fresh_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes,
-        db: &mut dyn DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        db: &mut CTX::Db,
         evm_env: EvmEnv<CTX::Spec, CTX::Block>,
         f: NestedEvmClosure<'_, CTX::Tx>,
     ) -> Result<EvmEnv<CTX::Spec, CTX::Block>, EVMError<DatabaseError>> {
