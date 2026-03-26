@@ -390,7 +390,7 @@ impl<N: Network> EthApi<N> {
         let env = self.backend.env().read();
         let fork_config = self.backend.get_fork();
         let tx_order = self.transaction_order.read();
-        let hard_fork: &str = env.evm_env.cfg_env.spec.into();
+        let hard_fork: &str = (*env.evm_env.spec_id()).into();
 
         Ok(NodeInfo {
             current_block_number: self.backend.best_number(),
@@ -2319,7 +2319,7 @@ impl EthApi<FoundryNetwork> {
             current: EthForkConfig {
                 activation_time: 0,
                 blob_schedule: self.backend.blob_params(),
-                chain_id: self.backend.env().read().evm_env.cfg_env.chain_id,
+                chain_id: self.backend.chain_id().to::<u64>(),
                 fork_id: Bytes::from_static(&[0; 4]),
                 precompiles: self.backend.precompiles(),
                 system_contracts: self.backend.system_contracts(),

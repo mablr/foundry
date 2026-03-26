@@ -20,7 +20,6 @@ use alloy_op_evm::OpEvmFactory;
 use alloy_primitives::{Address, B256, Bytes};
 use anvil_core::eth::transaction::PendingTransaction;
 use foundry_evm::{backend::DatabaseError, core::either_evm::EitherEvm};
-use foundry_evm_networks::NetworkConfigs;
 use foundry_primitives::{FoundryReceiptEnvelope, FoundryTxEnvelope, FoundryTxType};
 use op_revm::{OpContext, OpTransaction};
 use revm::{
@@ -311,8 +310,7 @@ impl AnvilBlockExecutorFactory {
 pub fn build_tx_env_for_pending(
     tx: &PendingTransaction<FoundryTxEnvelope>,
     cheats: &CheatsManager,
-    networks: NetworkConfigs,
-    _evm_env: &EvmEnv,
+    is_optimism: bool,
 ) -> OpTransaction<TxEnv> {
     let mut tx_env: OpTransaction<TxEnv> =
         FromRecoveredTx::from_recovered_tx(tx.transaction.as_ref(), *tx.sender());
@@ -345,7 +343,7 @@ pub fn build_tx_env_for_pending(
         tx_env.base.authorization_list = cheated_auths;
     }
 
-    if networks.is_optimism() {
+    if is_optimism {
         tx_env.enveloped_tx = Some(tx.transaction.encoded_2718().into());
     }
 
