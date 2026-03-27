@@ -426,6 +426,12 @@ impl NodeConfig {
         Self { enable_tracing: true, port: 0, silent: true, ..Default::default() }
     }
 
+    /// Returns a test config with Tempo network enabled.
+    #[doc(hidden)]
+    pub fn test_tempo() -> Self {
+        Self { networks: NetworkConfigs::with_tempo(), ..Self::test() }
+    }
+
     /// Returns a new config which does not initialize any accounts on node startup.
     pub fn empty_state() -> Self {
         Self {
@@ -1025,6 +1031,20 @@ impl NodeConfig {
     #[must_use]
     pub fn with_networks(mut self, networks: NetworkConfigs) -> Self {
         self.networks = networks;
+        self
+    }
+
+    /// Enable Tempo network features.
+    #[must_use]
+    pub fn with_tempo(mut self) -> Self {
+        self.networks = NetworkConfigs::with_tempo();
+        self
+    }
+
+    /// Enable Optimism network features.
+    #[must_use]
+    pub fn with_optimism(mut self) -> Self {
+        self.networks = NetworkConfigs::with_optimism();
         self
     }
 
