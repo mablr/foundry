@@ -315,8 +315,7 @@ impl<N: Network> MultiForkHandler<N> {
         for sender in additional_senders {
             let next_fork_id = fork.inc_senders(fork_id.clone());
             self.forks.insert(next_fork_id.clone(), fork.clone());
-            let _ =
-                sender.send(Ok((next_fork_id, fork.backend.clone(), fork.evm_env.clone())));
+            let _ = sender.send(Ok((next_fork_id, fork.backend.clone(), fork.evm_env.clone())));
         }
     }
 
