@@ -121,10 +121,10 @@ impl DatabaseExt for CowBackend<'_> {
         id: U256,
         journaled_state: &JournaledState,
         evm_env: &mut EvmEnv,
-        tx_env: &mut TxEnv,
+        caller: Address,
         action: RevertStateSnapshotAction,
     ) -> Option<JournaledState> {
-        self.backend_mut().revert_state(id, journaled_state, evm_env, tx_env, action)
+        self.backend_mut().revert_state(id, journaled_state, evm_env, caller, action)
     }
 
     fn delete_state_snapshot(&mut self, id: U256) -> bool {

@@ -107,7 +107,7 @@ pub trait DatabaseExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
         id: U256,
         journaled_state: &JournaledState,
         evm_env: &mut EvmEnv<SPEC, BLOCK>,
-        tx_env: &mut TX,
+        caller: Address,
         action: RevertStateSnapshotAction,
     ) -> Option<JournaledState>;
 
@@ -955,7 +955,7 @@ where
         id: U256,
         current_state: &JournaledState,
         evm_env: &mut EvmEnv,
-        tx_env: &mut TxEnv,
+        caller: Address,
         action: RevertStateSnapshotAction,
     ) -> Option<JournaledState> {
         trace!(?id, "revert snapshot");
@@ -987,7 +987,6 @@ where
                     // there might be the case where the snapshot was created during `setUp` with
                     // another caller, so we need to ensure the caller account is present in the
                     // journaled state and database
-                    let caller = tx_env.caller;
                     journaled_state.state.entry(caller).or_insert_with(|| {
                         let caller_account = current_state
                             .state
@@ -1006,7 +1005,7 @@ where
                 }
             }
 
-            update_current_env_with_fork_env(evm_env, tx_env, snap_evm_env);
+            *evm_env = snap_evm_env;
             trace!(target: "backend", "Reverted snapshot {}", id);
 
             Some(journaled_state)
@@ -1185,7 +1184,8 @@ where
 
         self.active_fork_ids = Some((id, idx));
         // Update current environment with environment of newly selected fork.
-        update_current_env_with_fork_env(evm_env, tx_env, fork_evm_env);
+        tx_env.set_chain_id(Some(fork_evm_env.cfg_env.chain_id));
+        *evm_env = fork_evm_env;
 
         Ok(())
     }
@@ -1902,20 +1902,6 @@ impl<N: Network> Default for BackendInner<N> {
             ]),
         }
     }
-}
-
-/// This updates the currently used env with the fork's environment
-pub(crate) fn update_current_env_with_fork_env<
-    SPEC,
-    BLOCK: FoundryBlock,
-    TX: FoundryTransaction,
->(
-    evm_env: &mut EvmEnv<SPEC, BLOCK>,
-    tx_env: &mut TX,
-    fork_evm_env: EvmEnv<SPEC, BLOCK>,
-) {
-    tx_env.set_chain_id(Some(fork_evm_env.cfg_env.chain_id));
-    *evm_env = fork_evm_env;
 }
 
 /// Clones the data of the given `accounts` from the `active` database into the `fork_db`

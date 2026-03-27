@@ -1409,18 +1409,17 @@ fn inner_revert_to_state<CTX: EthCheatCtx>(
     snapshot_id: U256,
 ) -> Result {
     let mut evm_env = ccx.ecx.evm_clone();
-    let mut tx_env = ccx.ecx.tx_clone();
+    let caller = ccx.ecx.caller();
     let (db, inner) = ccx.ecx.db_journal_inner_mut();
     if let Some(restored) = db.revert_state(
         snapshot_id,
         inner,
         &mut evm_env,
-        &mut tx_env,
+        caller,
         RevertStateSnapshotAction::RevertKeep,
     ) {
         *inner = restored;
         ccx.ecx.set_evm(evm_env);
-        ccx.ecx.set_tx(tx_env);
         Ok(true.abi_encode())
     } else {
         Ok(false.abi_encode())
@@ -1432,18 +1431,17 @@ fn inner_revert_to_state_and_delete<CTX: EthCheatCtx>(
     snapshot_id: U256,
 ) -> Result {
     let mut evm_env = ccx.ecx.evm_clone();
-    let mut tx_env = ccx.ecx.tx_clone();
+    let caller = ccx.ecx.caller();
     let (db, inner) = ccx.ecx.db_journal_inner_mut();
     if let Some(restored) = db.revert_state(
         snapshot_id,
         inner,
         &mut evm_env,
-        &mut tx_env,
+        caller,
         RevertStateSnapshotAction::RevertRemove,
     ) {
         *inner = restored;
         ccx.ecx.set_evm(evm_env);
-        ccx.ecx.set_tx(tx_env);
         Ok(true.abi_encode())
     } else {
         Ok(false.abi_encode())
