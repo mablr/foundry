@@ -309,29 +309,28 @@ impl<N: Network> MultiForkHandler<N> {
         additional_senders: Vec<CreateSender<N>>,
     ) {
         self.forks.insert(fork_id.clone(), fork.clone());
-        let _ = sender.send(Ok((fork_id.clone(), fork.backend.clone(), fork.opts.evm_env.clone())));
+        let _ = sender.send(Ok((fork_id.clone(), fork.backend.clone(), fork.evm_env.clone())));
 
         // Notify all additional senders and track unique forkIds.
         for sender in additional_senders {
             let next_fork_id = fork.inc_senders(fork_id.clone());
             self.forks.insert(next_fork_id.clone(), fork.clone());
-            let _ =
-                sender.send(Ok((next_fork_id, fork.backend.clone(), fork.opts.evm_env.clone())));
+            let _ = sender.send(Ok((next_fork_id, fork.backend.clone(), fork.evm_env.clone())));
         }
     }
 
     /// Update the fork's block entire env
     fn update_env(&mut self, fork_id: ForkId, env: BlockEnv) {
         if let Some(fork) = self.forks.get_mut(&fork_id) {
-            fork.opts.evm_env.block_env = env;
+            fork.evm_env.block_env = env;
         }
     }
     /// Update fork block number and timestamp. Used to preserve values set by `roll` and `warp`
     /// cheatcodes when new fork selected.
     fn update_block(&mut self, fork_id: ForkId, block_number: U256, block_timestamp: U256) {
         if let Some(fork) = self.forks.get_mut(&fork_id) {
-            fork.opts.evm_env.block_env.number = block_number;
-            fork.opts.evm_env.block_env.timestamp = block_timestamp;
+            fork.evm_env.block_env.number = block_number;
+            fork.evm_env.block_env.timestamp = block_timestamp;
         }
     }
 
@@ -354,7 +353,7 @@ impl<N: Network> MultiForkHandler<N> {
                 }
             }
             Request::GetEvmEnv(fork_id, sender) => {
-                let _ = sender.send(self.forks.get(&fork_id).map(|fork| fork.opts.evm_env.clone()));
+                let _ = sender.send(self.forks.get(&fork_id).map(|fork| fork.evm_env.clone()));
             }
             Request::UpdateBlock(fork_id, block_number, block_timestamp) => {
                 self.update_block(fork_id, block_number, block_timestamp);
@@ -483,6 +482,8 @@ impl<N: Network> Future for MultiForkHandler<N> {
 struct CreatedFork<N: Network> {
     /// How the fork was initially created.
     opts: CreateFork,
+    /// The resolved EVM environment (fetched from the provider).
+    evm_env: EvmEnv,
     /// Copy of the sender.
     backend: SharedBackend<N>,
     /// How many consumers there are, since a `SharedBacked` can be used by multiple
@@ -491,8 +492,8 @@ struct CreatedFork<N: Network> {
 }
 
 impl<N: Network> CreatedFork<N> {
-    pub fn new(opts: CreateFork, backend: SharedBackend<N>) -> Self {
-        Self { opts, backend, num_senders: Arc::new(AtomicUsize::new(1)) }
+    pub fn new(opts: CreateFork, evm_env: EvmEnv, backend: SharedBackend<N>) -> Self {
+        Self { opts, evm_env, backend, num_senders: Arc::new(AtomicUsize::new(1)) }
     }
 
     /// Increment senders and return unique identifier of the fork.
@@ -545,20 +546,19 @@ async fn create_fork<N: Network>(
 
     // Initialise the fork environment.
     let (evm_env, number) = fork.evm_opts.fork_evm_env(&provider).await?;
-    fork.evm_env = evm_env;
-    let meta = BlockchainDbMeta::new(fork.evm_env.block_env.clone(), fork.url.clone());
+    let meta = BlockchainDbMeta::new(evm_env.block_env.clone(), fork.url.clone());
 
     // Determine the cache path if caching is enabled.
     let cache_path = if fork.enable_caching {
-        Config::foundry_block_cache_dir(fork.evm_env.cfg_env.chain_id, number)
+        Config::foundry_block_cache_dir(evm_env.cfg_env.chain_id, number)
     } else {
         None
     };
 
     let db = BlockchainDb::new(meta, cache_path);
     let (backend, handler) = SharedBackend::new(provider, db, Some(number.into()));
-    let fork = CreatedFork::new(fork, backend);
-    let fork_id = ForkId::new(&fork.opts.url, Some(number));
+    let fork_id = ForkId::new(&fork.url, Some(number));
+    let fork = CreatedFork::new(fork, evm_env, backend);
 
     Ok((fork_id, fork, handler))
 }

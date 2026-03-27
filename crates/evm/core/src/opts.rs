@@ -288,7 +288,7 @@ impl EvmOpts {
     ///
     /// for `mainnet` and `--fork-block-number 14435000` on mac the corresponding storage cache will
     /// be at `~/.foundry/cache/mainnet/14435000/storage.json`.
-    pub fn get_fork(&self, config: &Config, evm_env: EvmEnv) -> Option<CreateFork> {
+    pub fn get_fork(&self, config: &Config, evm_env: &EvmEnv) -> Option<CreateFork> {
         let url = self.fork_url.clone()?;
         let enable_caching = config.enable_caching(&url, evm_env.cfg_env.chain_id);
 
@@ -300,7 +300,7 @@ impl EvmOpts {
             evm_opts.fork_block_number = Some(evm_env.block_env.number.to());
         }
 
-        Some(CreateFork { url, enable_caching, evm_env, evm_opts })
+        Some(CreateFork { url, enable_caching, evm_opts })
     }
 
     /// Returns the gas limit to use
@@ -426,7 +426,7 @@ mod tests {
         assert!(resolved_block > U256::ZERO, "should have resolved to a real block number");
 
         // Create the fork - this should pin the block number
-        let fork = evm_opts.get_fork(&Config::default(), evm_env).unwrap();
+        let fork = evm_opts.get_fork(&Config::default(), &evm_env).unwrap();
 
         // The fork's evm_opts should now have fork_block_number set to the resolved block
         assert_eq!(
@@ -448,7 +448,7 @@ mod tests {
 
         let (evm_env, _) = evm_opts.env().await.unwrap();
 
-        let fork = evm_opts.get_fork(&Config::default(), evm_env).unwrap();
+        let fork = evm_opts.get_fork(&Config::default(), &evm_env).unwrap();
 
         // Should preserve the explicit block number, not override it
         assert_eq!(
