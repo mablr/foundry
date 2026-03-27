@@ -11,7 +11,11 @@ use op_revm::{
 use revm::{
     Context, Database, Journal,
     context::{Block, BlockEnv, Cfg, CfgEnv, Transaction, TxEnv},
-    context_interface::{ContextTr, transaction::AccessList},
+    context_interface::{
+        ContextTr,
+        either::Either,
+        transaction::{AccessList, RecoveredAuthorization, SignedAuthorization},
+    },
     inspector::JournalExt,
     primitives::{TxKind, hardfork::SpecId},
 };
@@ -120,6 +124,11 @@ pub trait FoundryTransaction: Transaction {
     /// Sets the access list.
     fn set_access_list(&mut self, access_list: AccessList);
 
+    /// Returns a mutable reference to the EIP-7702 authorization list.
+    fn authorization_list_mut(
+        &mut self,
+    ) -> &mut Vec<Either<SignedAuthorization, RecoveredAuthorization>>;
+
     /// Sets the max priority fee per gas.
     fn set_gas_priority_fee(&mut self, gas_priority_fee: Option<u128>);
 
@@ -210,6 +219,12 @@ impl FoundryTransaction for TxEnv {
         self.access_list = access_list;
     }
 
+    fn authorization_list_mut(
+        &mut self,
+    ) -> &mut Vec<Either<SignedAuthorization, RecoveredAuthorization>> {
+        &mut self.authorization_list
+    }
+
     fn set_gas_priority_fee(&mut self, gas_priority_fee: Option<u128>) {
         self.gas_priority_fee = gas_priority_fee;
     }
@@ -262,6 +277,12 @@ impl<TX: FoundryTransaction> FoundryTransaction for OpTransaction<TX> {
 
     fn set_access_list(&mut self, access_list: AccessList) {
         self.base.set_access_list(access_list);
+    }
+
+    fn authorization_list_mut(
+        &mut self,
+    ) -> &mut Vec<Either<SignedAuthorization, RecoveredAuthorization>> {
+        self.base.authorization_list_mut()
     }
 
     fn set_gas_priority_fee(&mut self, gas_priority_fee: Option<u128>) {
