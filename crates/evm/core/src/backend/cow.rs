@@ -168,10 +168,9 @@ impl DatabaseExt for CowBackend<'_> {
         id: Option<LocalForkId>,
         block_number: u64,
         evm_env: &mut EvmEnv,
-        tx_env: &mut TxEnv,
         journaled_state: &mut JournaledState,
     ) -> eyre::Result<()> {
-        self.backend_mut().roll_fork(id, block_number, evm_env, tx_env, journaled_state)
+        self.backend_mut().roll_fork(id, block_number, evm_env, journaled_state)
     }
 
     fn roll_fork_to_transaction(
@@ -179,16 +178,9 @@ impl DatabaseExt for CowBackend<'_> {
         id: Option<LocalForkId>,
         transaction: B256,
         evm_env: &mut EvmEnv,
-        tx_env: &mut TxEnv,
         journaled_state: &mut JournaledState,
     ) -> eyre::Result<()> {
-        self.backend_mut().roll_fork_to_transaction(
-            id,
-            transaction,
-            evm_env,
-            tx_env,
-            journaled_state,
-        )
+        self.backend_mut().roll_fork_to_transaction(id, transaction, evm_env, journaled_state)
     }
 
     fn transact(

@@ -190,7 +190,6 @@ pub trait DatabaseExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
         id: Option<LocalForkId>,
         block_number: u64,
         evm_env: &mut EvmEnv<SPEC, BLOCK>,
-        tx_env: &mut TX,
         journaled_state: &mut JournaledState,
     ) -> eyre::Result<()>;
 
@@ -207,7 +206,6 @@ pub trait DatabaseExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
         id: Option<LocalForkId>,
         transaction: B256,
         evm_env: &mut EvmEnv<SPEC, BLOCK>,
-        tx_env: &mut TX,
         journaled_state: &mut JournaledState,
     ) -> eyre::Result<()>;
 
@@ -1055,7 +1053,6 @@ where
             Some(id),
             transaction,
             &mut evm_env,
-            &mut TxEnv::default(),
             &mut self.inner.new_journaled_state(),
         )?;
 
@@ -1200,7 +1197,6 @@ where
         id: Option<LocalForkId>,
         block_number: u64,
         evm_env: &mut EvmEnv,
-        tx_env: &mut TxEnv,
         journaled_state: &mut JournaledState,
     ) -> eyre::Result<()> {
         trace!(?id, ?block_number, "roll fork");
@@ -1215,7 +1211,7 @@ where
             if active_id == id {
                 // need to update the block's env settings right away, which is otherwise set when
                 // forks are selected `select_fork`
-                update_current_env_with_fork_env(evm_env, tx_env, fork_env);
+                *evm_env = fork_env;
 
                 // we also need to update the journaled_state right away, this has essentially the
                 // same effect as selecting (`select_fork`) by discarding
@@ -1265,7 +1261,6 @@ where
         id: Option<LocalForkId>,
         transaction: B256,
         evm_env: &mut EvmEnv,
-        tx_env: &mut TxEnv,
         journaled_state: &mut JournaledState,
     ) -> eyre::Result<()> {
         trace!(?id, ?transaction, "roll fork to transaction");
@@ -1277,7 +1272,7 @@ where
         // roll the fork to the transaction's parent block or latest if it's pending, because we
         // need to fork off the parent block's state for tx level forking and then replay the txs
         // before the tx in that block to get the state at the tx
-        self.roll_fork(Some(id), fork_block, evm_env, tx_env, journaled_state)?;
+        self.roll_fork(Some(id), fork_block, evm_env, journaled_state)?;
 
         // we need to update the env to the block
         update_env_block(evm_env, block.header());
