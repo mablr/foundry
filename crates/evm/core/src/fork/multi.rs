@@ -545,7 +545,7 @@ async fn create_fork<N: Network>(
     let provider = fork.evm_opts.fork_provider_with_url::<N>(&fork.url)?;
 
     // Initialise the fork environment.
-    let (evm_env, number) = fork.evm_opts.fork_evm_env(&provider).await?;
+    let (evm_env, number) = fork.evm_opts.fork_evm_env::<_, BlockEnv, _, _>(&provider).await?;
     let meta = BlockchainDbMeta::new(evm_env.block_env.clone(), fork.url.clone());
 
     // Determine the cache path if caching is enabled.
