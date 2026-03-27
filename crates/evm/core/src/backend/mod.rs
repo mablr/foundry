@@ -2093,7 +2093,7 @@ mod tests {
 
         let (evm_env, _) = evm_opts.env().await.unwrap();
 
-        let fork = evm_opts.get_fork(&Config::default(), evm_env.clone()).unwrap();
+        let fork = evm_opts.get_fork(&Config::default(), &evm_env).unwrap();
 
         let backend = Backend::<Ethereum>::spawn(Some(fork)).unwrap();
 

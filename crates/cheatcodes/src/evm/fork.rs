@@ -397,7 +397,6 @@ fn create_fork_request<CTX: EthCheatCtx>(
         enable_caching: !ccx.state.config.no_storage_caching
             && ccx.state.config.rpc_storage_caching.enable_for_endpoint(&url),
         url,
-        evm_env: ccx.ecx.evm_clone(),
         evm_opts,
     };
     Ok(fork)
