@@ -73,8 +73,8 @@ impl Cheatcode for rollFork_0Call {
     fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { blockNumber } = self;
         persist_caller(ccx);
-        fork_env_op(ccx, |db, evm_env, tx_env, inner| {
-            db.roll_fork(None, (*blockNumber).to(), evm_env, tx_env, inner)
+        fork_env_op(ccx, |db, evm_env, _, inner| {
+            db.roll_fork(None, (*blockNumber).to(), evm_env, inner)
         })
     }
 }
@@ -83,8 +83,8 @@ impl Cheatcode for rollFork_1Call {
     fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { txHash } = self;
         persist_caller(ccx);
-        fork_env_op(ccx, |db, evm_env, tx_env, inner| {
-            db.roll_fork_to_transaction(None, *txHash, evm_env, tx_env, inner)
+        fork_env_op(ccx, |db, evm_env, _, inner| {
+            db.roll_fork_to_transaction(None, *txHash, evm_env, inner)
         })
     }
 }
@@ -93,8 +93,8 @@ impl Cheatcode for rollFork_2Call {
     fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { forkId, blockNumber } = self;
         persist_caller(ccx);
-        fork_env_op(ccx, |db, evm_env, tx_env, inner| {
-            db.roll_fork(Some(*forkId), (*blockNumber).to(), evm_env, tx_env, inner)
+        fork_env_op(ccx, |db, evm_env, _, inner| {
+            db.roll_fork(Some(*forkId), (*blockNumber).to(), evm_env, inner)
         })
     }
 }
@@ -103,8 +103,8 @@ impl Cheatcode for rollFork_3Call {
     fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { forkId, txHash } = self;
         persist_caller(ccx);
-        fork_env_op(ccx, |db, evm_env, tx_env, inner| {
-            db.roll_fork_to_transaction(Some(*forkId), *txHash, evm_env, tx_env, inner)
+        fork_env_op(ccx, |db, evm_env, _, inner| {
+            db.roll_fork_to_transaction(Some(*forkId), *txHash, evm_env, inner)
         })
     }
 }
