@@ -1005,6 +1005,31 @@ impl<N: Network> Backend<N> {
         }
     }
 
+    /// Injects all configured precompiles into the given precompile map.
+    ///
+    /// This applies three layers:
+    /// 1. Network-specific precompiles (e.g. Tempo, OP)
+    /// 2. User-provided precompiles via [`PrecompileFactory`]
+    /// 3. Cheatcode ecrecover overrides (if active)
+    fn inject_precompiles(&self, precompiles: &mut PrecompilesMap) {
+        self.networks.inject_precompiles(precompiles);
+
+        if let Some(factory) = &self.precompile_factory {
+            precompiles.extend_precompiles(factory.precompiles());
+        }
+
+        let cheats = Arc::new(self.cheats.clone());
+        if cheats.has_recover_overrides() {
+            let cheat_ecrecover = CheatEcrecover::new(Arc::clone(&cheats));
+            precompiles.apply_precompile(&EC_RECOVER, move |_| {
+                Some(DynPrecompile::new_stateful(
+                    cheat_ecrecover.precompile_id().clone(),
+                    move |input| cheat_ecrecover.call(input),
+                ))
+            });
+        }
+    }
+
     /// Creates an EVM instance with optionally injected precompiles.
     fn new_eth_evm_with_inspector_ref<'db, I, DB>(
         &self,
@@ -1020,23 +1045,7 @@ impl<N: Network> Backend<N> {
     {
         let mut evm =
             new_eth_evm_with_inspector(WrapDatabaseRef(db), evm_env, inspector, self.is_optimism());
-        self.networks.inject_precompiles(evm.precompiles_mut());
-
-        if let Some(factory) = &self.precompile_factory {
-            evm.precompiles_mut().extend_precompiles(factory.precompiles());
-        }
-
-        let cheats = Arc::new(self.cheats.clone());
-        if cheats.has_recover_overrides() {
-            let cheat_ecrecover = CheatEcrecover::new(Arc::clone(&cheats));
-            evm.precompiles_mut().apply_precompile(&EC_RECOVER, move |_| {
-                Some(DynPrecompile::new_stateful(
-                    cheat_ecrecover.precompile_id().clone(),
-                    move |input| cheat_ecrecover.call(input),
-                ))
-            });
-        }
-
+        self.inject_precompiles(evm.precompiles_mut());
         evm
     }
 
@@ -2233,21 +2242,7 @@ where
                 );
 
                 // 3. Inject precompiles (once, before the tx loop)
-                self.networks.inject_precompiles(evm.precompiles_mut());
-                if let Some(factory) = &self.precompile_factory {
-                    evm.precompiles_mut().extend_precompiles(factory.precompiles());
-                }
-                let cheats = self.cheats().clone();
-                if cheats.has_recover_overrides() {
-                    let cheats_arc = Arc::new(cheats.clone());
-                    let cheat_ecrecover = CheatEcrecover::new(Arc::clone(&cheats_arc));
-                    evm.precompiles_mut().apply_precompile(&EC_RECOVER, move |_| {
-                        Some(DynPrecompile::new_stateful(
-                            cheat_ecrecover.precompile_id().clone(),
-                            move |input| cheat_ecrecover.call(input),
-                        ))
-                    });
-                }
+                self.inject_precompiles(evm.precompiles_mut());
 
                 // 4. Create executor
                 let mut executor = AnvilBlockExecutor::new(evm, best_hash, spec_id);
@@ -2288,7 +2283,8 @@ where
                     };
 
                     // Build the per-tx env
-                    let tx_env = build_tx_env_for_pending(pending, &cheats, self.is_optimism());
+                    let tx_env =
+                        build_tx_env_for_pending(pending, self.cheats(), self.is_optimism());
 
                     // Gas limit checks (same logic as TransactionExecutor::next)
                     let cumulative_gas =
@@ -2654,21 +2650,7 @@ where
         let mut evm =
             new_eth_evm_with_inspector(&mut cache_db, &evm_env, inspector, self.is_optimism());
 
-        self.networks.inject_precompiles(evm.precompiles_mut());
-        if let Some(factory) = &self.precompile_factory {
-            evm.precompiles_mut().extend_precompiles(factory.precompiles());
-        }
-        let cheats = self.cheats().clone();
-        if cheats.has_recover_overrides() {
-            let cheats_arc = Arc::new(cheats.clone());
-            let cheat_ecrecover = CheatEcrecover::new(Arc::clone(&cheats_arc));
-            evm.precompiles_mut().apply_precompile(&EC_RECOVER, move |_| {
-                Some(DynPrecompile::new_stateful(
-                    cheat_ecrecover.precompile_id().clone(),
-                    move |input| cheat_ecrecover.call(input),
-                ))
-            });
-        }
+        self.inject_precompiles(evm.precompiles_mut());
 
         let mut executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id);
         executor.apply_pre_execution_changes().expect("pre-execution changes failed");
@@ -2704,7 +2686,7 @@ where
                 }
             };
 
-            let tx_env = build_tx_env_for_pending(pending, &cheats, self.is_optimism());
+            let tx_env = build_tx_env_for_pending(pending, self.cheats(), self.is_optimism());
 
             let cumulative_gas =
                 executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);
@@ -3246,21 +3228,7 @@ where
                 self.is_optimism(),
             );
 
-            self.networks.inject_precompiles(evm_replay.precompiles_mut());
-            if let Some(factory) = &self.precompile_factory {
-                evm_replay.precompiles_mut().extend_precompiles(factory.precompiles());
-            }
-            let cheats = self.cheats().clone();
-            if cheats.has_recover_overrides() {
-                let cheats_arc = Arc::new(cheats.clone());
-                let cheat_ecrecover = CheatEcrecover::new(Arc::clone(&cheats_arc));
-                evm_replay.precompiles_mut().apply_precompile(&EC_RECOVER, move |_| {
-                    Some(DynPrecompile::new_stateful(
-                        cheat_ecrecover.precompile_id().clone(),
-                        move |input| cheat_ecrecover.call(input),
-                    ))
-                });
-            }
+            self.inject_precompiles(evm_replay.precompiles_mut());
 
             let mut replay_executor =
                 AnvilBlockExecutor::new(evm_replay, block.header.parent_hash, spec_id);
@@ -3290,7 +3258,7 @@ where
                     Err(_) => continue,
                 };
 
-                let tx_env = build_tx_env_for_pending(pending, &cheats, self.is_optimism());
+                let tx_env = build_tx_env_for_pending(pending, self.cheats(), self.is_optimism());
 
                 let cumulative_gas =
                     replay_executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);
