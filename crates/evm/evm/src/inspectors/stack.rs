@@ -407,7 +407,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         &mut self,
         cheats: &mut Cheatcodes,
         ecx: &mut CTX,
-        tx_env: &CTX::Tx,
+        tx_env: CTX::Tx,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
