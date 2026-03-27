@@ -129,7 +129,7 @@ impl EvmOpts {
             .build()
     }
 
-    /// Returns a tuple with [`EvmEnv`] and [`TxEnv`]
+    /// Returns a tuple with [`EvmEnv`] and `TxEnv`
     ///
     /// If a `fork_url` is set, creates a provider and passes it to both `EvmOpts::fork_evm_env`
     /// and `EvmOpts::fork_tx_env`. Falls back to local settings when no fork URL is configured.
@@ -237,7 +237,7 @@ impl EvmOpts {
         EvmEnv::new(cfg_env, block_env)
     }
 
-    /// Returns the [`TxEnv`] with gas price and chain id resolved from provider.
+    /// Returns the `TxEnv` with gas price and chain id resolved from provider.
     async fn fork_tx_env<TX: FoundryTransaction + Default, N: Network, P: Provider<N>>(
         &self,
         provider: &P,
@@ -256,7 +256,7 @@ impl EvmOpts {
         Ok(tx_env)
     }
 
-    /// Returns the [`TxEnv`] configured from local settings only.
+    /// Returns the `TxEnv` configured from local settings only.
     fn local_tx_env<TX: FoundryTransaction + Default>(&self) -> TX {
         let mut tx_env = TX::default();
         tx_env.set_caller(self.sender);
@@ -458,7 +458,7 @@ mod tests {
         // Set an explicit block number
         evm_opts.fork_block_number = Some(12345678);
 
-        let (evm_env, _): (_, TxEnv) = evm_opts.env::<SpecId, _, _>().await.unwrap();
+        let (evm_env, _) = evm_opts.env::<SpecId, _, TxEnv>().await.unwrap();
 
         let fork = evm_opts.get_fork(&Config::default(), &evm_env).unwrap();
 
