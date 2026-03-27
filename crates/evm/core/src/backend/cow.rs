@@ -77,8 +77,8 @@ impl<'a> CowBackend<'a> {
 
         let res = evm.transact(tx_env.clone()).wrap_err("EVM error")?;
 
-        *evm_env = EvmEnv::new(evm.cfg.clone(), evm.block.clone());
         *tx_env = evm.tx.clone();
+        *evm_env = evm.finish().1;
 
         Ok(res)
     }
@@ -197,7 +197,7 @@ impl DatabaseExt for CowBackend<'_> {
 
     fn transact_from_tx(
         &mut self,
-        tx_env: &TxEnv,
+        tx_env: TxEnv,
         evm_env: EvmEnv,
         journaled_state: &mut JournaledState,
         inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,

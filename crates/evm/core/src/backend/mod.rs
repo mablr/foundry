@@ -223,7 +223,7 @@ pub trait DatabaseExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
     /// Executes a given TransactionRequest, commits the new state to the DB
     fn transact_from_tx(
         &mut self,
-        tx_env: &TX,
+        tx_env: TX,
         evm_env: EvmEnv<SPEC, BLOCK>,
         journaled_state: &mut JournaledState,
         inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
@@ -783,8 +783,8 @@ where
 
         let res = evm.transact(tx_env.clone()).wrap_err("EVM error")?;
 
-        *evm_env = EvmEnv::new(evm.cfg.clone(), evm.block.clone());
         *tx_env = evm.tx.clone();
+        *evm_env = evm.finish().1;
 
         Ok(res)
     }
@@ -1333,7 +1333,7 @@ where
 
     fn transact_from_tx(
         &mut self,
-        tx_env: &TxEnv,
+        tx_env: TxEnv,
         evm_env: EvmEnv,
         journaled_state: &mut JournaledState,
         inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
@@ -1346,7 +1346,7 @@ where
             let mut db = self.clone();
             let mut evm = new_eth_evm_with_inspector(&mut db, evm_env, inspector);
             evm.journaled_state.depth = journaled_state.depth + 1;
-            evm.transact_raw(tx_env.to_owned())?
+            evm.transact_raw(tx_env)?
         };
 
         self.commit(res.state);

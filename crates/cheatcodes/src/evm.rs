@@ -1120,7 +1120,7 @@ impl Cheatcode for broadcastRawTransactionCall {
         let from = tx.recover_signer()?;
         let tx_env = FromRecoveredTx::from_recovered_tx(&tx, from);
 
-        executor.transact_from_tx_on_db(ccx.state, ccx.ecx, &tx_env)?;
+        executor.transact_from_tx_on_db(ccx.state, ccx.ecx, tx_env)?;
 
         if ccx.state.broadcast.is_some() {
             ccx.state.broadcastable_transactions.push_back(BroadcastableTransaction {
