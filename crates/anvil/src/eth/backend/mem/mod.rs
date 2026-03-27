@@ -2006,7 +2006,7 @@ impl<N: Network> Backend<N> {
 
 impl<N: Network> Backend<N>
 where
-    N::ReceiptEnvelope: alloy_consensus::TxReceipt<Log = alloy_primitives::Log> + Clone,
+    N::ReceiptEnvelope: TxReceipt<Log = alloy_primitives::Log>,
 {
     /// Returns all `Log`s mined by the node that were emitted in the `block` and match the `Filter`
     fn mined_logs_for_block(&self, filter: Filter, block: Block, block_hash: B256) -> Vec<Log> {
