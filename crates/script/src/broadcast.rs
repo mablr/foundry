@@ -423,15 +423,39 @@ where
                 ) {
                     (true, Some(gas_price), _) => (Some(gas_price.to()), None),
                     (true, None, _) => (Some(provider.get_gas_price().await?), None),
-                    (false, Some(max_fee_per_gas), Some(max_priority_fee_per_gas)) => (
-                        None,
-                        Some(Eip1559Estimation {
-                            max_fee_per_gas: max_fee_per_gas.to(),
-                            max_priority_fee_per_gas: max_priority_fee_per_gas.to(),
-                        }),
-                    ),
+                    (false, Some(max_fee_per_gas), Some(max_priority_fee_per_gas)) => {
+                        let max_fee: u128 = max_fee_per_gas.to();
+                        let max_priority: u128 = max_priority_fee_per_gas.to();
+                        if max_priority > max_fee {
+                            eyre::bail!(
+                                "--priority-gas-price ({max_priority}) cannot be higher than --with-gas-price ({max_fee})"
+                            );
+                        }
+                        (
+                            None,
+                            Some(Eip1559Estimation {
+                                max_fee_per_gas: max_fee,
+                                max_priority_fee_per_gas: max_priority,
+                            }),
+                        )
+                    }
                     (false, _, _) => {
                         let mut fees = provider.estimate_eip1559_fees().await.wrap_err("Failed to estimate EIP1559 fees. This chain might not support EIP1559, try adding --legacy to your command.")?;
+
+                        // When using --browser, the browser wallet may override the
+                        // priority fee with its own estimate (from
+                        // eth_maxPriorityFeePerGas) without adjusting maxFeePerGas,
+                        // leading to maxPriorityFeePerGas > maxFeePerGas.
+                        // This is common on OP Stack chains (e.g. Base) where
+                        // eth_feeHistory returns empty reward arrays, causing the
+                        // estimator to fall back to a 1 wei priority fee.
+                        if matches!(&send_kind, SendTransactionsKind::Raw { browser: Some(_), .. })
+                            && let Ok(suggested_tip) = provider.get_max_priority_fee_per_gas().await
+                            && suggested_tip > fees.max_priority_fee_per_gas
+                        {
+                            fees.max_fee_per_gas += suggested_tip - fees.max_priority_fee_per_gas;
+                            fees.max_priority_fee_per_gas = suggested_tip;
+                        }
 
                         if let Some(gas_price) = self.args.with_gas_price {
                             fees.max_fee_per_gas = gas_price.to();
