@@ -7,13 +7,11 @@ use alloy_primitives::{B256, ChainId, Selector, U256};
 use alloy_provider::{Network, network::BlockResponse};
 use foundry_config::NamedChain;
 use foundry_evm_networks::NetworkConfigs;
-pub use revm::state::EvmState as StateChangeset;
-use revm::{
-    primitives::{
-        eip4844::{BLOB_BASE_FEE_UPDATE_FRACTION_CANCUN, BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE},
-        hardfork::SpecId,
-    },
+use revm::primitives::{
+    eip4844::{BLOB_BASE_FEE_UPDATE_FRACTION_CANCUN, BLOB_BASE_FEE_UPDATE_FRACTION_PRAGUE},
+    hardfork::SpecId,
 };
+pub use revm::state::EvmState as StateChangeset;
 
 /// Hints to the compiler that this is a cold path, i.e. unlikely to be taken.
 #[cold]
@@ -23,9 +21,7 @@ pub fn cold_path() {
 }
 
 /// Constructs a generic [`FoundryBlock`] from a block header.
-pub fn block_env_from_header<BLOCK: FoundryBlock + Default>(
-    header: &impl BlockHeader,
-) -> BLOCK {
+pub fn block_env_from_header<BLOCK: FoundryBlock + Default>(header: &impl BlockHeader) -> BLOCK {
     let mut block = BLOCK::default();
     block.set_number(U256::from(header.number()));
     block.set_beneficiary(header.beneficiary());
@@ -62,9 +58,9 @@ pub fn apply_chain_and_block_specific_env_changes<
             Mainnet => {
                 // after merge difficulty is supplanted with prevrandao EIP-4399
                 if block_number >= 15_537_351u64 {
-                    evm_env.block_env.set_difficulty(
-                        evm_env.block_env.prevrandao().unwrap_or_default().into(),
-                    );
+                    evm_env
+                        .block_env
+                        .set_difficulty(evm_env.block_env.prevrandao().unwrap_or_default().into());
                 }
 
                 return;
@@ -76,9 +72,7 @@ pub fn apply_chain_and_block_specific_env_changes<
                 // (`mixHash`) is always zero, even though bsc adopts the newer EVM
                 // specification. This will confuse revm and causes emulation
                 // failure.
-                evm_env
-                    .block_env
-                    .set_prevrandao(Some(evm_env.block_env.difficulty().into()));
+                evm_env.block_env.set_prevrandao(Some(evm_env.block_env.difficulty().into()));
                 return;
             }
             c if c.is_arbitrum() => {
@@ -107,9 +101,7 @@ pub fn apply_chain_and_block_specific_env_changes<
 
     // if difficulty is `0` we assume it's past merge
     if block.header().difficulty().is_zero() {
-        evm_env
-            .block_env
-            .set_difficulty(evm_env.block_env.prevrandao().unwrap_or_default().into());
+        evm_env.block_env.set_difficulty(evm_env.block_env.prevrandao().unwrap_or_default().into());
     }
 }
 

@@ -1,5 +1,8 @@
 use crate::{
-    EvmEnv, FoundryBlock, FoundryTransaction, constants::DEFAULT_CREATE2_DEPLOYER, fork::CreateFork, utils::{apply_chain_and_block_specific_env_changes, block_env_from_header}
+    EvmEnv, FoundryBlock, FoundryTransaction,
+    constants::DEFAULT_CREATE2_DEPLOYER,
+    fork::CreateFork,
+    utils::{apply_chain_and_block_specific_env_changes, block_env_from_header},
 };
 use alloy_consensus::BlockHeader;
 use alloy_network::{AnyNetwork, BlockResponse, Network};
@@ -139,10 +142,8 @@ impl EvmOpts {
     ) -> eyre::Result<(EvmEnv<SPEC, BLOCK>, TX)> {
         if let Some(ref fork_url) = self.fork_url {
             let provider = self.fork_provider_with_url::<AnyNetwork>(fork_url)?;
-            let ((evm_env, _block), tx) = tokio::try_join!(
-                self.fork_evm_env(&provider),
-                self.fork_tx_env(&provider)
-            )?;
+            let ((evm_env, _block), tx) =
+                tokio::try_join!(self.fork_evm_env(&provider), self.fork_tx_env(&provider))?;
             Ok((evm_env, tx))
         } else {
             Ok((self.local_evm_env(), self.local_tx_env()))
@@ -151,7 +152,12 @@ impl EvmOpts {
 
     /// Returns the [`EvmEnv`] (cfg + block) and [`BlockNumber`] fetched from the fork endpoint via
     /// provider
-    pub async fn fork_evm_env<SPEC: Into<SpecId> + Default + Copy, BLOCK: FoundryBlock + Default, N: Network, P: Provider<N>>(
+    pub async fn fork_evm_env<
+        SPEC: Into<SpecId> + Default + Copy,
+        BLOCK: FoundryBlock + Default,
+        N: Network,
+        P: Provider<N>,
+    >(
         &self,
         provider: &P,
     ) -> eyre::Result<(EvmEnv<SPEC, BLOCK>, BlockNumber)> {
@@ -216,7 +222,9 @@ impl EvmOpts {
     }
 
     /// Returns the [`EvmEnv`] configured with only local settings.
-    fn local_evm_env<SPEC: Into<SpecId> + Default, BLOCK: FoundryBlock + Default>(&self) -> EvmEnv<SPEC, BLOCK> {
+    fn local_evm_env<SPEC: Into<SpecId> + Default, BLOCK: FoundryBlock + Default>(
+        &self,
+    ) -> EvmEnv<SPEC, BLOCK> {
         let cfg_env = self.cfg_env(self.env.chain_id.unwrap_or(foundry_common::DEV_CHAIN_ID));
         let mut block_env = BLOCK::default();
         block_env.set_number(self.env.block_number);
@@ -230,7 +238,10 @@ impl EvmOpts {
     }
 
     /// Returns the [`TxEnv`] with gas price and chain id resolved from provider.
-    async fn fork_tx_env<TX: FoundryTransaction + Default, N: Network, P: Provider<N>>(&self, provider: &P) -> eyre::Result<TX> {
+    async fn fork_tx_env<TX: FoundryTransaction + Default, N: Network, P: Provider<N>>(
+        &self,
+        provider: &P,
+    ) -> eyre::Result<TX> {
         let (gas_price, chain_id) = tokio::try_join!(
             option_try_or_else(self.env.gas_price.map(|v| v as u128), async || {
                 provider.get_gas_price().await
