@@ -4208,11 +4208,11 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
                 if let FoundryTxEnvelope::Legacy(tx) = tx.as_ref() {
                     // <https://github.com/ethereum/EIPs/blob/master/EIPS/eip-155.md>
                     if evm_env.cfg_env.spec >= SpecId::SPURIOUS_DRAGON && tx.chain_id().is_none() {
-                        warn!(target: "backend", ?chain_id, ?tx_chain_id, "incompatible EIP155-based V");
+                        debug!(target: "backend", ?chain_id, ?tx_chain_id, "incompatible EIP155-based V");
                         return Err(InvalidTransactionError::IncompatibleEIP155);
                     }
                 } else {
-                    warn!(target: "backend", ?chain_id, ?tx_chain_id, "invalid chain id");
+                    debug!(target: "backend", ?chain_id, ?tx_chain_id, "invalid chain id");
                     return Err(InvalidTransactionError::InvalidChainId);
                 }
             }
@@ -4222,7 +4222,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
         let is_deposit_tx = matches!(pending.transaction.as_ref(), FoundryTxEnvelope::Deposit(_));
         let nonce = tx.nonce();
         if nonce < account.nonce && !is_deposit_tx {
-            warn!(target: "backend", "[{:?}] nonce too low", tx.hash());
+            debug!(target: "backend", "[{:?}] nonce too low", tx.hash());
             return Err(InvalidTransactionError::NonceTooLow);
         }
 
@@ -4271,7 +4271,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
         if !self.disable_pool_balance_checks {
             // Gas limit validation
             if tx.gas_limit() < MIN_TRANSACTION_GAS as u64 {
-                warn!(target: "backend", "[{:?}] gas too low", tx.hash());
+                debug!(target: "backend", "[{:?}] gas too low", tx.hash());
                 return Err(InvalidTransactionError::GasTooLow);
             }
 
@@ -4279,7 +4279,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
             if !evm_env.cfg_env.disable_block_gas_limit
                 && tx.gas_limit() > evm_env.block_env.gas_limit
             {
-                warn!(target: "backend", "[{:?}] gas too high", tx.hash());
+                debug!(target: "backend", "[{:?}] gas too high", tx.hash());
                 return Err(InvalidTransactionError::GasTooHigh(ErrDetail {
                     detail: String::from("tx.gas_limit > env.block.gas_limit"),
                 }));
@@ -4289,7 +4289,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
             if evm_env.cfg_env.tx_gas_limit_cap.is_none()
                 && tx.gas_limit() > evm_env.cfg_env().tx_gas_limit_cap()
             {
-                warn!(target: "backend", "[{:?}] gas too high", tx.hash());
+                debug!(target: "backend", "[{:?}] gas too high", tx.hash());
                 return Err(InvalidTransactionError::GasTooHigh(ErrDetail {
                     detail: String::from("tx.gas_limit > env.cfg.tx_gas_limit_cap"),
                 }));
@@ -4298,7 +4298,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
             // EIP-1559 fee validation (London hard fork and later).
             if evm_env.cfg_env.spec >= SpecId::LONDON {
                 if tx.max_fee_per_gas() < evm_env.block_env.basefee.into() && !is_deposit_tx {
-                    warn!(target: "backend", "max fee per gas={}, too low, block basefee={}", tx.max_fee_per_gas(), evm_env.block_env.basefee);
+                    debug!(target: "backend", "max fee per gas={}, too low, block basefee={}", tx.max_fee_per_gas(), evm_env.block_env.basefee);
                     return Err(InvalidTransactionError::FeeCapTooLow);
                 }
 
@@ -4306,7 +4306,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
                     (tx.as_ref().max_priority_fee_per_gas(), tx.as_ref().max_fee_per_gas())
                     && max_priority_fee_per_gas > max_fee_per_gas
                 {
-                    warn!(target: "backend", "max priority fee per gas={}, too high, max fee per gas={}", max_priority_fee_per_gas, max_fee_per_gas);
+                    debug!(target: "backend", "max priority fee per gas={}, too high, max fee per gas={}", max_priority_fee_per_gas, max_fee_per_gas);
                     return Err(InvalidTransactionError::TipAboveFeeCap);
                 }
             }
@@ -4318,7 +4318,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
                 && let Some(blob_gas_and_price) = &evm_env.block_env.blob_excess_gas_and_price
                 && max_fee_per_blob_gas < blob_gas_and_price.blob_gasprice
             {
-                warn!(target: "backend", "max fee per blob gas={}, too low, block blob gas price={}", max_fee_per_blob_gas, blob_gas_and_price.blob_gasprice);
+                debug!(target: "backend", "max fee per blob gas={}, too low, block blob gas price={}", max_fee_per_blob_gas, blob_gas_and_price.blob_gasprice);
                 return Err(InvalidTransactionError::BlobFeeCapTooLow(
                     max_fee_per_blob_gas,
                     blob_gas_and_price.blob_gasprice,
@@ -4341,7 +4341,7 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
                     // 2. increment account balance by deposited amount before checking for
                     //    sufficient funds `tx.value <= existing account value + deposited value`
                     if value > account.balance + U256::from(deposit_tx.mint) {
-                        warn!(target: "backend", "[{:?}] insufficient balance={}, required={} account={:?}", tx.hash(), account.balance + U256::from(deposit_tx.mint), value, *pending.sender());
+                        debug!(target: "backend", "[{:?}] insufficient balance={}, required={} account={:?}", tx.hash(), account.balance + U256::from(deposit_tx.mint), value, *pending.sender());
                         return Err(InvalidTransactionError::InsufficientFunds);
                     }
                 }
@@ -4349,11 +4349,11 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
                     // check sufficient funds: `gas * price + value`
                     let req_funds =
                         max_cost.checked_add(value.saturating_to()).ok_or_else(|| {
-                            warn!(target: "backend", "[{:?}] cost too high", tx.hash());
+                            debug!(target: "backend", "[{:?}] cost too high", tx.hash());
                             InvalidTransactionError::InsufficientFunds
                         })?;
                     if account.balance < U256::from(req_funds) {
-                        warn!(target: "backend", "[{:?}] insufficient balance={}, required={} account={:?}", tx.hash(), account.balance, req_funds, *pending.sender());
+                        debug!(target: "backend", "[{:?}] insufficient balance={}, required={} account={:?}", tx.hash(), account.balance, req_funds, *pending.sender());
                         return Err(InvalidTransactionError::InsufficientFunds);
                     }
                 }
