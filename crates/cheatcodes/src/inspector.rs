@@ -33,7 +33,7 @@ use foundry_common::{
     mapping_slots::{MappingSlots, step as mapping_step},
 };
 use foundry_evm_core::{
-    Breakpoints, EthCheatCtx, EvmEnv, FoundryTransaction, InspectorExt,
+    Breakpoints, EvmEnv, FoundryTransaction, InspectorExt,
     abi::Vm::stopExpectSafeMemoryCall,
     backend::{DatabaseError, DatabaseExt, RevertDiagnostic},
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME},
@@ -63,6 +63,7 @@ use revm::{
         InstructionResult, Interpreter, InterpreterAction, InterpreterResult,
         interpreter_types::{Jumps, LoopControl, MemoryTr},
     },
+    primitives::hardfork::SpecId,
 };
 use serde_json::Value;
 use std::{
@@ -137,7 +138,7 @@ pub trait CheatcodesExecutor<CTX: ContextTr> {
 }
 
 /// Builds a sub-EVM from the current context and executes the given CREATE frame.
-pub(crate) fn exec_create<CTX: EthCheatCtx>(
+pub(crate) fn exec_create<CTX: ContextTr>(
     executor: &mut dyn CheatcodesExecutor<CTX>,
     inputs: CreateInputs,
     ccx: &mut CheatsCtxt<'_, CTX>,
@@ -168,7 +169,15 @@ pub(crate) fn exec_create<CTX: EthCheatCtx>(
 #[derive(Debug, Default, Clone, Copy)]
 struct TransparentCheatcodesExecutor;
 
-impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor {
+impl<
+    CTX: FoundryContextExt<
+            Spec = SpecId,
+            Block = BlockEnv,
+            Tx = TxEnv,
+            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        >,
+> CheatcodesExecutor<CTX> for TransparentCheatcodesExecutor
+{
     fn with_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes,
@@ -670,7 +679,9 @@ impl Cheatcodes {
     }
 
     /// Decodes the input data and applies the cheatcode.
-    fn apply_cheatcode<CTX: EthCheatCtx>(
+    fn apply_cheatcode<
+        CTX: FoundryContextExt<Tx = TxEnv, Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>,
+    >(
         &mut self,
         ecx: &mut CTX,
         call: &CallInputs,
@@ -707,7 +718,9 @@ impl Cheatcodes {
     ///
     /// There may be cheatcodes in the constructor of the new contract, in order to allow them
     /// automatically we need to determine the new address.
-    fn allow_cheatcodes_on_create<CTX: ContextTr<Db: DatabaseExt>>(
+    fn allow_cheatcodes_on_create<
+        CTX: FoundryContextExt<Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>,
+    >(
         &self,
         ecx: &mut CTX,
         caller: Address,
@@ -760,7 +773,13 @@ impl Cheatcodes {
         }
     }
 
-    pub fn call_with_executor<CTX: EthCheatCtx>(
+    pub fn call_with_executor<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
         &mut self,
         ecx: &mut CTX,
         call: &mut CallInputs,
@@ -1179,7 +1198,15 @@ impl Cheatcodes {
     }
 }
 
-impl<CTX: EthCheatCtx> Inspector<CTX> for Cheatcodes {
+impl<
+    CTX: FoundryContextExt<
+            Spec = SpecId,
+            Block = BlockEnv,
+            Tx = TxEnv,
+            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        >,
+> Inspector<CTX> for Cheatcodes
+{
     fn initialize_interp(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         // When the first interpreter is initialized we've circumvented the balance and gas checks,
         // so we apply our actual block data with the correct fees and all.
@@ -2113,7 +2140,9 @@ impl Cheatcodes {
     }
 
     #[cold]
-    fn record_state_diffs<CTX: ContextTr<Db: DatabaseExt>>(
+    fn record_state_diffs<
+        CTX: FoundryContextExt<Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>,
+    >(
         &mut self,
         interpreter: &mut Interpreter,
         ecx: &mut CTX,
@@ -2585,7 +2614,9 @@ fn cheatcode_signature(cheat: &spec::Cheatcode<'static>) -> &'static str {
 }
 
 /// Dispatches the cheatcode call to the appropriate function.
-fn apply_dispatch<CTX: EthCheatCtx>(
+fn apply_dispatch<
+    CTX: FoundryContextExt<Tx = TxEnv, Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>,
+>(
     calls: &Vm::VmCalls,
     ccx: &mut CheatsCtxt<'_, CTX>,
     executor: &mut dyn CheatcodesExecutor<CTX>,

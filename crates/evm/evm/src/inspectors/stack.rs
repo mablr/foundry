@@ -7,9 +7,7 @@ use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256,
     map::{AddressHashMap, HashMap},
 };
-use foundry_cheatcodes::{
-    CheatcodeAnalysis, CheatcodesExecutor, EthCheatCtx, NestedEvmClosure, Wallets,
-};
+use foundry_cheatcodes::{CheatcodeAnalysis, CheatcodesExecutor, NestedEvmClosure, Wallets};
 use foundry_common::compile::Analysis;
 use foundry_evm_core::{
     FoundryBlock, FoundryTransaction, InspectorExt,
@@ -33,6 +31,7 @@ use revm::{
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Gas, InstructionResult,
         Interpreter, InterpreterResult,
     },
+    primitives::hardfork::SpecId,
     state::{Account, AccountStatus},
 };
 use revm_inspectors::edge_cov::EdgeCovInspector;
@@ -358,7 +357,15 @@ pub struct InspectorStackRefMut<'a> {
     pub inner: &'a mut InspectorStackInner,
 }
 
-impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
+impl<
+    CTX: FoundryContextExt<
+            Spec = SpecId,
+            Block = BlockEnv,
+            Tx = TxEnv,
+            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        >,
+> CheatcodesExecutor<CTX> for InspectorStackInner
+{
     fn with_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes,
@@ -633,7 +640,14 @@ impl InspectorStackRefMut<'_> {
         ecx.tx_mut().set_caller(inner_context_data.original_origin);
     }
 
-    fn do_call_end<CTX: EthCheatCtx>(
+    fn do_call_end<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Block = BlockEnv,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
         &mut self,
         ecx: &mut CTX,
         inputs: &CallInputs,
@@ -668,7 +682,14 @@ impl InspectorStackRefMut<'_> {
         }
     }
 
-    fn do_create_end<CTX: EthCheatCtx>(
+    fn do_create_end<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Block = BlockEnv,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
         &mut self,
         ecx: &mut CTX,
         call: &CreateInputs,
@@ -692,7 +713,14 @@ impl InspectorStackRefMut<'_> {
         );
     }
 
-    fn transact_inner<CTX: EthCheatCtx>(
+    fn transact_inner<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Block = BlockEnv,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
         &mut self,
         ecx: &mut CTX,
         kind: TxKind,
@@ -889,7 +917,18 @@ impl InspectorStackRefMut<'_> {
     // delegate to `InspectorStackRefMut` in this case.
 
     #[inline(always)]
-    fn step_inlined<CTX: EthCheatCtx>(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step_inlined<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Block = BlockEnv,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut CTX,
+    ) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -908,7 +947,18 @@ impl InspectorStackRefMut<'_> {
     }
 
     #[inline(always)]
-    fn step_end_inlined<CTX: EthCheatCtx>(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step_end_inlined<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Block = BlockEnv,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut CTX,
+    ) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -924,7 +974,15 @@ impl InspectorStackRefMut<'_> {
     }
 }
 
-impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStackRefMut<'_> {
+impl<
+    CTX: FoundryContextExt<
+            Spec = SpecId,
+            Block = BlockEnv,
+            Tx = TxEnv,
+            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        >,
+> Inspector<CTX> for InspectorStackRefMut<'_>
+{
     fn initialize_interp(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         call_inspectors!(
             [
@@ -1155,7 +1213,15 @@ impl InspectorExt for InspectorStackRefMut<'_> {
     }
 }
 
-impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStack {
+impl<
+    CTX: FoundryContextExt<
+            Spec = SpecId,
+            Block = BlockEnv,
+            Tx = TxEnv,
+            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        >,
+> Inspector<CTX> for InspectorStack
+{
     fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         self.as_mut().step_inlined(interpreter, ecx)
     }

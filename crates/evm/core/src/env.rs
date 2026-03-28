@@ -20,7 +20,7 @@ use revm::{
     primitives::{TxKind, hardfork::SpecId},
 };
 
-use crate::backend::{DatabaseExt, JournaledState};
+use crate::backend::JournaledState;
 
 /// Extension of [`Block`] with mutable setters, allowing EVM-agnostic mutation of block fields.
 pub trait FoundryBlock: Block {
@@ -423,33 +423,6 @@ impl<
     fn db_journal_inner_mut(&mut self) -> (&mut Self::Db, &mut JournaledState) {
         (&mut self.journaled_state.database, &mut self.journaled_state.inner)
     }
-}
-
-/// Temporary bound alias used during the transition to a fully generic foundry-evm and
-/// foundry-cheatcodes.
-///
-/// Pins the EVM context to Ethereum-specific environment types (`BlockEnv`, `TxEnv`, `CfgEnv`)
-/// so that cheatcode implementations don't need to repeat the full where-clause everywhere.
-/// Once cheatcodes are fully generic over network/environment types this alias will be removed.
-pub trait EthCheatCtx:
-    FoundryContextExt<
-        Spec = SpecId,
-        Block = BlockEnv,
-        Tx = TxEnv,
-        Cfg = CfgEnv,
-        Db: DatabaseExt<Self::Block, Self::Tx, Self::Spec>,
-    >
-{
-}
-impl<CTX> EthCheatCtx for CTX where
-    CTX: FoundryContextExt<
-            Spec = SpecId,
-            Block = BlockEnv,
-            Tx = TxEnv,
-            Cfg = CfgEnv,
-            Db: DatabaseExt<Self::Block, Self::Tx, Self::Spec>,
-        >
-{
 }
 
 /// Abstraction trait for converting any RPC transaction into corresponding `TxEnv`.
