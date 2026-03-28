@@ -2078,7 +2078,7 @@ mod tests {
     use foundry_common::provider::get_http_provider;
     use foundry_config::{Config, NamedChain};
     use foundry_fork_db::cache::{BlockchainDb, BlockchainDbMeta};
-    use revm::database::DatabaseRef;
+    use revm::{context::TxEnv, database::DatabaseRef};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn can_read_write_cache() {
@@ -2091,7 +2091,7 @@ mod tests {
         evm_opts.fork_url = Some(endpoint.to_string());
         evm_opts.fork_block_number = Some(block_num);
 
-        let (evm_env, _) = evm_opts.env().await.unwrap();
+        let (evm_env, _) = evm_opts.env::<_, _, TxEnv>().await.unwrap();
 
         let fork = evm_opts.get_fork(&Config::default(), &evm_env).unwrap();
 

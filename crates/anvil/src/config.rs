@@ -1376,7 +1376,11 @@ latest block number: {latest_block}"
 
         let override_chain_id = self.chain_id;
         // apply changes such as difficulty -> prevrandao and chain specifics for current chain id
-        apply_chain_and_block_specific_env_changes::<AnyNetwork>(evm_env, &block, self.networks);
+        apply_chain_and_block_specific_env_changes::<AnyNetwork, _, _>(
+            evm_env,
+            &block,
+            self.networks,
+        );
 
         let meta = BlockchainDbMeta::new(evm_env.block_env.clone(), eth_rpc_url.clone());
         let block_chain_db = if self.fork_chain_id.is_some() {
