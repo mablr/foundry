@@ -31,13 +31,12 @@ use foundry_evm_core::{
     utils::get_blob_base_fee_update_fraction_by_spec_id,
 };
 use foundry_evm_traces::TraceMode;
-use foundry_primitives::FoundryTxEnvelope;
 use itertools::Itertools;
 use rand::Rng;
 use revm::{
     Database,
     bytecode::Bytecode,
-    context::{Block, Cfg, ContextTr, JournalTr, Transaction, TxEnv, result::ExecutionResult},
+    context::{Block, Cfg, ContextTr, JournalTr, Transaction, result::ExecutionResult},
     inspector::JournalExt,
     primitives::{KECCAK_EMPTY, hardfork::SpecId},
     state::{Account, AccountStatus},
@@ -1125,7 +1124,7 @@ impl Cheatcode for broadcastRawTransactionCall {
         if ccx.state.broadcast.is_some() {
             ccx.state.broadcastable_transactions.push_back(BroadcastableTransaction {
                 rpc: ccx.ecx.db().active_fork_url(),
-                transaction: TransactionMaybeSigned::new_signed(tx)?,
+                transaction: TransactionMaybeSigned::Signed { tx, from },
             });
         }
 
@@ -1167,26 +1166,15 @@ impl Cheatcode for executeTransactionCall {
         }
 
         // Decode the RLP-encoded signed transaction.
-        let tx = FoundryTxEnvelope::decode(&mut self.rawTx.as_ref())
+        let tx = TxEnvelope::decode(&mut self.rawTx.as_ref())
             .map_err(|err| fmt_err!("failed to decode RLP-encoded transaction: {err}"))?;
 
-        // Reject unsupported transaction types.
-        // TODO: add support for OP deposit transactions.
-        if matches!(tx, FoundryTxEnvelope::Deposit(_)) {
-            return Err(fmt_err!(
-                "OP deposit transactions are not yet supported by executeTransaction"
-            ));
-        }
-        // TODO: add support for Tempo AA transactions.
-        if matches!(tx, FoundryTxEnvelope::Tempo(_)) {
-            return Err(fmt_err!("Tempo transactions are not yet supported by executeTransaction"));
-        }
-
         // Recover signer from the transaction signature.
-        let sender = tx.recover().map_err(|err| fmt_err!("failed to recover signer: {err}"))?;
+        let sender =
+            tx.recover_signer().map_err(|err| fmt_err!("failed to recover signer: {err}"))?;
 
         // Build TxEnv from the recovered transaction.
-        let tx_env = <TxEnv as FromRecoveredTx<FoundryTxEnvelope>>::from_recovered_tx(&tx, sender);
+        let tx_env = FromRecoveredTx::from_recovered_tx(&tx, sender);
 
         // Save current env for restoration after execution.
         let cached_evm_env = ccx.ecx.evm_clone();

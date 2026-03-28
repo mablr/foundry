@@ -1,6 +1,6 @@
 //! Wrappers for transactions.
 
-use alloy_consensus::{Transaction, transaction::SignerRecoverable};
+use alloy_consensus::Transaction;
 use alloy_eips::eip7702::SignedAuthorization;
 use alloy_network::{AnyTransactionReceipt, Network, TransactionResponse};
 use alloy_primitives::{Address, Bytes, U256};
@@ -177,17 +177,6 @@ impl<N: Network> TransactionMaybeSigned<N> {
     /// Creates a new (unsigned) transaction for broadcast
     pub fn new(tx: N::TransactionRequest) -> Self {
         Self::Unsigned(tx)
-    }
-
-    /// Creates a new signed transaction for broadcast.
-    pub fn new_signed(
-        tx: N::TxEnvelope,
-    ) -> core::result::Result<Self, alloy_consensus::crypto::RecoveryError>
-    where
-        N::TxEnvelope: SignerRecoverable,
-    {
-        let from = tx.recover_signer()?;
-        Ok(Self::Signed { tx, from })
     }
 
     pub fn is_unsigned(&self) -> bool {
