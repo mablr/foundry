@@ -17,17 +17,17 @@ pub struct StateSnapshot {
 
 /// Represents a state snapshot taken during evm execution
 #[derive(Clone, Debug)]
-pub struct BackendStateSnapshot<T> {
+pub struct BackendStateSnapshot<T, SPEC, BLOCK> {
     pub db: T,
     /// The journaled_state state at a specific point
     pub journaled_state: JournaledState,
     /// Contains the evm env at the time of the snapshot
-    pub snap_evm_env: EvmEnv,
+    pub snap_evm_env: EvmEnv<SPEC, BLOCK>,
 }
 
-impl<T> BackendStateSnapshot<T> {
+impl<T, SPEC, BLOCK> BackendStateSnapshot<T, SPEC, BLOCK> {
     /// Takes a new state snapshot.
-    pub fn new(db: T, journaled_state: JournaledState, evm_env: EvmEnv) -> Self {
+    pub fn new(db: T, journaled_state: JournaledState, evm_env: EvmEnv<SPEC, BLOCK>) -> Self {
         Self { db, journaled_state, snap_evm_env: evm_env }
     }
 
