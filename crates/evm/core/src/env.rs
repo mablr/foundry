@@ -54,6 +54,16 @@ pub trait FoundryBlock: Block {
         _excess_blob_gas: u64,
         _base_fee_update_fraction: u64,
     );
+
+    // Tempo methods
+
+    /// Returns the milliseconds portion of the block timestamp.
+    fn timestamp_millis_part(&self) -> u64 {
+        0
+    }
+
+    /// Sets the milliseconds portion of the block timestamp.
+    fn set_timestamp_millis_part(&mut self, _millis: u64) {}
 }
 
 impl FoundryBlock for BlockEnv {
@@ -128,6 +138,14 @@ impl FoundryBlock for TempoBlockEnv {
         _excess_blob_gas: u64,
         _base_fee_update_fraction: u64,
     ) {
+    }
+
+    fn timestamp_millis_part(&self) -> u64 {
+        self.timestamp_millis_part
+    }
+
+    fn set_timestamp_millis_part(&mut self, millis: u64) {
+        self.timestamp_millis_part = millis;
     }
 }
 
