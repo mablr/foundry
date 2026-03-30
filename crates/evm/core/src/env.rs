@@ -4,6 +4,8 @@ pub use alloy_evm::EvmEnv;
 use alloy_evm::{FromRecoveredTx, ToTxEnv};
 use alloy_network::{AnyRpcTransaction, TransactionResponse};
 use alloy_primitives::{Address, B256, Bytes, U256};
+use alloy_rpc_types::Transaction as RpcTransaction;
+use op_alloy_rpc_types::Transaction as OpRpcTransaction;
 use op_revm::{
     OpTransaction,
     transaction::{OpTxTr, deposit::DEPOSIT_TRANSACTION_TYPE},
@@ -429,17 +431,17 @@ impl<
 ///
 /// This trait bridges the gap between different network RPC transaction types and the EVM's
 /// `TxEnv`:
-/// - For [`alloy_rpc_types::Transaction`] (Ethereum): delegates to [`ToTxEnv`].
+/// - For [`RpcTransaction`] (Ethereum): delegates to [`ToTxEnv`].
 /// - For [`AnyRpcTransaction`] (AnyNetwork): extracts the inner [`alloy_consensus::TxEnvelope`] via
 ///   [`as_envelope()`](alloy_network::AnyTxEnvelope::as_envelope) then delegates to
 ///   [`FromRecoveredTx`].
-/// - For [`op_alloy_rpc_types::Transaction`] (Optimism): delegates to [`ToTxEnv`].
+/// - For [`OpRpcTransaction`] (Optimism): delegates to [`ToTxEnv`].
 pub trait TryAnyToTxEnv<TxEnv> {
     /// Tries to convert this RPC transaction into a [`TxEnv`].
     fn try_any_to_tx_env(&self) -> eyre::Result<TxEnv>;
 }
 
-impl TryAnyToTxEnv<TxEnv> for alloy_rpc_types::Transaction {
+impl TryAnyToTxEnv<TxEnv> for RpcTransaction {
     fn try_any_to_tx_env(&self) -> eyre::Result<TxEnv> {
         Ok(self.as_recovered().to_tx_env())
     }
@@ -455,7 +457,7 @@ impl TryAnyToTxEnv<TxEnv> for AnyRpcTransaction {
     }
 }
 
-impl TryAnyToTxEnv<OpTransaction<TxEnv>> for op_alloy_rpc_types::Transaction {
+impl TryAnyToTxEnv<OpTransaction<TxEnv>> for OpRpcTransaction {
     fn try_any_to_tx_env(&self) -> eyre::Result<OpTransaction<TxEnv>> {
         Ok(self.as_recovered().to_tx_env())
     }
@@ -465,11 +467,15 @@ impl TryAnyToTxEnv<OpTransaction<TxEnv>> for op_alloy_rpc_types::Transaction {
 mod tests {
     use super::*;
     use alloy_consensus::{Sealed, Signed, TxEip1559, transaction::Recovered};
+    use alloy_evm::{EthEvmFactory, EvmFactory};
     use alloy_network::{AnyTxEnvelope, AnyTxType, UnknownTxEnvelope, UnknownTypedTransaction};
+    use alloy_op_evm::OpEvmFactory;
     use alloy_primitives::Signature;
-    use alloy_rpc_types::{Transaction, TransactionInfo};
+    use alloy_rpc_types::TransactionInfo;
     use alloy_serde::WithOtherFields;
     use op_alloy_consensus::{OpTxEnvelope, TxDeposit, transaction::OpTransactionInfo};
+    use op_revm::OpSpecId;
+    use revm::database::EmptyDB;
 
     fn make_signed_eip1559() -> Signed<TxEip1559> {
         Signed::new_unchecked(
@@ -490,7 +496,7 @@ mod tests {
     fn try_any_to_tx_env_for_eth_and_any_transactions() {
         let from = Address::random();
         let signed_tx = make_signed_eip1559();
-        let tx = Transaction::from_transaction(
+        let tx = RpcTransaction::from_transaction(
             Recovered::new_unchecked(signed_tx.into(), from),
             TransactionInfo::default(),
         );
@@ -503,7 +509,7 @@ mod tests {
         assert_eq!(tx_env.kind, TxKind::Call(Address::with_last_byte(0xBB)));
 
         // Wrap as AnyRpcTransaction (Ethereum variant) via From<Transaction<TxEnvelope>>.
-        let any_tx = <AnyRpcTransaction as From<Transaction>>::from(tx);
+        let any_tx = <AnyRpcTransaction as From<RpcTransaction>>::from(tx);
         let any_tx_env: TxEnv = any_tx.try_any_to_tx_env().unwrap();
 
         // TxEnv from AnyRpcTransaction must be the same
@@ -516,13 +522,13 @@ mod tests {
         let signed_tx = make_signed_eip1559();
 
         // Build the eth TxEnv to compare against op base
-        let eth_tx = Transaction::from_transaction(
+        let eth_tx = RpcTransaction::from_transaction(
             Recovered::new_unchecked(signed_tx.clone().into(), from),
             TransactionInfo::default(),
         );
         let expected_base: TxEnv = eth_tx.try_any_to_tx_env().unwrap();
 
-        let op_tx = op_alloy_rpc_types::Transaction::from_transaction(
+        let op_tx = OpRpcTransaction::from_transaction(
             Recovered::new_unchecked(signed_tx.into(), from),
             OpTransactionInfo::default(),
         );
@@ -531,7 +537,7 @@ mod tests {
         assert_eq!(op_tx_env.base, expected_base);
 
         // Test with Deposit tx
-        let op_deposit_tx = op_alloy_rpc_types::Transaction::from_transaction(
+        let op_deposit_tx = OpRpcTransaction::from_transaction(
             Recovered::new_unchecked(
                 OpTxEnvelope::Deposit(Sealed::new(TxDeposit {
                     from,
@@ -559,7 +565,7 @@ mod tests {
             },
         });
         let from = Address::random();
-        let any_tx = AnyRpcTransaction::new(WithOtherFields::new(Transaction {
+        let any_tx = AnyRpcTransaction::new(WithOtherFields::new(RpcTransaction {
             inner: Recovered::new_unchecked(unknown, from),
             block_hash: None,
             block_number: None,
@@ -570,5 +576,51 @@ mod tests {
 
         let result = any_tx.try_any_to_tx_env().unwrap_err();
         assert!(result.to_string().contains("unknown transaction type"));
+    }
+
+    #[test]
+    fn eth_evm_foundry_context_ext_implementation() {
+        let mut evm = EthEvmFactory::default().create_evm(EmptyDB::default(), EvmEnv::default());
+
+        // Test EVM Context Block mutation
+        evm.ctx_mut().block_mut().set_number(U256::from(123));
+        assert_eq!(evm.ctx().block().number(), U256::from(123));
+
+        // Test EVM Context Tx mutation
+        evm.ctx_mut().tx_mut().set_nonce(99);
+        assert_eq!(evm.ctx().tx().nonce(), 99);
+
+        // Test EVM Context Cfg mutation
+        evm.ctx_mut().cfg_mut().spec = SpecId::AMSTERDAM;
+        assert_eq!(evm.ctx().cfg().spec, SpecId::AMSTERDAM);
+
+        // Round-trip test to ensure no issues with cloning and setting tx_env and evm_env
+        let tx_env = evm.ctx().tx_clone();
+        evm.ctx_mut().set_tx(tx_env);
+        let evm_env = evm.ctx().evm_clone();
+        evm.ctx_mut().set_evm(evm_env);
+    }
+
+    #[test]
+    fn op_evm_foundry_context_ext_implementation() {
+        let mut evm = OpEvmFactory::default().create_evm(EmptyDB::default(), EvmEnv::default());
+
+        // Test EVM Context Block mutation
+        evm.ctx_mut().block_mut().set_number(U256::from(123));
+        assert_eq!(evm.ctx().block().number(), U256::from(123));
+
+        // Test EVM Context Tx mutation
+        evm.ctx_mut().tx_mut().set_nonce(99);
+        assert_eq!(evm.ctx().tx().nonce(), 99);
+
+        // Test EVM Context Cfg mutation
+        evm.ctx_mut().cfg_mut().spec = OpSpecId::JOVIAN;
+        assert_eq!(evm.ctx().cfg().spec, OpSpecId::JOVIAN);
+
+        // Round-trip test to ensure no issues with cloning and setting tx_env and evm_env
+        let tx_env = evm.ctx().tx_clone();
+        evm.ctx_mut().set_tx(tx_env);
+        let evm_env = evm.ctx().evm_clone();
+        evm.ctx_mut().set_evm(evm_env);
     }
 }
