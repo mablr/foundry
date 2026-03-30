@@ -426,6 +426,12 @@ impl NodeConfig {
         Self { enable_tracing: true, port: 0, silent: true, ..Default::default() }
     }
 
+    /// Returns a test config with Tempo network enabled.
+    #[doc(hidden)]
+    pub fn test_tempo() -> Self {
+        Self { networks: NetworkConfigs::with_tempo(), ..Self::test() }
+    }
+
     /// Returns a new config which does not initialize any accounts on node startup.
     pub fn empty_state() -> Self {
         Self {
@@ -1028,6 +1034,20 @@ impl NodeConfig {
         self
     }
 
+    /// Enable Tempo network features.
+    #[must_use]
+    pub fn with_tempo(mut self) -> Self {
+        self.networks = NetworkConfigs::with_tempo();
+        self
+    }
+
+    /// Enable Optimism network features.
+    #[must_use]
+    pub fn with_optimism(mut self) -> Self {
+        self.networks = NetworkConfigs::with_optimism();
+        self
+    }
+
     /// Makes the node silent to not emit anything on stdout
     #[must_use]
     pub fn silent(self) -> Self {
@@ -1356,7 +1376,11 @@ latest block number: {latest_block}"
 
         let override_chain_id = self.chain_id;
         // apply changes such as difficulty -> prevrandao and chain specifics for current chain id
-        apply_chain_and_block_specific_env_changes::<AnyNetwork>(evm_env, &block, self.networks);
+        apply_chain_and_block_specific_env_changes::<AnyNetwork, _, _>(
+            evm_env,
+            &block,
+            self.networks,
+        );
 
         let meta = BlockchainDbMeta::new(evm_env.block_env.clone(), eth_rpc_url.clone());
         let block_chain_db = if self.fork_chain_id.is_some() {

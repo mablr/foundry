@@ -6,7 +6,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use alloy_consensus::{BlockHeader, Header, Transaction};
+use alloy_consensus::{BlockHeader, Transaction};
 use alloy_eips::{calc_next_block_base_fee, eip1559::BaseFeeParams, eip7840::BlobParams};
 use alloy_primitives::B256;
 use futures::StreamExt;
@@ -225,7 +225,7 @@ impl FeeHistoryService {
     }
 
     /// Inserts a new cache entry for the given block
-    pub(crate) fn insert_cache_entry_for_block(&self, hash: B256, header: &Header) {
+    pub(crate) fn insert_cache_entry_for_block(&self, hash: B256, header: &impl BlockHeader) {
         let (result, block_number) = self.create_cache_entry(hash, header);
         self.insert_cache_entry(result, block_number);
     }
@@ -234,7 +234,7 @@ impl FeeHistoryService {
     fn create_cache_entry(
         &self,
         hash: B256,
-        header: &Header,
+        header: &impl BlockHeader,
     ) -> (FeeHistoryCacheItem, Option<u64>) {
         // percentile list from 0.0 to 100.0 with a 0.5 resolution.
         // this will create 200 percentile points
@@ -250,9 +250,9 @@ impl FeeHistoryService {
         };
 
         let mut block_number: Option<u64> = None;
-        let base_fee = header.base_fee_per_gas.unwrap_or_default();
-        let excess_blob_gas = header.excess_blob_gas.map(|g| g as u128);
-        let blob_gas_used = header.blob_gas_used.map(|g| g as u128);
+        let base_fee = header.base_fee_per_gas().unwrap_or_default();
+        let excess_blob_gas = header.excess_blob_gas().map(|g| g as u128);
+        let blob_gas_used = header.blob_gas_used().map(|g| g as u128);
         let base_fee_per_blob_gas = header.blob_fee(self.blob_params);
 
         let mut item = FeeHistoryCacheItem {

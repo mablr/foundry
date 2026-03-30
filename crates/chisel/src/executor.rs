@@ -204,8 +204,7 @@ impl SessionSource {
         let backend = match self.config.backend.clone() {
             Some(backend) => backend,
             None => {
-                let fork =
-                    self.config.evm_opts.get_fork(&self.config.foundry_config, evm_env.clone());
+                let fork = self.config.evm_opts.get_fork(&self.config.foundry_config, &evm_env);
                 let backend = Backend::spawn(fork)?;
                 self.config.backend = Some(backend.clone());
                 backend
@@ -955,7 +954,7 @@ impl Type {
                     Ok(None)
                 }
             }
-            ty => Ok(Self::ethabi(ty, intermediate)),
+            other_expr => Ok(Self::ethabi(other_expr, intermediate)),
         };
         // re-run everything with the resolved variable in case we're accessing a builtin member
         // for example array or bytes length etc

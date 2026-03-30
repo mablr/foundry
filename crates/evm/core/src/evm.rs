@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -31,20 +32,26 @@ use revm::{
     primitives::hardfork::SpecId,
 };
 
-pub fn new_revm_with_inspector<
-    'db,
-    I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
->(
-    db: &'db mut dyn DatabaseExt,
-    evm_env: EvmEnv,
-    inspector: I,
-) -> EthRevmEvm<'db, I> {
-    let mut revm = alloy_evm::EthEvmFactory::default()
-        .create_evm_with_inspector(db, evm_env, inspector)
-        .into_inner();
-    revm.ctx.cfg.tx_chain_id_check = true;
-    revm.inspector.get_networks().inject_precompiles(&mut revm.precompiles);
-    revm
+/// Marker trait for [`EvmFactory`] implementations compatible with Foundry's EVM infrastructure.
+///
+/// Requires a spec type convertible to [`SpecId`], a defaultable block environment, and
+/// [`PrecompilesMap`] as the precompile provider, enabling use across the backend and cheatcode
+/// layers without depending on a concrete EVM type.
+pub trait FoundryEvmFactory:
+    EvmFactory<Spec: Into<SpecId>, BlockEnv: Default, Precompiles = PrecompilesMap>
+    + Clone
+    + Debug
+    + Default
+{
+}
+
+impl<
+    F: EvmFactory<Spec: Into<SpecId>, BlockEnv: Default, Precompiles = PrecompilesMap>
+        + Clone
+        + Debug
+        + Default,
+> FoundryEvmFactory for F
+{
 }
 
 pub fn new_eth_evm_with_inspector<
@@ -95,7 +102,7 @@ type EthRevmEvm<'db, I> = RevmEvm<
 >;
 
 pub struct FoundryEvm<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> {
-    inner: EthRevmEvm<'db, I>,
+    pub inner: EthRevmEvm<'db, I>,
 }
 
 impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Evm

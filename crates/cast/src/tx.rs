@@ -334,7 +334,7 @@ where
 #[derive(Debug)]
 pub struct CastTxBuilder<N: Network, P, S> {
     provider: P,
-    tx: N::TransactionRequest,
+    pub(crate) tx: N::TransactionRequest,
     /// Whether the transaction should be sent as a legacy transaction.
     legacy: bool,
     blob: bool,

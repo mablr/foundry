@@ -1,5 +1,5 @@
 use crate::{
-    EvmEnv,
+    EvmEnv, FoundryBlock, FoundryTransaction,
     constants::DEFAULT_CREATE2_DEPLOYER,
     fork::CreateFork,
     utils::{apply_chain_and_block_specific_env_changes, block_env_from_header},
@@ -13,7 +13,7 @@ use eyre::WrapErr;
 use foundry_common::{ALCHEMY_FREE_TIER_CUPS, NON_ARCHIVE_NODE_WARNING, provider::ProviderBuilder};
 use foundry_config::{Chain, Config, GasLimit};
 use foundry_evm_networks::NetworkConfigs;
-use revm::context::{BlockEnv, CfgEnv, TxEnv};
+use revm::{context::CfgEnv, primitives::hardfork::SpecId};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 use url::Url;
@@ -129,11 +129,17 @@ impl EvmOpts {
             .build()
     }
 
-    /// Returns a tuple with [`EvmEnv`] and [`TxEnv`]
+    /// Returns a tuple with [`EvmEnv`] and `TxEnv`
     ///
     /// If a `fork_url` is set, creates a provider and passes it to both `EvmOpts::fork_evm_env`
     /// and `EvmOpts::fork_tx_env`. Falls back to local settings when no fork URL is configured.
-    pub async fn env(&self) -> eyre::Result<(EvmEnv, TxEnv)> {
+    pub async fn env<
+        SPEC: Into<SpecId> + Default + Copy,
+        BLOCK: FoundryBlock + Default,
+        TX: FoundryTransaction + Default,
+    >(
+        &self,
+    ) -> eyre::Result<(EvmEnv<SPEC, BLOCK>, TX)> {
         if let Some(ref fork_url) = self.fork_url {
             let provider = self.fork_provider_with_url::<AnyNetwork>(fork_url)?;
             let ((evm_env, _block), tx) =
@@ -146,10 +152,15 @@ impl EvmOpts {
 
     /// Returns the [`EvmEnv`] (cfg + block) and [`BlockNumber`] fetched from the fork endpoint via
     /// provider
-    pub async fn fork_evm_env<N: Network, P: Provider<N>>(
+    pub async fn fork_evm_env<
+        SPEC: Into<SpecId> + Default + Copy,
+        BLOCK: FoundryBlock + Default,
+        N: Network,
+        P: Provider<N>,
+    >(
         &self,
         provider: &P,
-    ) -> eyre::Result<(EvmEnv, BlockNumber)> {
+    ) -> eyre::Result<(EvmEnv<SPEC, BLOCK>, BlockNumber)> {
         trace!(
             memory_limit = %self.memory_limit,
             override_chain_id = ?self.env.chain_id,
@@ -205,58 +216,57 @@ impl EvmOpts {
             block_env: block_env_from_header(block.header()),
         };
 
-        apply_chain_and_block_specific_env_changes::<N>(&mut evm_env, &block, self.networks);
+        apply_chain_and_block_specific_env_changes::<N, _, _>(&mut evm_env, &block, self.networks);
 
         Ok((evm_env, block_number))
     }
 
     /// Returns the [`EvmEnv`] configured with only local settings.
-    fn local_evm_env(&self) -> EvmEnv {
-        let gas_limit = self.gas_limit();
-        EvmEnv {
-            cfg_env: self.cfg_env(self.env.chain_id.unwrap_or(foundry_common::DEV_CHAIN_ID)),
-            block_env: BlockEnv {
-                number: self.env.block_number,
-                beneficiary: self.env.block_coinbase,
-                timestamp: self.env.block_timestamp,
-                difficulty: U256::from(self.env.block_difficulty),
-                prevrandao: Some(self.env.block_prevrandao),
-                basefee: self.env.block_base_fee_per_gas,
-                gas_limit,
-                ..Default::default()
-            },
-        }
+    fn local_evm_env<SPEC: Into<SpecId> + Default, BLOCK: FoundryBlock + Default>(
+        &self,
+    ) -> EvmEnv<SPEC, BLOCK> {
+        let cfg_env = self.cfg_env(self.env.chain_id.unwrap_or(foundry_common::DEV_CHAIN_ID));
+        let mut block_env = BLOCK::default();
+        block_env.set_number(self.env.block_number);
+        block_env.set_beneficiary(self.env.block_coinbase);
+        block_env.set_timestamp(self.env.block_timestamp);
+        block_env.set_difficulty(U256::from(self.env.block_difficulty));
+        block_env.set_prevrandao(Some(self.env.block_prevrandao));
+        block_env.set_basefee(self.env.block_base_fee_per_gas);
+        block_env.set_gas_limit(self.gas_limit());
+        EvmEnv::new(cfg_env, block_env)
     }
 
-    /// Returns the [`TxEnv`] with gas price and chain id resolved from provider.
-    async fn fork_tx_env<N: Network, P: Provider<N>>(&self, provider: &P) -> eyre::Result<TxEnv> {
+    /// Returns the `TxEnv` with gas price and chain id resolved from provider.
+    async fn fork_tx_env<TX: FoundryTransaction + Default, N: Network, P: Provider<N>>(
+        &self,
+        provider: &P,
+    ) -> eyre::Result<TX> {
         let (gas_price, chain_id) = tokio::try_join!(
             option_try_or_else(self.env.gas_price.map(|v| v as u128), async || {
                 provider.get_gas_price().await
             }),
             option_try_or_else(self.env.chain_id, async || provider.get_chain_id().await),
         )?;
-        Ok(TxEnv {
-            caller: self.sender,
-            gas_price,
-            chain_id: Some(chain_id),
-            gas_limit: self.gas_limit(),
-            ..Default::default()
-        })
+        let mut tx_env = TX::default();
+        tx_env.set_caller(self.sender);
+        tx_env.set_chain_id(Some(chain_id));
+        tx_env.set_gas_price(gas_price);
+        tx_env.set_gas_limit(self.gas_limit());
+        Ok(tx_env)
     }
 
-    /// Returns the [`TxEnv`] configured from local settings only.
-    fn local_tx_env(&self) -> TxEnv {
-        TxEnv {
-            caller: self.sender,
-            gas_price: self.env.gas_price.unwrap_or_default().into(),
-            gas_limit: self.gas_limit(),
-            ..Default::default()
-        }
+    /// Returns the `TxEnv` configured from local settings only.
+    fn local_tx_env<TX: FoundryTransaction + Default>(&self) -> TX {
+        let mut tx_env = TX::default();
+        tx_env.set_caller(self.sender);
+        tx_env.set_gas_price(self.env.gas_price.unwrap_or_default().into());
+        tx_env.set_gas_limit(self.gas_limit());
+        tx_env
     }
 
     /// Builds a [`CfgEnv`] from the options, using the provided [`ChainId`].
-    fn cfg_env(&self, chain_id: ChainId) -> CfgEnv {
+    fn cfg_env<SPEC: Into<SpecId> + Default>(&self, chain_id: ChainId) -> CfgEnv<SPEC> {
         let mut cfg = CfgEnv::default();
         cfg.chain_id = chain_id;
         cfg.memory_limit = self.memory_limit;
@@ -288,7 +298,7 @@ impl EvmOpts {
     ///
     /// for `mainnet` and `--fork-block-number 14435000` on mac the corresponding storage cache will
     /// be at `~/.foundry/cache/mainnet/14435000/storage.json`.
-    pub fn get_fork(&self, config: &Config, evm_env: EvmEnv) -> Option<CreateFork> {
+    pub fn get_fork(&self, config: &Config, evm_env: &EvmEnv) -> Option<CreateFork> {
         let url = self.fork_url.clone()?;
         let enable_caching = config.enable_caching(&url, evm_env.cfg_env.chain_id);
 
@@ -300,7 +310,7 @@ impl EvmOpts {
             evm_opts.fork_block_number = Some(evm_env.block_env.number.to());
         }
 
-        Some(CreateFork { url, enable_caching, evm_env, evm_opts })
+        Some(CreateFork { url, enable_caching, evm_opts })
     }
 
     /// Returns the gas limit to use
@@ -408,6 +418,8 @@ async fn option_try_or_else<T, E>(
 
 #[cfg(test)]
 mod tests {
+    use revm::context::{BlockEnv, TxEnv};
+
     use super::*;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -421,12 +433,12 @@ mod tests {
         assert!(evm_opts.fork_block_number.is_none());
 
         // Fetch the environment (this resolves "latest" to an actual block number)
-        let (evm_env, _) = evm_opts.env().await.unwrap();
+        let (evm_env, _) = evm_opts.env::<SpecId, BlockEnv, TxEnv>().await.unwrap();
         let resolved_block = evm_env.block_env.number;
         assert!(resolved_block > U256::ZERO, "should have resolved to a real block number");
 
         // Create the fork - this should pin the block number
-        let fork = evm_opts.get_fork(&Config::default(), evm_env).unwrap();
+        let fork = evm_opts.get_fork(&Config::default(), &evm_env).unwrap();
 
         // The fork's evm_opts should now have fork_block_number set to the resolved block
         assert_eq!(
@@ -446,9 +458,9 @@ mod tests {
         // Set an explicit block number
         evm_opts.fork_block_number = Some(12345678);
 
-        let (evm_env, _) = evm_opts.env().await.unwrap();
+        let (evm_env, _) = evm_opts.env::<SpecId, _, TxEnv>().await.unwrap();
 
-        let fork = evm_opts.get_fork(&Config::default(), evm_env).unwrap();
+        let fork = evm_opts.get_fork(&Config::default(), &evm_env).unwrap();
 
         // Should preserve the explicit block number, not override it
         assert_eq!(

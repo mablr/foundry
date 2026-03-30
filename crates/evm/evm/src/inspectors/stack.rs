@@ -5,17 +5,15 @@ use super::{
 use alloy_evm::EvmEnv;
 use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256,
-    map::{AddressHashMap, HashMap},
+    map::{AddressHashMap, AddressMap},
 };
-use foundry_cheatcodes::{
-    CheatcodeAnalysis, CheatcodesExecutor, EthCheatCtx, NestedEvmClosure, Wallets,
-};
+use foundry_cheatcodes::{CheatcodeAnalysis, CheatcodesExecutor, NestedEvmClosure, Wallets};
 use foundry_common::compile::Analysis;
 use foundry_evm_core::{
     FoundryBlock, FoundryTransaction, InspectorExt,
     backend::{DatabaseError, DatabaseExt, JournaledState},
     env::FoundryContextExt,
-    evm::{NestedEvm, new_revm_with_inspector, with_cloned_context},
+    evm::{NestedEvm, new_eth_evm_with_inspector, with_cloned_context},
 };
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_networks::NetworkConfigs;
@@ -33,6 +31,7 @@ use revm::{
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Gas, InstructionResult,
         Interpreter, InterpreterResult,
     },
+    primitives::hardfork::SpecId,
     state::{Account, AccountStatus},
 };
 use revm_inspectors::edge_cov::EdgeCovInspector;
@@ -346,7 +345,7 @@ pub struct InspectorStackInner {
     /// Flag marking if we are in the inner EVM context.
     pub in_inner_context: bool,
     pub inner_context_data: Option<InnerContextData>,
-    pub top_frame_journal: HashMap<Address, Account>,
+    pub top_frame_journal: AddressMap<Account>,
     /// Address that reverted the call, if any.
     pub reverter: Option<Address>,
 }
@@ -358,7 +357,15 @@ pub struct InspectorStackRefMut<'a> {
     pub inner: &'a mut InspectorStackInner,
 }
 
-impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
+impl<
+    CTX: FoundryContextExt<
+            Spec = SpecId,
+            Block = BlockEnv,
+            Tx = TxEnv,
+            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        >,
+> CheatcodesExecutor<CTX> for InspectorStackInner
+{
     fn with_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes,
@@ -367,7 +374,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
     ) -> Result<(), EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
-            let mut evm = new_revm_with_inspector(db, evm_env, &mut inspector);
+            let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).inner;
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
             let sub_inner = evm.journaled_state.inner.clone();
@@ -384,7 +391,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         f: NestedEvmClosure<'_, CTX::Tx>,
     ) -> Result<EvmEnv<CTX::Spec, CTX::Block>, EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
-        let mut evm = new_revm_with_inspector(db, evm_env, &mut inspector);
+        let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).inner;
         f(&mut evm)?;
         Ok(evm.ctx_ref().evm_clone())
     }
@@ -407,7 +414,7 @@ impl<CTX: EthCheatCtx> CheatcodesExecutor<CTX> for InspectorStackInner {
         &mut self,
         cheats: &mut Cheatcodes,
         ecx: &mut CTX,
-        tx_env: &CTX::Tx,
+        tx_env: CTX::Tx,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
@@ -633,7 +640,14 @@ impl InspectorStackRefMut<'_> {
         ecx.tx_mut().set_caller(inner_context_data.original_origin);
     }
 
-    fn do_call_end<CTX: EthCheatCtx>(
+    fn do_call_end<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Block = BlockEnv,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
         &mut self,
         ecx: &mut CTX,
         inputs: &CallInputs,
@@ -668,7 +682,14 @@ impl InspectorStackRefMut<'_> {
         }
     }
 
-    fn do_create_end<CTX: EthCheatCtx>(
+    fn do_create_end<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Block = BlockEnv,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
         &mut self,
         ecx: &mut CTX,
         call: &CreateInputs,
@@ -692,7 +713,14 @@ impl InspectorStackRefMut<'_> {
         );
     }
 
-    fn transact_inner<CTX: EthCheatCtx>(
+    fn transact_inner<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Block = BlockEnv,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
         &mut self,
         ecx: &mut CTX,
         kind: TxKind,
@@ -732,7 +760,7 @@ impl InspectorStackRefMut<'_> {
         let res = self.with_inspector(|mut inspector| {
             let (res, nested_env) = {
                 let (db, journal) = ecx.db_journal_inner_mut();
-                let mut evm = new_revm_with_inspector(db, evm_env, &mut inspector);
+                let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).inner;
 
                 evm.journal_inner_mut().state = {
                     let mut state = journal.state.clone();
@@ -809,21 +837,21 @@ impl InspectorStackRefMut<'_> {
         }
 
         let (result, address, output) = match res.result {
-            ExecutionResult::Success { reason, gas_used, gas_refunded, logs: _, output } => {
-                gas.set_refund(gas_refunded as i64);
-                let _ = gas.record_cost(gas_used);
+            ExecutionResult::Success { reason, gas: result_gas, logs: _, output } => {
+                gas.set_refund(result_gas.final_refunded() as i64);
+                let _ = gas.record_cost(result_gas.used());
                 let address = match output {
                     Output::Create(_, address) => address,
                     Output::Call(_) => None,
                 };
                 (reason.into(), address, output.into_data())
             }
-            ExecutionResult::Halt { reason, gas_used } => {
-                let _ = gas.record_cost(gas_used);
+            ExecutionResult::Halt { reason, gas: result_gas, .. } => {
+                let _ = gas.record_cost(result_gas.used());
                 (reason.into(), None, Bytes::new())
             }
-            ExecutionResult::Revert { gas_used, output } => {
-                let _ = gas.record_cost(gas_used);
+            ExecutionResult::Revert { gas: result_gas, output, .. } => {
+                let _ = gas.record_cost(result_gas.used());
                 (InstructionResult::Revert, None, output)
             }
         };
@@ -889,7 +917,18 @@ impl InspectorStackRefMut<'_> {
     // delegate to `InspectorStackRefMut` in this case.
 
     #[inline(always)]
-    fn step_inlined<CTX: EthCheatCtx>(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step_inlined<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Block = BlockEnv,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut CTX,
+    ) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -908,7 +947,18 @@ impl InspectorStackRefMut<'_> {
     }
 
     #[inline(always)]
-    fn step_end_inlined<CTX: EthCheatCtx>(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step_end_inlined<
+        CTX: FoundryContextExt<
+                Spec = SpecId,
+                Block = BlockEnv,
+                Tx = TxEnv,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+    >(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut CTX,
+    ) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -924,7 +974,15 @@ impl InspectorStackRefMut<'_> {
     }
 }
 
-impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStackRefMut<'_> {
+impl<
+    CTX: FoundryContextExt<
+            Spec = SpecId,
+            Block = BlockEnv,
+            Tx = TxEnv,
+            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        >,
+> Inspector<CTX> for InspectorStackRefMut<'_>
+{
     fn initialize_interp(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         call_inspectors!(
             [
@@ -1155,7 +1213,15 @@ impl InspectorExt for InspectorStackRefMut<'_> {
     }
 }
 
-impl<CTX: EthCheatCtx> Inspector<CTX> for InspectorStack {
+impl<
+    CTX: FoundryContextExt<
+            Spec = SpecId,
+            Block = BlockEnv,
+            Tx = TxEnv,
+            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+        >,
+> Inspector<CTX> for InspectorStack
+{
     fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
         self.as_mut().step_inlined(interpreter, ecx)
     }
