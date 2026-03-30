@@ -1,6 +1,6 @@
 //! Implementations of [`Testing`](spec::Group::Testing) cheatcodes.
 
-use crate::{Cheatcode, Cheatcodes, CheatsCtxt, EthCheatCtx, Result, Vm::*};
+use crate::{Cheatcode, Cheatcodes, CheatsCtxt, Result, Vm::*};
 use alloy_chains::Chain as AlloyChain;
 use alloy_primitives::{Address, U256};
 use alloy_sol_types::SolValue;
@@ -67,9 +67,16 @@ impl Cheatcode for sleepCall {
 }
 
 impl Cheatcode for skip_0Call {
-    fn apply_stateful<CTX: EthCheatCtx>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
+    fn apply_stateful<CTX: ContextTr>(&self, ccx: &mut CheatsCtxt<'_, CTX>) -> Result {
         let Self { skipTest } = *self;
-        skip_1Call { skipTest, reason: String::new() }.apply_stateful(ccx)
+        if skipTest {
+            // Skip should not work if called deeper than at test level.
+            // Since we're not returning the magic skip bytes, this will cause a test failure.
+            ensure!(ccx.ecx.journal().depth() <= 1, "`skip` can only be used at test level");
+            Err([MAGIC_SKIP, &[]].concat().into())
+        } else {
+            Ok(Default::default())
+        }
     }
 }
 
