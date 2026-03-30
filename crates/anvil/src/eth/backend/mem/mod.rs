@@ -8,7 +8,10 @@ use crate::{
         backend::{
             cheats::{CheatEcrecover, CheatsManager},
             db::{AnvilCacheDB, Db, MaybeFullDatabase, SerializableState, StateDb},
-            executor::{AnvilBlockExecutor, build_tx_env_for_pending},
+            executor::{
+                AnvilBlockExecutor, PoolTxGasConfig, build_tx_env_for_pending,
+                execute_pool_transactions,
+            },
             fork::ClientFork,
             genesis::GenesisConfig,
             mem::{
@@ -54,7 +57,7 @@ use alloy_network::{
     ReceiptResponse, TransactionBuilder, UnknownTxEnvelope, UnknownTypedTransaction,
 };
 use alloy_primitives::{
-    Address, B256, Bloom, BloomInput, Bytes, TxHash, TxKind, U64, U256, hex, keccak256, logs_bloom,
+    Address, B256, Bloom, Bytes, TxHash, TxKind, U64, U256, hex, keccak256, logs_bloom,
     map::{AddressMap, HashMap, HashSet},
 };
 use alloy_rpc_types::{
@@ -2254,15 +2257,8 @@ where
                 let mut executor = AnvilBlockExecutor::new(evm, best_hash, spec_id);
                 executor.apply_pre_execution_changes().expect("pre-execution changes failed");
 
-                // 5. Per-tx loop
-                let mut included: Vec<Arc<PoolTransaction<FoundryTxEnvelope>>> = Vec::new();
-                let mut invalid: Vec<Arc<PoolTransaction<FoundryTxEnvelope>>> = Vec::new();
-                let mut transaction_infos: Vec<TransactionInfo> = Vec::new();
-                let mut transactions = Vec::new();
-                let mut bloom = Bloom::default();
-
+                // 5. Execute pool transactions
                 let blob_params = self.blob_params();
-                let mut cumulative_blob_gas_used = if is_cancun { Some(0u64) } else { None };
 
                 let inspector_tx_config = InspectorTxConfig {
                     print_traces: self.print_traces,
@@ -2271,156 +2267,29 @@ where
                     call_trace_decoder: self.call_trace_decoder.clone(),
                 };
 
-                for pool_tx in pool_transactions {
-                    let pending = &pool_tx.pending_transaction;
-                    let sender = *pending.sender();
+                let gas_config = PoolTxGasConfig {
+                    disable_block_gas_limit: evm_env.cfg_env.disable_block_gas_limit,
+                    tx_gas_limit_cap: evm_env.cfg_env.tx_gas_limit_cap,
+                    tx_gas_limit_cap_resolved: evm_env.cfg_env.tx_gas_limit_cap(),
+                    max_blob_gas_per_block: blob_params.max_blob_gas_per_block(),
+                    is_cancun,
+                };
 
-                    let account = match executor
-                        .evm_mut()
-                        .db_mut()
-                        .basic(sender)
-                        .map(|a| a.unwrap_or_default())
-                    {
-                        Ok(acc) => acc,
-                        Err(err) => {
-                            trace!(target: "backend", ?err, "db error for tx {:?}, skipping", pool_tx.hash());
-                            continue;
-                        }
-                    };
+                let pool_result = execute_pool_transactions(
+                    &mut executor,
+                    &pool_transactions,
+                    &gas_config,
+                    &inspector_tx_config,
+                    self.cheats(),
+                    &|pending, account| {
+                        self.validate_pool_transaction_for(pending, account, &evm_env)
+                    },
+                );
 
-                    // Build the per-tx env
-                    let tx_env =
-                        build_tx_env_for_pending(pending, self.cheats(), self.is_optimism());
-
-                    // Gas limit checks (same logic as TransactionExecutor::next)
-                    let cumulative_gas =
-                        executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);
-                    let max_block_gas =
-                        cumulative_gas.saturating_add(pending.transaction.gas_limit());
-                    if !evm_env.cfg_env.disable_block_gas_limit && max_block_gas > gas_limit {
-                        trace!(target: "backend", tx_gas_limit = %pending.transaction.gas_limit(), ?pool_tx, "block gas limit exhausting, skipping transaction");
-                        continue;
-                    }
-
-                    // Osaka EIP-7825 tx gas limit cap check
-                    if evm_env.cfg_env.tx_gas_limit_cap.is_none()
-                        && pending.transaction.gas_limit() > evm_env.cfg_env.tx_gas_limit_cap()
-                    {
-                        trace!(target: "backend", tx_gas_limit = %pending.transaction.gas_limit(), ?pool_tx, "transaction gas limit exhausting, skipping transaction");
-                        continue;
-                    }
-
-                    // Blob gas check
-                    let tx_blob_gas = pending.transaction.blob_gas_used().unwrap_or(0);
-                    let current_blob_gas = cumulative_blob_gas_used.unwrap_or(0);
-                    if current_blob_gas.saturating_add(tx_blob_gas)
-                        > blob_params.max_blob_gas_per_block()
-                    {
-                        trace!(target: "backend", blob_gas = %tx_blob_gas, ?pool_tx, "block blob gas limit exhausting, skipping transaction");
-                        continue;
-                    }
-
-                    // Validate
-                    if let Err(err) =
-                        self.validate_pool_transaction_for(pending, &account, &evm_env)
-                    {
-                        warn!(target: "backend", "Skipping invalid tx execution [{:?}] {}", pool_tx.hash(), err);
-                        invalid.push(pool_tx.clone());
-                        continue;
-                    }
-
-                    let nonce = account.nonce;
-
-                    // Execute via block executor
-                    let recovered =
-                        Recovered::new_unchecked(pending.transaction.as_ref().clone(), sender);
-                    trace!(target: "backend", "[{:?}] executing", pool_tx.hash());
-                    match executor.execute_transaction_without_commit((tx_env, recovered)) {
-                        Ok(result) => {
-                            let exec_result = result.inner.result.result.clone();
-                            let gas_used = result.inner.result.result.gas_used();
-
-                            executor.commit_transaction(result).expect("commit failed");
-
-                            let traces = executor
-                                .evm_mut()
-                                .inspector_mut()
-                                .finish_transaction(&inspector_tx_config);
-
-                            // Track blob gas
-                            if is_cancun {
-                                cumulative_blob_gas_used = Some(
-                                    cumulative_blob_gas_used
-                                        .unwrap_or(0)
-                                        .saturating_add(tx_blob_gas),
-                                );
-                            }
-
-                            let (exit_reason, out, logs) = match exec_result {
-                                ExecutionResult::Success {
-                                    reason,
-                                    gas_used: _,
-                                    logs,
-                                    output,
-                                    ..
-                                } => (reason.into(), Some(output), logs),
-                                ExecutionResult::Revert { gas_used: _, output } => (
-                                    InstructionResult::Revert,
-                                    Some(Output::Call(output)),
-                                    Vec::new(),
-                                ),
-                                ExecutionResult::Halt { reason, gas_used: _ } => {
-                                    (reason.into_instruction_result(), None, Vec::new())
-                                }
-                            };
-
-                            if exit_reason == InstructionResult::OutOfGas {
-                                warn!(target: "backend", "[{:?}] executed with out of gas", pool_tx.hash());
-                            }
-
-                            trace!(target: "backend", ?exit_reason, ?gas_used, "[{:?}] executed with out={:?}", pool_tx.hash(), out);
-                            trace!(target: "backend::executor", "transacted [{:?}], result: {:?} gas {}", pool_tx.hash(), exit_reason, gas_used);
-
-                            // Build bloom from logs
-                            for log in &logs {
-                                bloom.accrue(BloomInput::Raw(&log.address[..]));
-                                for topic in log.topics() {
-                                    bloom.accrue(BloomInput::Raw(&topic[..]));
-                                }
-                            }
-
-                            // Contract address for creation txs
-                            let contract_address = if pending.transaction.to().is_none() {
-                                let addr = sender.create(nonce);
-                                trace!(target: "backend", "Contract creation tx: computed address {:?}", addr);
-                                Some(addr)
-                            } else {
-                                None
-                            };
-
-                            let transaction_index = transaction_infos.len() as u64;
-                            let info = TransactionInfo {
-                                transaction_hash: pool_tx.hash(),
-                                transaction_index,
-                                from: sender,
-                                to: pending.transaction.to(),
-                                contract_address,
-                                traces,
-                                exit: exit_reason,
-                                out: out.map(Output::into_data),
-                                nonce,
-                                gas_used,
-                            };
-
-                            included.push(pool_tx.clone());
-                            transaction_infos.push(info);
-                            transactions.push(pending.transaction.clone());
-                        }
-                        Err(err) => {
-                            trace!(target: "backend", ?err, "tx execution error, skipping {:?}", pool_tx.hash());
-                        }
-                    }
-                }
+                let included = pool_result.included;
+                let invalid = pool_result.invalid;
+                let transaction_infos = pool_result.tx_info;
+                let transactions = pool_result.txs;
 
                 // 6. Finish — drop EVM BEFORE accessing db again
                 let (evm, block_result) = executor.finish().expect("executor finish failed");
@@ -2430,8 +2299,12 @@ where
 
                 // 7. Build block header
                 let receipts_root = calculate_receipt_root(&block_result.receipts);
-
                 let cumulative_gas_used = block_result.gas_used;
+                let cumulative_blob_gas_used = is_cancun.then_some(block_result.blob_gas_used);
+                let bloom = block_result.receipts.iter().fold(Bloom::default(), |mut b, r| {
+                    b.accrue_bloom(r.logs_bloom());
+                    b
+                });
 
                 let header = Header {
                     parent_hash: best_hash,
@@ -2652,12 +2525,7 @@ where
         let mut executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id);
         executor.apply_pre_execution_changes().expect("pre-execution changes failed");
 
-        let mut transaction_infos: Vec<TransactionInfo> = Vec::new();
-        let mut transactions = Vec::new();
-        let mut bloom = Bloom::default();
-
         let blob_params = self.blob_params();
-        let mut cumulative_blob_gas_used = if is_cancun { Some(0u64) } else { None };
 
         let inspector_tx_config = InspectorTxConfig {
             print_traces: self.print_traces,
@@ -2666,119 +2534,25 @@ where
             call_trace_decoder: self.call_trace_decoder.clone(),
         };
 
-        for pool_tx in pool_transactions {
-            let pending = &pool_tx.pending_transaction;
-            let sender = *pending.sender();
+        let gas_config = PoolTxGasConfig {
+            disable_block_gas_limit: evm_env.cfg_env.disable_block_gas_limit,
+            tx_gas_limit_cap: evm_env.cfg_env.tx_gas_limit_cap,
+            tx_gas_limit_cap_resolved: evm_env.cfg_env.tx_gas_limit_cap(),
+            max_blob_gas_per_block: blob_params.max_blob_gas_per_block(),
+            is_cancun,
+        };
 
-            let account = match executor
-                .evm_mut()
-                .db_mut()
-                .basic(sender)
-                .map(|a| a.unwrap_or_default())
-            {
-                Ok(acc) => acc,
-                Err(err) => {
-                    trace!(target: "backend", ?err, "db error for tx {:?}, skipping", pool_tx.hash());
-                    continue;
-                }
-            };
+        let pool_result = execute_pool_transactions(
+            &mut executor,
+            &pool_transactions,
+            &gas_config,
+            &inspector_tx_config,
+            self.cheats(),
+            &|pending, account| self.validate_pool_transaction_for(pending, account, &evm_env),
+        );
 
-            let tx_env = build_tx_env_for_pending(pending, self.cheats(), self.is_optimism());
-
-            let cumulative_gas =
-                executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);
-            let max_block_gas = cumulative_gas.saturating_add(pending.transaction.gas_limit());
-            if !evm_env.cfg_env.disable_block_gas_limit && max_block_gas > gas_limit {
-                trace!(target: "backend", tx_gas_limit = %pending.transaction.gas_limit(), ?pool_tx, "block gas limit exhausting, skipping transaction");
-                continue;
-            }
-
-            if evm_env.cfg_env.tx_gas_limit_cap.is_none()
-                && pending.transaction.gas_limit() > evm_env.cfg_env.tx_gas_limit_cap()
-            {
-                trace!(target: "backend", tx_gas_limit = %pending.transaction.gas_limit(), ?pool_tx, "transaction gas limit exhausting, skipping transaction");
-                continue;
-            }
-
-            let tx_blob_gas = pending.transaction.blob_gas_used().unwrap_or(0);
-            let current_blob_gas = cumulative_blob_gas_used.unwrap_or(0);
-            if current_blob_gas.saturating_add(tx_blob_gas) > blob_params.max_blob_gas_per_block() {
-                trace!(target: "backend", blob_gas = %tx_blob_gas, ?pool_tx, "block blob gas limit exhausting, skipping transaction");
-                continue;
-            }
-
-            if let Err(err) = self.validate_pool_transaction_for(pending, &account, &evm_env) {
-                warn!(target: "backend", "Skipping invalid tx execution [{:?}] {}", pool_tx.hash(), err);
-                continue;
-            }
-
-            let nonce = account.nonce;
-
-            let recovered = Recovered::new_unchecked(pending.transaction.as_ref().clone(), sender);
-            trace!(target: "backend", "[{:?}] executing", pool_tx.hash());
-            match executor.execute_transaction_without_commit((tx_env, recovered)) {
-                Ok(result) => {
-                    let exec_result = result.inner.result.result.clone();
-                    let gas_used = result.inner.result.result.gas_used();
-
-                    executor.commit_transaction(result).expect("commit failed");
-
-                    let traces =
-                        executor.evm_mut().inspector_mut().finish_transaction(&inspector_tx_config);
-
-                    if is_cancun {
-                        cumulative_blob_gas_used =
-                            Some(cumulative_blob_gas_used.unwrap_or(0).saturating_add(tx_blob_gas));
-                    }
-
-                    let (exit_reason, out, logs) = match exec_result {
-                        ExecutionResult::Success { reason, gas_used: _, logs, output, .. } => {
-                            (reason.into(), Some(output), logs)
-                        }
-                        ExecutionResult::Revert { gas_used: _, output } => {
-                            (InstructionResult::Revert, Some(Output::Call(output)), Vec::new())
-                        }
-                        ExecutionResult::Halt { reason, gas_used: _ } => {
-                            (reason.into_instruction_result(), None, Vec::new())
-                        }
-                    };
-
-                    for log in &logs {
-                        bloom.accrue(BloomInput::Raw(&log.address[..]));
-                        for topic in log.topics() {
-                            bloom.accrue(BloomInput::Raw(&topic[..]));
-                        }
-                    }
-
-                    let contract_address = if pending.transaction.to().is_none() {
-                        let addr = sender.create(nonce);
-                        Some(addr)
-                    } else {
-                        None
-                    };
-
-                    let transaction_index = transaction_infos.len() as u64;
-                    let info = TransactionInfo {
-                        transaction_hash: pool_tx.hash(),
-                        transaction_index,
-                        from: sender,
-                        to: pending.transaction.to(),
-                        contract_address,
-                        traces,
-                        exit: exit_reason,
-                        out: out.map(Output::into_data),
-                        nonce,
-                        gas_used,
-                    };
-
-                    transaction_infos.push(info);
-                    transactions.push(pending.transaction.clone());
-                }
-                Err(err) => {
-                    trace!(target: "backend", ?err, "tx execution error, skipping {:?}", pool_tx.hash());
-                }
-            }
-        }
+        let transaction_infos = pool_result.tx_info;
+        let transactions = pool_result.txs;
 
         let (evm, block_result) = executor.finish().expect("executor finish failed");
         drop(evm);
@@ -2787,8 +2561,14 @@ where
         let cache_db = cache_db.0;
 
         let state_root = cache_db.maybe_state_root().unwrap_or_default();
+
         let receipts_root = calculate_receipt_root(&block_result.receipts);
         let cumulative_gas_used = block_result.gas_used;
+        let cumulative_blob_gas_used = is_cancun.then_some(block_result.blob_gas_used);
+        let bloom = block_result.receipts.iter().fold(Bloom::default(), |mut b, r| {
+            b.accrue_bloom(r.logs_bloom());
+            b
+        });
 
         let header = Header {
             parent_hash,
@@ -3265,7 +3045,7 @@ where
                     Err(_) => continue,
                 };
 
-                let tx_env = build_tx_env_for_pending(pending, self.cheats(), self.is_optimism());
+                let tx_env = build_tx_env_for_pending(pending, self.cheats());
 
                 let cumulative_gas =
                     replay_executor.receipts().last().map(|r| r.cumulative_gas_used()).unwrap_or(0);

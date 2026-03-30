@@ -31,22 +31,6 @@ use revm::{
     primitives::hardfork::SpecId,
 };
 
-pub fn new_revm_with_inspector<
-    'db,
-    I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
->(
-    db: &'db mut dyn DatabaseExt,
-    evm_env: EvmEnv,
-    inspector: I,
-) -> EthRevmEvm<'db, I> {
-    let mut revm = alloy_evm::EthEvmFactory::default()
-        .create_evm_with_inspector(db, evm_env, inspector)
-        .into_inner();
-    revm.ctx.cfg.tx_chain_id_check = true;
-    revm.inspector.get_networks().inject_precompiles(&mut revm.precompiles);
-    revm
-}
-
 pub fn new_eth_evm_with_inspector<
     'db,
     I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
@@ -95,7 +79,7 @@ type EthRevmEvm<'db, I> = RevmEvm<
 >;
 
 pub struct FoundryEvm<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> {
-    inner: EthRevmEvm<'db, I>,
+    pub inner: EthRevmEvm<'db, I>,
 }
 
 impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Evm
