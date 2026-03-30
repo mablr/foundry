@@ -54,6 +54,7 @@ revm = { workspace = true, features = [
 ] }
 revm-inspectors.workspace = true
 op-revm.workspace = true
+tempo-revm.workspace = true
 alloy-op-evm.workspace = true
 
 auto_impl.workspace = true
@@ -72,3 +73,4 @@ url.workspace = true
 alloy-serde.workspace = true
 op-alloy-consensus.workspace = true
 foundry-test-utils.workspace = true
+tempo-evm.workspace = true

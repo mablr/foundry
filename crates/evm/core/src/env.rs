@@ -21,6 +21,7 @@ use revm::{
     inspector::JournalExt,
     primitives::{TxKind, hardfork::SpecId},
 };
+use tempo_revm::{TempoBlockEnv, TempoTxEnv};
 
 use crate::backend::JournaledState;
 
@@ -90,6 +91,43 @@ impl FoundryBlock for BlockEnv {
         base_fee_update_fraction: u64,
     ) {
         self.set_blob_excess_gas_and_price(excess_blob_gas, base_fee_update_fraction);
+    }
+}
+
+impl FoundryBlock for TempoBlockEnv {
+    fn set_number(&mut self, number: U256) {
+        self.inner.set_number(number);
+    }
+
+    fn set_beneficiary(&mut self, beneficiary: Address) {
+        self.inner.set_beneficiary(beneficiary);
+    }
+
+    fn set_timestamp(&mut self, timestamp: U256) {
+        self.inner.set_timestamp(timestamp);
+    }
+
+    fn set_gas_limit(&mut self, gas_limit: u64) {
+        self.inner.set_gas_limit(gas_limit);
+    }
+
+    fn set_basefee(&mut self, basefee: u64) {
+        self.inner.set_basefee(basefee);
+    }
+
+    fn set_difficulty(&mut self, difficulty: U256) {
+        self.inner.set_difficulty(difficulty);
+    }
+
+    fn set_prevrandao(&mut self, prevrandao: Option<B256>) {
+        self.inner.set_prevrandao(prevrandao);
+    }
+
+    fn set_blob_excess_gas_and_price(
+        &mut self,
+        _excess_blob_gas: u64,
+        _base_fee_update_fraction: u64,
+    ) {
     }
 }
 
@@ -334,6 +372,62 @@ impl<TX: FoundryTransaction> FoundryTransaction for OpTransaction<TX> {
     }
 }
 
+impl FoundryTransaction for TempoTxEnv {
+    fn set_tx_type(&mut self, tx_type: u8) {
+        self.inner.set_tx_type(tx_type);
+    }
+
+    fn set_caller(&mut self, caller: Address) {
+        self.inner.set_caller(caller);
+    }
+
+    fn set_gas_limit(&mut self, gas_limit: u64) {
+        self.inner.set_gas_limit(gas_limit);
+    }
+
+    fn set_gas_price(&mut self, gas_price: u128) {
+        self.inner.set_gas_price(gas_price);
+    }
+
+    fn set_kind(&mut self, kind: TxKind) {
+        self.inner.set_kind(kind);
+    }
+
+    fn set_value(&mut self, value: U256) {
+        self.inner.set_value(value);
+    }
+
+    fn set_data(&mut self, data: Bytes) {
+        self.inner.set_data(data);
+    }
+
+    fn set_nonce(&mut self, nonce: u64) {
+        self.inner.set_nonce(nonce);
+    }
+
+    fn set_chain_id(&mut self, chain_id: Option<u64>) {
+        self.inner.set_chain_id(chain_id);
+    }
+
+    fn set_access_list(&mut self, access_list: AccessList) {
+        self.inner.set_access_list(access_list);
+    }
+
+    fn authorization_list_mut(
+        &mut self,
+    ) -> &mut Vec<Either<SignedAuthorization, RecoveredAuthorization>> {
+        self.inner.authorization_list_mut()
+    }
+
+    fn set_gas_priority_fee(&mut self, gas_priority_fee: Option<u128>) {
+        self.inner.set_gas_priority_fee(gas_priority_fee);
+    }
+
+    fn set_blob_hashes(&mut self, _blob_hashes: Vec<B256>) {}
+
+    fn set_max_fee_per_blob_gas(&mut self, _max_fee_per_blob_gas: u128) {}
+}
+
 /// Extension trait providing mutable field access to block, tx, and cfg environments.
 ///
 /// [`ContextTr`] only exposes immutable references for block, tx, and cfg.
@@ -473,9 +567,11 @@ mod tests {
     use alloy_primitives::Signature;
     use alloy_rpc_types::TransactionInfo;
     use alloy_serde::WithOtherFields;
+    use foundry_evm_hardforks::TempoHardfork;
     use op_alloy_consensus::{OpTxEnvelope, TxDeposit, transaction::OpTransactionInfo};
     use op_revm::OpSpecId;
     use revm::database::EmptyDB;
+    use tempo_evm::TempoEvmFactory;
 
     fn make_signed_eip1559() -> Signed<TxEip1559> {
         Signed::new_unchecked(
@@ -616,6 +712,29 @@ mod tests {
         // Test EVM Context Cfg mutation
         evm.ctx_mut().cfg_mut().spec = OpSpecId::JOVIAN;
         assert_eq!(evm.ctx().cfg().spec, OpSpecId::JOVIAN);
+
+        // Round-trip test to ensure no issues with cloning and setting tx_env and evm_env
+        let tx_env = evm.ctx().tx_clone();
+        evm.ctx_mut().set_tx(tx_env);
+        let evm_env = evm.ctx().evm_clone();
+        evm.ctx_mut().set_evm(evm_env);
+    }
+
+    #[test]
+    fn tempo_evm_foundry_context_ext_implementation() {
+        let mut evm = TempoEvmFactory::default().create_evm(EmptyDB::default(), EvmEnv::default());
+
+        // Test EVM Context Block mutation
+        evm.ctx_mut().block_mut().set_number(U256::from(123));
+        assert_eq!(evm.ctx().block().number(), U256::from(123));
+
+        // Test EVM Context Tx mutation
+        evm.ctx_mut().tx_mut().set_nonce(99);
+        assert_eq!(evm.ctx().tx().nonce(), 99);
+
+        // Test EVM Context Cfg mutation
+        evm.ctx_mut().cfg_mut().spec = TempoHardfork::Genesis;
+        assert_eq!(evm.ctx().cfg().spec, TempoHardfork::Genesis);
 
         // Round-trip test to ensure no issues with cloning and setting tx_env and evm_env
         let tx_env = evm.ctx().tx_clone();
