@@ -216,6 +216,24 @@ pub trait FoundryTransaction: Transaction {
     fn is_deposit(&self) -> bool {
         self.tx_type() == DEPOSIT_TRANSACTION_TYPE
     }
+
+    // Tempo methods
+
+    /// Returns the fee token address for this transaction.
+    fn fee_token(&self) -> Option<Address> {
+        None
+    }
+
+    /// Sets the fee token address for this transaction.
+    fn set_fee_token(&mut self, _token: Option<Address>) {}
+
+    /// Returns the fee payer for this transaction.
+    fn fee_payer(&self) -> Option<Option<Address>> {
+        None
+    }
+
+    /// Sets the fee payer for this transaction.
+    fn set_fee_payer(&mut self, _payer: Option<Option<Address>>) {}
 }
 
 impl FoundryTransaction for TxEnv {
@@ -426,6 +444,22 @@ impl FoundryTransaction for TempoTxEnv {
     fn set_blob_hashes(&mut self, _blob_hashes: Vec<B256>) {}
 
     fn set_max_fee_per_blob_gas(&mut self, _max_fee_per_blob_gas: u128) {}
+
+    fn fee_token(&self) -> Option<Address> {
+        self.fee_token
+    }
+
+    fn set_fee_token(&mut self, token: Option<Address>) {
+        self.fee_token = token;
+    }
+
+    fn fee_payer(&self) -> Option<Option<Address>> {
+        self.fee_payer
+    }
+
+    fn set_fee_payer(&mut self, payer: Option<Option<Address>>) {
+        self.fee_payer = payer;
+    }
 }
 
 /// Extension trait providing mutable field access to block, tx, and cfg environments.
