@@ -9,7 +9,7 @@ use crate::{
     utils::get_blob_base_fee_update_fraction,
 };
 use alloy_consensus::{BlockHeader, Typed2718};
-use alloy_evm::{Evm, EvmEnv, EvmFactory, eth::EthEvmContext};
+use alloy_evm::{EthEvmFactory, Evm, EvmEnv, EvmFactory, eth::EthEvmContext};
 use alloy_genesis::GenesisAccount;
 use alloy_network::{AnyNetwork, BlockResponse, Network, TransactionResponse};
 use alloy_primitives::{Address, B256, TxKind, U256, keccak256, uint};
@@ -17,13 +17,14 @@ use alloy_rpc_types::BlockNumberOrTag;
 use eyre::Context;
 use foundry_common::{SYSTEM_TRANSACTION_TYPE, is_known_system_sender};
 pub use foundry_fork_db::{BlockchainDb, SharedBackend, cache::BlockchainDbMeta};
+use itertools::Itertools;
 use revm::{
     Database, DatabaseCommit, JournalEntry,
     bytecode::Bytecode,
-    context::{BlockEnv, JournalInner, TxEnv},
+    context::{BlockEnv, CfgEnv, JournalInner, TxEnv},
     context_interface::{journaled_state::account::JournaledAccountTr, result::ResultAndState},
-    database::{CacheDB, DatabaseRef},
-    precompile::{PrecompileSpecId, Precompiles},
+    database::{CacheDB, DatabaseRef, EmptyDB},
+    handler::PrecompileProvider,
     primitives::{HashMap as Map, KECCAK_EMPTY, Log, hardfork::SpecId},
     state::{Account, AccountInfo, EvmState, EvmStorageSlot},
 };
@@ -791,7 +792,7 @@ where
 
     /// Returns true if the address is a precompile
     pub fn is_existing_precompile(&self, addr: &Address) -> bool {
-        self.inner.precompiles().contains(addr)
+        self.inner.precompiles().addresses().contains(addr)
     }
 
     /// Sets the initial journaled state to use when initializing forks
@@ -1657,7 +1658,7 @@ impl<N: Network> Fork<N> {
 
 /// Container type for various Backend related data
 #[derive(Clone, Debug)]
-pub struct BackendInner<N: Network> {
+pub struct BackendInner<N: Network, F: EvmFactory + Clone = EthEvmFactory> {
     /// Stores the `ForkId` of the fork the `Backend` launched with from the start.
     ///
     /// In other words if [`Backend::spawn()`] was called with a `CreateFork` command, to launch
@@ -1683,7 +1684,7 @@ pub struct BackendInner<N: Network> {
     pub forks: Vec<Option<Fork<N>>>,
     /// Contains state snapshots made at a certain point
     pub state_snapshots:
-        StateSnapshots<BackendStateSnapshot<BackendDatabaseSnapshot<N>, SpecId, BlockEnv>>,
+        StateSnapshots<BackendStateSnapshot<BackendDatabaseSnapshot<N>, F::Spec, F::BlockEnv>>,
     /// Tracks whether there was a failure in a snapshot that was reverted
     ///
     /// The Test contract contains a bool variable that is set to true when an `assert` function
@@ -1703,12 +1704,12 @@ pub struct BackendInner<N: Network> {
     /// instead the use only one that's persistent across fork swaps.
     pub persistent_accounts: HashSet<Address>,
     /// The configured spec id
-    pub spec_id: SpecId,
+    pub spec_id: F::Spec,
     /// All accounts that are allowed to execute cheatcodes
     pub cheatcode_access_accounts: HashSet<Address>,
 }
 
-impl<N: Network> BackendInner<N> {
+impl<N: Network, F: EvmFactory + Clone> BackendInner<N, F> {
     pub fn ensure_fork_id(&self, id: LocalForkId) -> eyre::Result<&ForkId> {
         self.issued_local_fork_ids
             .get(&id)
@@ -1863,25 +1864,41 @@ impl<N: Network> BackendInner<N> {
         self.issued_local_fork_ids.is_empty()
     }
 
-    pub fn precompiles(&self) -> &'static Precompiles {
-        Precompiles::new(PrecompileSpecId::from_spec_id(self.spec_id))
+    pub fn precompiles(&self) -> F::Precompiles
+    where
+        F: Default,
+        F::Spec: Into<SpecId>,
+        F::BlockEnv: Default,
+        F::Precompiles: PrecompileProvider<F::Context<EmptyDB>> + Clone,
+    {
+        let evm = F::default().create_evm(
+            EmptyDB::default(),
+            EvmEnv::new(CfgEnv::new_with_spec(self.spec_id), Default::default()),
+        );
+        evm.precompiles().clone()
     }
 
     /// Returns a new, empty, `JournaledState` with set precompiles
-    pub fn new_journaled_state(&self) -> JournaledState {
+    pub fn new_journaled_state(&self) -> JournaledState
+    where
+        F: Default,
+        F::Spec: Into<SpecId>,
+        F::BlockEnv: Default,
+        F::Precompiles: PrecompileProvider<F::Context<EmptyDB>> + Clone,
+    {
         let mut journal = {
             let mut journal_inner = JournalInner::new();
-            journal_inner.set_spec_id(self.spec_id);
+            journal_inner.set_spec_id(self.spec_id.into());
             journal_inner
         };
         journal
             .warm_addresses
-            .set_precompile_addresses(self.precompiles().addresses().copied().collect());
+            .set_precompile_addresses(self.precompiles().warm_addresses().collect());
         journal
     }
 }
 
-impl<N: Network> Default for BackendInner<N> {
+impl<N: Network, F: EvmFactory + Clone> Default for BackendInner<N, F> {
     fn default() -> Self {
         Self {
             launched_with_fork: None,
@@ -1893,7 +1910,7 @@ impl<N: Network> Default for BackendInner<N> {
             caller: None,
             next_fork_id: Default::default(),
             persistent_accounts: Default::default(),
-            spec_id: SpecId::default(),
+            spec_id: F::Spec::default(),
             // grant the cheatcode,default test and caller address access to execute cheatcodes
             // itself
             cheatcode_access_accounts: HashSet::from([
