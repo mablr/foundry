@@ -3,7 +3,7 @@
 use crate::{
     FoundryBlock, FoundryInspectorExt, FoundryTransaction, TryAnyToTxEnv,
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, TEST_CONTRACT_ADDRESS},
-    evm::new_eth_evm_with_inspector,
+    evm::{FoundryEvmFactory, new_eth_evm_with_inspector},
     fork::{CreateFork, ForkId, MultiFork},
     state_snapshot::StateSnapshots,
     utils::get_blob_base_fee_update_fraction,
@@ -24,7 +24,6 @@ use revm::{
     context::{BlockEnv, CfgEnv, JournalInner, TxEnv},
     context_interface::{journaled_state::account::JournaledAccountTr, result::ResultAndState},
     database::{CacheDB, DatabaseRef, EmptyDB},
-    handler::PrecompileProvider,
     primitives::{AddressMap, HashMap as Map, KECCAK_EMPTY, Log, hardfork::SpecId},
     state::{Account, AccountInfo, EvmState, EvmStorageSlot},
 };
@@ -1658,7 +1657,7 @@ impl<N: Network> Fork<N> {
 
 /// Container type for various Backend related data
 #[derive(Clone, Debug)]
-pub struct BackendInner<N: Network, F: EvmFactory + Clone = EthEvmFactory> {
+pub struct BackendInner<N: Network, F: FoundryEvmFactory = EthEvmFactory> {
     /// Stores the `ForkId` of the fork the `Backend` launched with from the start.
     ///
     /// In other words if [`Backend::spawn()`] was called with a `CreateFork` command, to launch
@@ -1709,7 +1708,7 @@ pub struct BackendInner<N: Network, F: EvmFactory + Clone = EthEvmFactory> {
     pub cheatcode_access_accounts: HashSet<Address>,
 }
 
-impl<N: Network, F: EvmFactory + Clone> BackendInner<N, F> {
+impl<N: Network, F: FoundryEvmFactory> BackendInner<N, F> {
     pub fn ensure_fork_id(&self, id: LocalForkId) -> eyre::Result<&ForkId> {
         self.issued_local_fork_ids
             .get(&id)
@@ -1864,13 +1863,7 @@ impl<N: Network, F: EvmFactory + Clone> BackendInner<N, F> {
         self.issued_local_fork_ids.is_empty()
     }
 
-    pub fn precompiles(&self) -> F::Precompiles
-    where
-        F: Default,
-        F::Spec: Into<SpecId>,
-        F::BlockEnv: Default,
-        F::Precompiles: PrecompileProvider<F::Context<EmptyDB>> + Clone,
-    {
+    pub fn precompiles(&self) -> F::Precompiles {
         let evm = F::default().create_evm(
             EmptyDB::default(),
             EvmEnv::new(CfgEnv::new_with_spec(self.spec_id), Default::default()),
@@ -1879,13 +1872,7 @@ impl<N: Network, F: EvmFactory + Clone> BackendInner<N, F> {
     }
 
     /// Returns a new, empty, `JournaledState` with set precompiles
-    pub fn new_journaled_state(&self) -> JournaledState
-    where
-        F: Default,
-        F::Spec: Into<SpecId>,
-        F::BlockEnv: Default,
-        F::Precompiles: PrecompileProvider<F::Context<EmptyDB>> + Clone,
-    {
+    pub fn new_journaled_state(&self) -> JournaledState {
         let mut journal = {
             let mut journal_inner = JournalInner::new();
             journal_inner.set_spec_id(self.spec_id.into());
@@ -1893,12 +1880,12 @@ impl<N: Network, F: EvmFactory + Clone> BackendInner<N, F> {
         };
         journal
             .warm_addresses
-            .set_precompile_addresses(self.precompiles().warm_addresses().collect());
+            .set_precompile_addresses(self.precompiles().addresses().copied().collect());
         journal
     }
 }
 
-impl<N: Network, F: EvmFactory + Clone> Default for BackendInner<N, F> {
+impl<N: Network, F: FoundryEvmFactory> Default for BackendInner<N, F> {
     fn default() -> Self {
         Self {
             launched_with_fork: None,

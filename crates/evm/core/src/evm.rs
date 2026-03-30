@@ -1,4 +1,5 @@
 use std::{
+    fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut},
 };
@@ -30,6 +31,28 @@ use revm::{
     },
     primitives::hardfork::SpecId,
 };
+
+/// Marker trait for [`EvmFactory`] implementations compatible with Foundry's EVM infrastructure.
+///
+/// Requires a spec type convertible to [`SpecId`], a defaultable block environment, and
+/// [`PrecompilesMap`] as the precompile provider, enabling use across the backend and cheatcode
+/// layers without depending on a concrete EVM type.
+pub trait FoundryEvmFactory:
+    EvmFactory<Spec: Into<SpecId>, BlockEnv: Default, Precompiles = PrecompilesMap>
+    + Clone
+    + Debug
+    + Default
+{
+}
+
+impl<
+    F: EvmFactory<Spec: Into<SpecId>, BlockEnv: Default, Precompiles = PrecompilesMap>
+        + Clone
+        + Debug
+        + Default,
+> FoundryEvmFactory for F
+{
+}
 
 pub fn new_eth_evm_with_inspector<
     'db,
