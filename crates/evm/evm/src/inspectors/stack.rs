@@ -244,7 +244,7 @@ impl InspectorStackBuilder {
 
         // environment, must come after all of the inspectors
         if let Some(block) = block {
-            stack.set_block(&block);
+            stack.set_block(block);
         }
         if let Some(gas_price) = gas_price {
             stack.set_gas_price(gas_price);
@@ -461,18 +461,11 @@ impl InspectorStack {
         self.analysis = Some(analysis);
     }
 
-    /// Set variables from an environment for the relevant inspectors.
-    #[inline]
-    pub fn set_env(&mut self, evm_env: &EvmEnv, tx_env: &TxEnv) {
-        self.set_block(&evm_env.block_env);
-        self.set_gas_price(tx_env.gas_price);
-    }
-
     /// Sets the block for the relevant inspectors.
     #[inline]
-    pub fn set_block(&mut self, block: &BlockEnv) {
+    pub fn set_block(&mut self, block: BlockEnv) {
         if let Some(cheatcodes) = &mut self.cheatcodes {
-            cheatcodes.block = Some(block.clone());
+            cheatcodes.block = Some(block);
         }
     }
 

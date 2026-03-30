@@ -596,7 +596,8 @@ impl Executor {
         }
 
         // Persist the changed environment.
-        self.inspector_mut().set_env(&result.evm_env, &result.tx_env);
+        self.inspector_mut().set_block(result.evm_env.block_env.clone());
+        self.inspector_mut().set_gas_price(result.tx_env.gas_price);
     }
 
     /// Returns `true` if a test can be considered successful.
