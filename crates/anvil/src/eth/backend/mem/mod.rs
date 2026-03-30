@@ -78,7 +78,7 @@ use alloy_rpc_types::{
 use alloy_serde::{OtherFields, WithOtherFields};
 use alloy_trie::{HashBuilder, Nibbles, proof::ProofRetainer};
 use anvil_core::eth::{
-    block::{Block, BlockInfo, TypedBlockInfo, create_block},
+    block::{Block, BlockInfo, create_block},
     transaction::{MaybeImpersonatedTransaction, PendingTransaction, TransactionInfo},
 };
 use anvil_rpc::error::RpcError;
@@ -2458,7 +2458,7 @@ where
                 };
 
                 let block = create_block(header, transactions);
-                let block_info = TypedBlockInfo {
+                let block_info: BlockInfo<N> = BlockInfo {
                     block,
                     transactions: transaction_infos,
                     receipts: block_result.receipts,
@@ -2607,7 +2607,7 @@ where
     pub async fn pending_block(
         &self,
         pool_transactions: Vec<Arc<PoolTransaction<FoundryTxEnvelope>>>,
-    ) -> BlockInfo {
+    ) -> BlockInfo<N> {
         self.with_pending_block(pool_transactions, |_, block| block).await
     }
 
@@ -2620,7 +2620,7 @@ where
         f: F,
     ) -> T
     where
-        F: FnOnce(Box<dyn MaybeFullDatabase + '_>, BlockInfo) -> T,
+        F: FnOnce(Box<dyn MaybeFullDatabase + '_>, BlockInfo<N>) -> T,
     {
         let db = self.db.read().await;
         let evm_env = self.next_evm_env();
@@ -2815,11 +2815,8 @@ where
         };
 
         let block = create_block(header, transactions);
-        let block_info = TypedBlockInfo {
-            block,
-            transactions: transaction_infos,
-            receipts: block_result.receipts,
-        };
+        let block_info =
+            BlockInfo { block, transactions: transaction_infos, receipts: block_result.receipts };
 
         f(Box::new(cache_db), block_info)
     }
