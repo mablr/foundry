@@ -21,6 +21,7 @@ use revm::{
     inspector::JournalExt,
     primitives::{TxKind, hardfork::SpecId},
 };
+use tempo_primitives::TempoTxEnvelope;
 use tempo_revm::{TempoBlockEnv, TempoTxEnv};
 
 use crate::backend::JournaledState;
@@ -609,6 +610,12 @@ impl TryAnyToTxEnv<OpTransaction<TxEnv>> for OpRpcTransaction {
     }
 }
 
+impl TryAnyToTxEnv<TempoTxEnv> for RpcTransaction<TempoTxEnvelope> {
+    fn try_any_to_tx_env(&self) -> eyre::Result<TempoTxEnv> {
+        Ok(self.as_recovered().to_tx_env())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -624,6 +631,7 @@ mod tests {
     use op_revm::OpSpecId;
     use revm::database::EmptyDB;
     use tempo_evm::TempoEvmFactory;
+    use tempo_primitives::{TempoSignature, TempoTransaction, transaction::PrimitiveSignature};
 
     fn make_signed_eip1559() -> Signed<TxEip1559> {
         Signed::new_unchecked(
@@ -724,6 +732,44 @@ mod tests {
 
         let result = any_tx.try_any_to_tx_env().unwrap_err();
         assert!(result.to_string().contains("unknown transaction type"));
+    }
+
+    #[test]
+    fn try_any_to_tx_env_for_tempo_transactions() {
+        let from = Address::random();
+        let fee_token = Some(Address::random());
+        let nonce_key = U256::from(4242);
+        let valid_after = Some(1800000000);
+        let tempo_tx =
+            TempoTransaction {
+                chain_id: 42431,
+                nonce: 42,
+                gas_limit: 424242,
+                fee_token,
+                nonce_key,
+                valid_after,
+                ..Default::default()
+            }
+            .into_signed(TempoSignature::Primitive(PrimitiveSignature::Secp256k1(
+                Signature::new(U256::ZERO, U256::ZERO, false),
+            )));
+
+        // Build the eth TxEnv to compare against op base
+        let rpc_tempo_tx = RpcTransaction::from_transaction(
+            Recovered::new_unchecked(tempo_tx.into(), from),
+            TransactionInfo::default(),
+        );
+
+        let tx_env: TempoTxEnv = rpc_tempo_tx.try_any_to_tx_env().unwrap();
+        assert_eq!(tx_env.inner.caller, from);
+        assert_eq!(tx_env.inner.nonce, 42);
+        assert_eq!(tx_env.inner.gas_limit, 424242);
+        assert_eq!(tx_env.inner.chain_id, Some(42431));
+        assert_eq!(tx_env.fee_token, fee_token);
+
+        let tempo_tx_env = tx_env.tempo_tx_env.unwrap();
+        assert_eq!(tempo_tx_env.nonce_key, nonce_key);
+        assert_eq!(tempo_tx_env.valid_after, valid_after);
     }
 
     #[test]
