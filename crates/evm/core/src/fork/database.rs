@@ -5,7 +5,7 @@ use crate::{
     state_snapshot::StateSnapshots,
 };
 use alloy_network::Network;
-use alloy_primitives::{Address, B256, U256, map::HashMap};
+use alloy_primitives::{Address, B256, U256};
 use alloy_rpc_types::BlockId;
 use foundry_fork_db::{BlockchainDb, DatabaseError, SharedBackend};
 use parking_lot::Mutex;
@@ -13,6 +13,7 @@ use revm::{
     Database, DatabaseCommit,
     bytecode::Bytecode,
     database::{CacheDB, DatabaseRef},
+    primitives::AddressMap,
     state::{Account, AccountInfo},
 };
 use std::sync::Arc;
@@ -195,7 +196,7 @@ impl<N: Network> DatabaseRef for ForkedDatabase<N> {
 }
 
 impl<N: Network> DatabaseCommit for ForkedDatabase<N> {
-    fn commit(&mut self, changes: HashMap<Address, Account>) {
+    fn commit(&mut self, changes: AddressMap<Account>) {
         self.database_mut().commit(changes)
     }
 }
