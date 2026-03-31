@@ -16,7 +16,7 @@ use alloy_primitives::{Address, B256, TxKind, U256, keccak256, uint};
 use alloy_rpc_types::BlockNumberOrTag;
 use eyre::Context;
 use foundry_common::{SYSTEM_TRANSACTION_TYPE, is_known_system_sender};
-pub use foundry_fork_db::{BlockchainDb, SharedBackend, cache::BlockchainDbMeta};
+pub use foundry_fork_db::{BlockchainDb, ForkBlockEnv, SharedBackend, cache::BlockchainDbMeta};
 use itertools::Itertools;
 use revm::{
     Database, DatabaseCommit, JournalEntry,
@@ -49,7 +49,7 @@ mod snapshot;
 pub use snapshot::{BackendStateSnapshot, RevertStateSnapshotAction, StateSnapshot};
 
 // A `revm::Database` that is used in forking mode
-type ForkDB<N> = CacheDB<SharedBackend<N>>;
+type ForkDB<N, B> = CacheDB<SharedBackend<N, B>>;
 
 /// Represents a numeric `ForkId` valid only for the existence of the `Backend`.
 ///
@@ -690,12 +690,12 @@ where
     }
 
     /// Returns the currently active `ForkDB`, if any
-    pub fn active_fork_db(&self) -> Option<&ForkDB<N>> {
+    pub fn active_fork_db(&self) -> Option<&ForkDB<N, BlockEnv>> {
         self.active_fork().map(|f| &f.db)
     }
 
     /// Returns the currently active `ForkDB`, if any
-    pub fn active_fork_db_mut(&mut self) -> Option<&mut ForkDB<N>> {
+    pub fn active_fork_db_mut(&mut self) -> Option<&mut ForkDB<N, BlockEnv>> {
         self.active_fork_mut().map(|f| &mut f.db)
     }
 
@@ -1621,14 +1621,14 @@ pub enum BackendDatabaseSnapshot<N: Network> {
 
 /// Represents a fork
 #[derive(Clone, Debug)]
-pub struct Fork<N: Network> {
-    db: ForkDB<N>,
+pub struct Fork<N: Network, B: ForkBlockEnv = BlockEnv> {
+    db: ForkDB<N, B>,
     journaled_state: JournaledState,
 }
 
-impl<N: Network> Fork<N> {
+impl<N: Network, B: ForkBlockEnv> Fork<N, B> {
     /// Returns a reference to the underlying [`SharedBackend`].
-    pub fn backend(&self) -> &SharedBackend<N> {
+    pub fn backend(&self) -> &SharedBackend<N, B> {
         &self.db.db
     }
 
@@ -1680,7 +1680,7 @@ pub struct BackendInner<N: Network, F: FoundryEvmFactory = EthEvmFactory> {
     pub created_forks: HashMap<ForkId, ForkLookupIndex>,
     /// Holds all created fork databases
     // Note: data is stored in an `Option` so we can remove it without reshuffling
-    pub forks: Vec<Option<Fork<N>>>,
+    pub forks: Vec<Option<Fork<N, F::BlockEnv>>>,
     /// Contains state snapshots made at a certain point
     pub state_snapshots:
         StateSnapshots<BackendStateSnapshot<BackendDatabaseSnapshot<N>, F::Spec, F::BlockEnv>>,
@@ -1728,51 +1728,51 @@ impl<N: Network, F: FoundryEvmFactory> BackendInner<N, F> {
 
     /// Returns the underlying fork mapped to the index
     #[track_caller]
-    fn get_fork(&self, idx: ForkLookupIndex) -> &Fork<N> {
+    fn get_fork(&self, idx: ForkLookupIndex) -> &Fork<N, F::BlockEnv> {
         debug_assert!(idx < self.forks.len(), "fork lookup index must exist");
         self.forks[idx].as_ref().unwrap()
     }
 
     /// Returns the underlying fork mapped to the index
     #[track_caller]
-    fn get_fork_mut(&mut self, idx: ForkLookupIndex) -> &mut Fork<N> {
+    fn get_fork_mut(&mut self, idx: ForkLookupIndex) -> &mut Fork<N, F::BlockEnv> {
         debug_assert!(idx < self.forks.len(), "fork lookup index must exist");
         self.forks[idx].as_mut().unwrap()
     }
 
     /// Returns the underlying fork corresponding to the id
     #[track_caller]
-    fn get_fork_by_id_mut(&mut self, id: LocalForkId) -> eyre::Result<&mut Fork<N>> {
+    fn get_fork_by_id_mut(&mut self, id: LocalForkId) -> eyre::Result<&mut Fork<N, F::BlockEnv>> {
         let idx = self.ensure_fork_index_by_local_id(id)?;
         Ok(self.get_fork_mut(idx))
     }
 
     /// Returns the underlying fork corresponding to the id
     #[track_caller]
-    fn get_fork_by_id(&self, id: LocalForkId) -> eyre::Result<&Fork<N>> {
+    fn get_fork_by_id(&self, id: LocalForkId) -> eyre::Result<&Fork<N, F::BlockEnv>> {
         let idx = self.ensure_fork_index_by_local_id(id)?;
         Ok(self.get_fork(idx))
     }
 
     /// Removes the fork
-    fn take_fork(&mut self, idx: ForkLookupIndex) -> Fork<N> {
+    fn take_fork(&mut self, idx: ForkLookupIndex) -> Fork<N, F::BlockEnv> {
         debug_assert!(idx < self.forks.len(), "fork lookup index must exist");
         self.forks[idx].take().unwrap()
     }
 
-    fn set_fork(&mut self, idx: ForkLookupIndex, fork: Fork<N>) {
+    fn set_fork(&mut self, idx: ForkLookupIndex, fork: Fork<N, F::BlockEnv>) {
         self.forks[idx] = Some(fork)
     }
 
     /// Returns an iterator over Forks
-    pub fn forks_iter(&self) -> impl Iterator<Item = (LocalForkId, &Fork<N>)> + '_ {
+    pub fn forks_iter(&self) -> impl Iterator<Item = (LocalForkId, &Fork<N, F::BlockEnv>)> + '_ {
         self.issued_local_fork_ids
             .iter()
             .map(|(id, fork_id)| (*id, self.get_fork(self.created_forks[fork_id])))
     }
 
     /// Returns a mutable iterator over all Forks
-    pub fn forks_iter_mut(&mut self) -> impl Iterator<Item = &mut Fork<N>> + '_ {
+    pub fn forks_iter_mut(&mut self) -> impl Iterator<Item = &mut Fork<N, F::BlockEnv>> + '_ {
         self.forks.iter_mut().filter_map(|f| f.as_mut())
     }
 
@@ -1782,7 +1782,7 @@ impl<N: Network, F: FoundryEvmFactory> BackendInner<N, F> {
         id: LocalForkId,
         fork_id: ForkId,
         idx: ForkLookupIndex,
-        fork: Fork<N>,
+        fork: Fork<N, F::BlockEnv>,
     ) {
         self.created_forks.insert(fork_id.clone(), idx);
         self.issued_local_fork_ids.insert(id, fork_id);
@@ -1794,7 +1794,7 @@ impl<N: Network, F: FoundryEvmFactory> BackendInner<N, F> {
         &mut self,
         id: LocalForkId,
         fork_id: ForkId,
-        db: ForkDB<N>,
+        db: ForkDB<N, F::BlockEnv>,
         journaled_state: JournaledState,
     ) -> ForkLookupIndex {
         let idx = self.forks.len();
@@ -1810,7 +1810,7 @@ impl<N: Network, F: FoundryEvmFactory> BackendInner<N, F> {
         &mut self,
         id: LocalForkId,
         new_fork_id: ForkId,
-        backend: SharedBackend<N>,
+        backend: SharedBackend<N, F::BlockEnv>,
     ) -> eyre::Result<ForkLookupIndex> {
         let fork_id = self.ensure_fork_id(id)?;
         let idx = self.ensure_fork_index(fork_id)?;
@@ -1835,7 +1835,7 @@ impl<N: Network, F: FoundryEvmFactory> BackendInner<N, F> {
     pub fn insert_new_fork(
         &mut self,
         fork_id: ForkId,
-        db: ForkDB<N>,
+        db: ForkDB<N, F::BlockEnv>,
         journaled_state: JournaledState,
     ) -> (LocalForkId, ForkLookupIndex) {
         let idx = self.forks.len();
@@ -1944,10 +1944,10 @@ fn merge_journaled_state_data(
 }
 
 /// Clones the account data from the `active` db into the `ForkDB`
-fn merge_db_account_data<ExtDB: DatabaseRef, N: Network>(
+fn merge_db_account_data<ExtDB: DatabaseRef, N: Network, B: ForkBlockEnv>(
     addr: Address,
     active: &CacheDB<ExtDB>,
-    fork_db: &mut ForkDB<N>,
+    fork_db: &mut ForkDB<N, B>,
 ) {
     trace!(?addr, "merging database data");
 
