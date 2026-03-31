@@ -649,11 +649,7 @@ impl<N: Network> EthApi<N> {
         node_info!("anvil_getGenesisTime");
         Ok(self.backend.genesis_time())
     }
-}
 
-// == impl EthApi anvil endpoints ==
-
-impl EthApi<FoundryNetwork> {
     /// Reset the fork to a fresh forked state, and optionally update the fork config.
     ///
     /// If `forking` is `None` then this will disable forking entirely.
@@ -674,6 +670,56 @@ impl EthApi<FoundryNetwork> {
         Ok(())
     }
 
+    /// Revert the state of the blockchain to a previous snapshot.
+    /// Takes a single parameter, which is the snapshot id to revert to.
+    ///
+    /// Handler for RPC call: `evm_revert`
+    pub async fn evm_revert(&self, id: U256) -> Result<bool> {
+        node_info!("evm_revert");
+        self.backend.revert_state_snapshot(id).await
+    }
+
+    /// Send transactions impersonating specific account and contract addresses.
+    ///
+    /// Handler for ETH RPC call: `anvil_impersonateAccount`
+    pub async fn anvil_impersonate_account(&self, address: Address) -> Result<()> {
+        node_info!("anvil_impersonateAccount");
+        self.backend.impersonate(address);
+        Ok(())
+    }
+
+    /// Stops impersonating an account if previously set with `anvil_impersonateAccount`.
+    ///
+    /// Handler for ETH RPC call: `anvil_stopImpersonatingAccount`
+    pub async fn anvil_stop_impersonating_account(&self, address: Address) -> Result<()> {
+        node_info!("anvil_stopImpersonatingAccount");
+        self.backend.stop_impersonating(address);
+        Ok(())
+    }
+
+    /// If set to true will make every account impersonated
+    ///
+    /// Handler for ETH RPC call: `anvil_autoImpersonateAccount`
+    pub async fn anvil_auto_impersonate_account(&self, enabled: bool) -> Result<()> {
+        node_info!("anvil_autoImpersonateAccount");
+        self.backend.auto_impersonate_account(enabled);
+        Ok(())
+    }
+
+    /// Registers a new address and signature pair to impersonate.
+    pub async fn anvil_impersonate_signature(
+        &self,
+        signature: Bytes,
+        address: Address,
+    ) -> Result<()> {
+        node_info!("anvil_impersonateSignature");
+        self.backend.impersonate_signature(signature, address).await
+    }
+}
+
+// == impl EthApi anvil endpoints ==
+
+impl EthApi<FoundryNetwork> {
     /// Create a buffer that represents all state on the chain, which can be loaded to separate
     /// process by calling `anvil_loadState`
     ///
@@ -701,15 +747,6 @@ impl EthApi<FoundryNetwork> {
     pub async fn anvil_load_state(&self, buf: Bytes) -> Result<bool> {
         node_info!("anvil_loadState");
         self.backend.load_state_bytes(buf).await
-    }
-
-    /// Revert the state of the blockchain to a previous snapshot.
-    /// Takes a single parameter, which is the snapshot id to revert to.
-    ///
-    /// Handler for RPC call: `evm_revert`
-    pub async fn evm_revert(&self, id: U256) -> Result<bool> {
-        node_info!("evm_revert");
-        self.backend.revert_state_snapshot(id).await
     }
 
     async fn block_request(
@@ -2704,43 +2741,6 @@ impl EthApi<FoundryNetwork> {
 // == impl EthApi anvil endpoints ==
 
 impl EthApi<FoundryNetwork> {
-    /// Send transactions impersonating specific account and contract addresses.
-    ///
-    /// Handler for ETH RPC call: `anvil_impersonateAccount`
-    pub async fn anvil_impersonate_account(&self, address: Address) -> Result<()> {
-        node_info!("anvil_impersonateAccount");
-        self.backend.impersonate(address);
-        Ok(())
-    }
-
-    /// Stops impersonating an account if previously set with `anvil_impersonateAccount`.
-    ///
-    /// Handler for ETH RPC call: `anvil_stopImpersonatingAccount`
-    pub async fn anvil_stop_impersonating_account(&self, address: Address) -> Result<()> {
-        node_info!("anvil_stopImpersonatingAccount");
-        self.backend.stop_impersonating(address);
-        Ok(())
-    }
-
-    /// If set to true will make every account impersonated
-    ///
-    /// Handler for ETH RPC call: `anvil_autoImpersonateAccount`
-    pub async fn anvil_auto_impersonate_account(&self, enabled: bool) -> Result<()> {
-        node_info!("anvil_autoImpersonateAccount");
-        self.backend.auto_impersonate_account(enabled);
-        Ok(())
-    }
-
-    /// Registers a new address and signature pair to impersonate.
-    pub async fn anvil_impersonate_signature(
-        &self,
-        signature: Bytes,
-        address: Address,
-    ) -> Result<()> {
-        node_info!("anvil_impersonateSignature");
-        self.backend.impersonate_signature(signature, address).await
-    }
-
     /// Mines a series of blocks.
     ///
     /// Handler for ETH RPC call: `anvil_mine`
