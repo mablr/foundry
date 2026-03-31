@@ -216,7 +216,7 @@ impl<BLOCK: Clone> InspectorStackBuilder<BLOCK> {
     }
 
     /// Builds the stack of inspectors to use when transacting/committing on the EVM.
-    pub fn build(self) -> InspectorStack<SpecId, BLOCK, Ethereum> {
+    pub fn build<SPEC, N: Network>(self) -> InspectorStack<SPEC, BLOCK, N> {
         let Self {
             analysis,
             block,
