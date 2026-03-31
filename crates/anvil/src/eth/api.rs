@@ -622,6 +622,33 @@ impl<N: Network> EthApi<N> {
     pub fn storage_info(&self) -> StorageInfo<N> {
         StorageInfo::new(Arc::clone(&self.backend))
     }
+
+    /// Handler for RPC call: `anvil_getBlobByHash`
+    pub fn anvil_get_blob_by_versioned_hash(
+        &self,
+        hash: B256,
+    ) -> Result<Option<alloy_consensus::Blob>> {
+        node_info!("anvil_getBlobByHash");
+        Ok(self.backend.get_blob_by_versioned_hash(hash)?)
+    }
+
+    /// Handler for RPC call: `anvil_getBlobsByBlockId`
+    pub fn anvil_get_blobs_by_block_id(
+        &self,
+        block_id: impl Into<BlockId>,
+        versioned_hashes: Vec<B256>,
+    ) -> Result<Option<Vec<Blob>>> {
+        node_info!("anvil_getBlobsByBlockId");
+        Ok(self.backend.get_blobs_by_block_id(block_id, versioned_hashes)?)
+    }
+
+    /// Returns the genesis time for the Beacon chain
+    ///
+    /// Handler for Beacon API call: `GET /eth/v1/beacon/genesis`
+    pub fn anvil_get_genesis_time(&self) -> Result<u64> {
+        node_info!("anvil_getGenesisTime");
+        Ok(self.backend.genesis_time())
+    }
 }
 
 // == impl EthApi anvil endpoints ==
@@ -2097,37 +2124,10 @@ impl EthApi<FoundryNetwork> {
         Ok(FillTransaction { raw, tx })
     }
 
-    /// Handler for RPC call: `anvil_getBlobByHash`
-    pub fn anvil_get_blob_by_versioned_hash(
-        &self,
-        hash: B256,
-    ) -> Result<Option<alloy_consensus::Blob>> {
-        node_info!("anvil_getBlobByHash");
-        Ok(self.backend.get_blob_by_versioned_hash(hash)?)
-    }
-
     /// Handler for RPC call: `anvil_getBlobsByTransactionHash`
     pub fn anvil_get_blob_by_tx_hash(&self, hash: B256) -> Result<Option<Vec<Blob>>> {
         node_info!("anvil_getBlobsByTransactionHash");
         Ok(self.backend.get_blob_by_tx_hash(hash)?)
-    }
-
-    /// Handler for RPC call: `anvil_getBlobsByBlockId`
-    pub fn anvil_get_blobs_by_block_id(
-        &self,
-        block_id: impl Into<BlockId>,
-        versioned_hashes: Vec<B256>,
-    ) -> Result<Option<Vec<Blob>>> {
-        node_info!("anvil_getBlobsByBlockId");
-        Ok(self.backend.get_blobs_by_block_id(block_id, versioned_hashes)?)
-    }
-
-    /// Returns the genesis time for the Beacon chain
-    ///
-    /// Handler for Beacon API call: `GET /eth/v1/beacon/genesis`
-    pub fn anvil_get_genesis_time(&self) -> Result<u64> {
-        node_info!("anvil_getGenesisTime");
-        Ok(self.backend.genesis_time())
     }
 
     /// Get transaction by its hash.
