@@ -32,7 +32,9 @@ use foundry_evm::{
     backend::MemDb,
     traces::{CallKind, ParityTraceBuilder, TracingInspectorConfig},
 };
-use foundry_primitives::{FoundryNetwork, FoundryTxEnvelope};
+#[cfg(test)]
+use foundry_primitives::FoundryNetwork;
+use foundry_primitives::{FoundryReceiptEnvelope, FoundryTxEnvelope};
 use parking_lot::RwLock;
 use revm::{context::Block as RevmBlock, primitives::hardfork::SpecId};
 use std::{collections::VecDeque, fmt, path::PathBuf, sync::Arc, time::Duration};
@@ -443,19 +445,15 @@ impl<N: Network> BlockchainStorage<N> {
     }
 }
 
-impl BlockchainStorage<FoundryNetwork> {
+impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> BlockchainStorage<N> {
     pub fn serialized_transactions(&self) -> Vec<SerializableTransaction> {
-        self.transactions
-            .values()
-            .map(|tx: &MinedTransaction<FoundryNetwork>| tx.clone().into())
-            .collect()
+        self.transactions.values().map(|tx: &MinedTransaction<N>| tx.clone().into()).collect()
     }
 
     /// Deserialize and add all transactions data to the backend storage
     pub fn load_transactions(&mut self, serializable_transactions: Vec<SerializableTransaction>) {
         for serializable_transaction in &serializable_transactions {
-            let transaction: MinedTransaction<FoundryNetwork> =
-                serializable_transaction.clone().into();
+            let transaction: MinedTransaction<N> = serializable_transaction.clone().into();
             self.transactions.insert(transaction.info.transaction_hash, transaction);
         }
     }

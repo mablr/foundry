@@ -3271,7 +3271,7 @@ where
     }
 }
 
-impl Backend<FoundryNetwork> {
+impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> Backend<N> {
     /// Get the current state.
     pub async fn serialized_state(
         &self,
@@ -3420,7 +3420,9 @@ impl Backend<FoundryNetwork> {
 
         self.load_state(state).await
     }
+}
 
+impl Backend<FoundryNetwork> {
     /// Simulates the payload by executing the calls in request.
     pub async fn simulate(
         &self,
