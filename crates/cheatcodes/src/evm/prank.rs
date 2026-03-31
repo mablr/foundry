@@ -1,4 +1,5 @@
 use crate::{Cheatcode, CheatsCtxt, Result, Vm::*, evm::journaled_account};
+use alloy_network::Network;
 use alloy_primitives::Address;
 use foundry_evm_core::backend::DatabaseError;
 use revm::{
@@ -59,9 +60,12 @@ impl Prank {
 }
 
 impl Cheatcode for prank_0Call {
-    fn apply_stateful<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>>(
+    fn apply_stateful<
+        CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>,
+        N: Network,
+    >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
     ) -> Result {
         let Self { msgSender } = self;
         prank(ccx, msgSender, None, true, false)
@@ -69,9 +73,12 @@ impl Cheatcode for prank_0Call {
 }
 
 impl Cheatcode for startPrank_0Call {
-    fn apply_stateful<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>>(
+    fn apply_stateful<
+        CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>,
+        N: Network,
+    >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
     ) -> Result {
         let Self { msgSender } = self;
         prank(ccx, msgSender, None, false, false)
@@ -79,9 +86,12 @@ impl Cheatcode for startPrank_0Call {
 }
 
 impl Cheatcode for prank_1Call {
-    fn apply_stateful<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>>(
+    fn apply_stateful<
+        CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>,
+        N: Network,
+    >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
     ) -> Result {
         let Self { msgSender, txOrigin } = self;
         prank(ccx, msgSender, Some(txOrigin), true, false)
@@ -89,9 +99,12 @@ impl Cheatcode for prank_1Call {
 }
 
 impl Cheatcode for startPrank_1Call {
-    fn apply_stateful<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>>(
+    fn apply_stateful<
+        CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>,
+        N: Network,
+    >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
     ) -> Result {
         let Self { msgSender, txOrigin } = self;
         prank(ccx, msgSender, Some(txOrigin), false, false)
@@ -99,9 +112,12 @@ impl Cheatcode for startPrank_1Call {
 }
 
 impl Cheatcode for prank_2Call {
-    fn apply_stateful<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>>(
+    fn apply_stateful<
+        CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>,
+        N: Network,
+    >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
     ) -> Result {
         let Self { msgSender, delegateCall } = self;
         prank(ccx, msgSender, None, true, *delegateCall)
@@ -109,9 +125,12 @@ impl Cheatcode for prank_2Call {
 }
 
 impl Cheatcode for startPrank_2Call {
-    fn apply_stateful<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>>(
+    fn apply_stateful<
+        CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>,
+        N: Network,
+    >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
     ) -> Result {
         let Self { msgSender, delegateCall } = self;
         prank(ccx, msgSender, None, false, *delegateCall)
@@ -119,9 +138,12 @@ impl Cheatcode for startPrank_2Call {
 }
 
 impl Cheatcode for prank_3Call {
-    fn apply_stateful<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>>(
+    fn apply_stateful<
+        CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>,
+        N: Network,
+    >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
     ) -> Result {
         let Self { msgSender, txOrigin, delegateCall } = self;
         prank(ccx, msgSender, Some(txOrigin), true, *delegateCall)
@@ -129,9 +151,12 @@ impl Cheatcode for prank_3Call {
 }
 
 impl Cheatcode for startPrank_3Call {
-    fn apply_stateful<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>>(
+    fn apply_stateful<
+        CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>,
+        N: Network,
+    >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
     ) -> Result {
         let Self { msgSender, txOrigin, delegateCall } = self;
         prank(ccx, msgSender, Some(txOrigin), false, *delegateCall)
@@ -139,9 +164,12 @@ impl Cheatcode for startPrank_3Call {
 }
 
 impl Cheatcode for stopPrankCall {
-    fn apply_stateful<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>>(
+    fn apply_stateful<
+        CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>,
+        N: Network,
+    >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
     ) -> Result {
         let Self {} = self;
         ccx.state.pranks.remove(&ccx.ecx.journal().depth());
@@ -149,8 +177,8 @@ impl Cheatcode for stopPrankCall {
     }
 }
 
-fn prank<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>>(
-    ccx: &mut CheatsCtxt<'_, CTX>,
+fn prank<CTX: ContextTr<Journal: JournalExt, Db: Database<Error = DatabaseError>>, N: Network>(
+    ccx: &mut CheatsCtxt<'_, CTX, N>,
     new_caller: &Address,
     new_origin: Option<&Address>,
     single_call: bool,

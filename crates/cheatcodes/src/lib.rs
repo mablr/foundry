@@ -15,9 +15,14 @@ pub extern crate foundry_cheatcodes_spec as spec;
 #[macro_use]
 extern crate tracing;
 
+use alloy_consensus::transaction::SignerRecoverable;
+use alloy_evm::FromRecoveredTx;
+use alloy_network::{Ethereum, Network};
 use alloy_primitives::Address;
+use alloy_rlp::Decodable;
+use foundry_config::FromEvmVersion;
 use foundry_evm_core::{FoundryContextExt, backend::DatabaseExt};
-use revm::context::{ContextTr, JournalTr, TxEnv};
+use revm::context::{Cfg, ContextTr, JournalTr};
 
 pub use Vm::ForgeContext;
 pub use config::CheatsConfig;
@@ -68,7 +73,7 @@ pub(crate) trait Cheatcode: CheatcodeDef {
     /// Applies this cheatcode to the given state.
     ///
     /// Implement this function if you don't need access to the EVM data.
-    fn apply(&self, state: &mut Cheatcodes) -> Result {
+    fn apply<SPEC, BLOCK, N: Network>(&self, state: &mut Cheatcodes<SPEC, BLOCK, N>) -> Result {
         let _ = state;
         unimplemented!("{}", Self::CHEATCODE.func.id)
     }
@@ -77,9 +82,12 @@ pub(crate) trait Cheatcode: CheatcodeDef {
     ///
     /// Implement this function if you need access to the EVM data.
     #[inline(always)]
-    fn apply_stateful<CTX: FoundryContextExt<Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>>(
+    fn apply_stateful<
+        CTX: FoundryContextExt<Spec: FromEvmVersion, Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>,
+        N: Network,
+    >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
     ) -> Result {
         self.apply(ccx.state)
     }
@@ -89,11 +97,16 @@ pub(crate) trait Cheatcode: CheatcodeDef {
     /// Implement this function if you need access to the executor.
     #[inline(always)]
     fn apply_full<
-        CTX: FoundryContextExt<Tx = TxEnv, Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>,
+        CTX: FoundryContextExt<
+                Spec: FromEvmVersion,
+                Tx: FromRecoveredTx<N::TxEnvelope>,
+                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+            >,
+        N: Network<TxEnvelope: Decodable + SignerRecoverable>,
     >(
         &self,
-        ccx: &mut CheatsCtxt<'_, CTX>,
-        executor: &mut dyn CheatcodesExecutor<CTX>,
+        ccx: &mut CheatsCtxt<'_, CTX, N>,
+        executor: &mut dyn CheatcodesExecutor<CTX, N>,
     ) -> Result {
         let _ = executor;
         self.apply_stateful(ccx)
@@ -101,9 +114,9 @@ pub(crate) trait Cheatcode: CheatcodeDef {
 }
 
 /// The cheatcode context.
-pub struct CheatsCtxt<'a, CTX> {
+pub struct CheatsCtxt<'a, CTX: ContextTr, N: Network = Ethereum> {
     /// The cheatcodes inspector state.
-    pub(crate) state: &'a mut Cheatcodes,
+    pub(crate) state: &'a mut Cheatcodes<<CTX::Cfg as Cfg>::Spec, CTX::Block, N>,
     /// The EVM context.
     pub(crate) ecx: &'a mut CTX,
     /// The original `msg.sender`.
@@ -112,7 +125,7 @@ pub struct CheatsCtxt<'a, CTX> {
     pub(crate) gas_limit: u64,
 }
 
-impl<CTX> std::ops::Deref for CheatsCtxt<'_, CTX> {
+impl<CTX: ContextTr, N: Network> std::ops::Deref for CheatsCtxt<'_, CTX, N> {
     type Target = CTX;
 
     #[inline(always)]
@@ -121,14 +134,14 @@ impl<CTX> std::ops::Deref for CheatsCtxt<'_, CTX> {
     }
 }
 
-impl<CTX> std::ops::DerefMut for CheatsCtxt<'_, CTX> {
+impl<CTX: ContextTr, N: Network> std::ops::DerefMut for CheatsCtxt<'_, CTX, N> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.ecx
     }
 }
 
-impl<CTX: ContextTr> CheatsCtxt<'_, CTX> {
+impl<CTX: ContextTr, N: Network> CheatsCtxt<'_, CTX, N> {
     pub(crate) fn ensure_not_precompile(&self, address: &Address) -> Result<()> {
         if self.is_precompile(address) { Err(precompile_error(address)) } else { Ok(()) }
     }
