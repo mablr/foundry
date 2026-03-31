@@ -12,7 +12,7 @@ use crate::{
 use alloy_consensus::constants::KECCAK_EMPTY;
 use alloy_evm::{Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::PrecompilesMap};
 use alloy_primitives::{Address, Bytes, U256};
-use foundry_fork_db::DatabaseError;
+use foundry_fork_db::{DatabaseError, ForkBlockEnv};
 use revm::{
     Context,
     context::{
@@ -44,7 +44,7 @@ use tempo_revm::{
 /// [`PrecompilesMap`] as the precompile provider, enabling use across the backend and cheatcode
 /// layers without depending on a concrete EVM type.
 pub trait FoundryEvmFactory:
-    EvmFactory<Spec: Into<SpecId>, BlockEnv: Default, Precompiles = PrecompilesMap>
+    EvmFactory<Spec: Into<SpecId>, BlockEnv: ForkBlockEnv + Default, Precompiles = PrecompilesMap>
     + Clone
     + Debug
     + Default
@@ -52,8 +52,11 @@ pub trait FoundryEvmFactory:
 }
 
 impl<
-    F: EvmFactory<Spec: Into<SpecId>, BlockEnv: Default, Precompiles = PrecompilesMap>
-        + Clone
+    F: EvmFactory<
+            Spec: Into<SpecId>,
+            BlockEnv: ForkBlockEnv + Default,
+            Precompiles = PrecompilesMap,
+        > + Clone
         + Debug
         + Default,
 > FoundryEvmFactory for F
