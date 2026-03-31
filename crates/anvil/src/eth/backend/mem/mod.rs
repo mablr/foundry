@@ -1841,6 +1841,28 @@ impl<N: Network> Backend<N> {
         // apply the genesis.json alloc
         self.genesis.apply_genesis_json_alloc(db)?;
 
+        // Initialize Tempo precompiles and fee tokens when in Tempo mode (not in fork mode).
+        // In fork mode, precompiles are inherited from the forked origin.
+        if self.networks.is_tempo() && !self.is_fork() {
+            let chain_id = self.evm_env.read().cfg_env.chain_id;
+            let timestamp = self.genesis.timestamp;
+            let test_accounts: Vec<Address> = self.genesis.accounts.to_vec();
+            let hardfork = tempo_chainspec::hardfork::TempoHardfork::default();
+            let mut db = self.db.write().await;
+            crate::eth::backend::tempo::initialize_tempo_precompiles(
+                &mut **db,
+                chain_id,
+                timestamp,
+                &test_accounts,
+                hardfork,
+            )
+            .map_err(|e| {
+                tracing::error!(target: "backend", "failed to initialize Tempo precompiles: {e}");
+                DatabaseError::AnyRequest(Arc::new(eyre::eyre!("{e}")))
+            })?;
+            trace!(target: "backend", "initialized Tempo precompiles and fee tokens for {} accounts", test_accounts.len());
+        }
+
         trace!(target: "backend", "set genesis balances");
 
         Ok(())
