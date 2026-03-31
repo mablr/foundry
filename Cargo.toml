@@ -447,6 +447,8 @@ tempo-primitives = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-
 tempo-alloy = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0", default-features = false }
 tempo-evm = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0", default-features = false }
 tempo-revm = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0", default-features = false }
+tempo-contracts = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0" }
+tempo-precompiles = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0" }
 
 ## Pinned dependencies. Enabled for the workspace in crates/test-utils.
 
