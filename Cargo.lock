@@ -1223,8 +1223,10 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tempo-chainspec",
+ "tempo-evm",
  "tempo-precompiles",
  "tempo-primitives",
+ "tempo-revm",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -5414,6 +5416,7 @@ dependencies = [
  "serde_json",
  "tempo-alloy",
  "tempo-primitives",
+ "tempo-revm",
 ]
 
 [[package]]

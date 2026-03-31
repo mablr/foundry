@@ -136,6 +136,11 @@ use std::{
     time::Duration,
 };
 use storage::{Blockchain, DEFAULT_HISTORY_LIMIT, MinedTransaction};
+use tempo_chainspec::hardfork::TempoHardfork;
+use tempo_evm::evm::TempoEvmFactory;
+use tempo_revm::{
+    TempoBlockEnv, TempoHaltReason, TempoTxEnv, evm::TempoContext, gas_params::tempo_gas_params,
+};
 use tokio::sync::RwLock as AsyncRwLock;
 
 pub mod cache;
@@ -474,6 +479,11 @@ impl<N: Network> Backend<N> {
     /// Returns true if op-stack deposits are active
     pub fn is_optimism(&self) -> bool {
         self.networks.is_optimism()
+    }
+
+    /// Returns true if Tempo network mode is active
+    pub fn is_tempo(&self) -> bool {
+        self.networks.is_tempo()
     }
 
     /// Returns the precompiles for the current spec.
@@ -1061,7 +1071,8 @@ impl<N: Network> Backend<N> {
     where
         DB: DatabaseRef + ?Sized,
         I: Inspector<EthEvmContext<WrapDatabaseRef<&'db DB>>>
-            + Inspector<OpContext<WrapDatabaseRef<&'db DB>>>,
+            + Inspector<OpContext<WrapDatabaseRef<&'db DB>>>
+            + Inspector<TempoContext<WrapDatabaseRef<&'db DB>>>,
         WrapDatabaseRef<&'db DB>: Database<Error = DatabaseError>,
     {
         if self.is_optimism() {
@@ -1076,6 +1087,30 @@ impl<N: Network> Backend<N> {
             );
             self.inject_precompiles(evm.precompiles_mut());
             Ok(evm.transact(tx_env)?)
+        } else if self.is_tempo() {
+            let hardfork = TempoHardfork::from(evm_env.cfg_env.spec);
+            let tempo_env = EvmEnv::new(
+                evm_env
+                    .cfg_env
+                    .clone()
+                    .with_spec_and_gas_params(hardfork, tempo_gas_params(hardfork)),
+                TempoBlockEnv { inner: evm_env.block_env.clone(), timestamp_millis_part: 0 },
+            );
+            let mut evm = TempoEvmFactory::default().create_evm_with_inspector(
+                WrapDatabaseRef(db),
+                tempo_env,
+                inspector,
+            );
+            self.inject_precompiles(evm.precompiles_mut());
+            let tempo_tx = TempoTxEnv::from(tx_env.base);
+            let result = evm.transact(tempo_tx)?;
+            Ok(ResultAndState {
+                result: result.result.map_haltreason(|h| match h {
+                    TempoHaltReason::Ethereum(eth) => OpHaltReason::Base(eth),
+                    _ => OpHaltReason::Base(HaltReason::PrecompileError),
+                }),
+                state: result.state,
+            })
         } else {
             let mut evm = EthEvmFactory::default().create_evm_with_inspector(
                 WrapDatabaseRef(db),
@@ -1119,6 +1154,31 @@ impl<N: Network> Backend<N> {
                 evm_env.block_env.clone(),
             );
             let mut evm = OpEvmFactory::default().create_evm_with_inspector(db, op_env, inspector);
+            self.inject_precompiles(evm.precompiles_mut());
+            let mut executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id);
+            executor.apply_pre_execution_changes().expect("pre-execution changes failed");
+            let pool_result = execute_pool_transactions(
+                &mut executor,
+                pool_transactions,
+                gas_config,
+                inspector_tx_config,
+                self.cheats(),
+                validator,
+            );
+            let (evm, block_result) = executor.finish().expect("executor finish failed");
+            drop(evm);
+            (pool_result, block_result)
+        } else if self.is_tempo() {
+            let hardfork = TempoHardfork::from(evm_env.cfg_env.spec);
+            let tempo_env = EvmEnv::new(
+                evm_env
+                    .cfg_env
+                    .clone()
+                    .with_spec_and_gas_params(hardfork, tempo_gas_params(hardfork)),
+                TempoBlockEnv { inner: evm_env.block_env.clone(), timestamp_millis_part: 0 },
+            );
+            let mut evm =
+                TempoEvmFactory::default().create_evm_with_inspector(db, tempo_env, inspector);
             self.inject_precompiles(evm.precompiles_mut());
             let mut executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id);
             executor.apply_pre_execution_changes().expect("pre-execution changes failed");
@@ -3020,6 +3080,7 @@ where
     where
         for<'a> I: Inspector<EthEvmContext<WrapDatabaseRef<&'a CacheDB<Box<&'a StateDb>>>>>
             + Inspector<OpContext<WrapDatabaseRef<&'a CacheDB<Box<&'a StateDb>>>>>
+            + Inspector<TempoContext<WrapDatabaseRef<&'a CacheDB<Box<&'a StateDb>>>>>
             + 'a,
         for<'a> F:
             FnOnce(ResultAndState<OpHaltReason>, CacheDB<Box<&'a StateDb>>, I, TxEnv, EvmEnv) -> T,
@@ -4287,6 +4348,15 @@ impl IntoInstructionResult for OpHaltReason {
         match self {
             Self::Base(eth_h) => eth_h.into(),
             Self::FailedDeposit => InstructionResult::Stop,
+        }
+    }
+}
+
+impl IntoInstructionResult for TempoHaltReason {
+    fn into_instruction_result(self) -> InstructionResult {
+        match self {
+            Self::Ethereum(eth_h) => eth_h.into(),
+            _ => InstructionResult::PrecompileError,
         }
     }
 }

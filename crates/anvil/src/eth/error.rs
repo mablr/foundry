@@ -18,6 +18,7 @@ use revm::{
     interpreter::InstructionResult,
 };
 use serde::Serialize;
+use tempo_revm::TempoInvalidTransaction;
 use tokio::time::Duration;
 
 pub(crate) type Result<T> = std::result::Result<T, BlockchainError>;
@@ -171,6 +172,25 @@ where
                 }
                 OpTransactionError::MissingEnvelopedTx => Self::InvalidTransaction(err.into()),
             },
+            EVMError::Header(err) => match err {
+                InvalidHeader::ExcessBlobGasNotSet => Self::ExcessBlobGasNotSet,
+                InvalidHeader::PrevrandaoNotSet => Self::PrevrandaoNotSet,
+            },
+            EVMError::Database(err) => err.into(),
+            EVMError::Custom(err) => Self::Message(err),
+        }
+    }
+}
+
+impl<T> From<EVMError<T, TempoInvalidTransaction>> for BlockchainError
+where
+    T: Into<Self>,
+{
+    fn from(err: EVMError<T, TempoInvalidTransaction>) -> Self {
+        match err {
+            EVMError::Transaction(err) => {
+                Self::Message(format!("tempo transaction error: {err:?}"))
+            }
             EVMError::Header(err) => match err {
                 InvalidHeader::ExcessBlobGasNotSet => Self::ExcessBlobGasNotSet,
                 InvalidHeader::PrevrandaoNotSet => Self::PrevrandaoNotSet,
