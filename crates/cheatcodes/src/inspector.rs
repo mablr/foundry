@@ -41,7 +41,9 @@ use foundry_evm_core::{
     backend::{DatabaseError, DatabaseExt, RevertDiagnostic},
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME},
     env::FoundryContextExt,
-    evm::{NestedEvm, NestedEvmClosure, new_eth_evm_with_inspector, with_cloned_context},
+    evm::{
+        IntoNestedEvm, NestedEvm, NestedEvmClosure, new_eth_evm_with_inspector, with_cloned_context,
+    },
 };
 use foundry_evm_traces::{
     TracingInspector, TracingInspectorConfig, identifier::SignaturesIdentifier,
@@ -193,7 +195,7 @@ where
         f: NestedEvmClosure<'_, CTX::Tx>,
     ) -> Result<(), EVMError<DatabaseError>> {
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
-            let mut evm = new_eth_evm_with_inspector(db, evm_env, cheats).inner;
+            let mut evm = new_eth_evm_with_inspector(db, evm_env, cheats).into_nested_evm();
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
             let sub_inner = evm.journaled_state.inner.clone();
@@ -209,7 +211,7 @@ where
         evm_env: EvmEnv<CTX::Spec, CTX::Block>,
         f: NestedEvmClosure<'_, CTX::Tx>,
     ) -> Result<EvmEnv<CTX::Spec, CTX::Block>, EVMError<DatabaseError>> {
-        let mut evm = new_eth_evm_with_inspector(db, evm_env, cheats).inner;
+        let mut evm = new_eth_evm_with_inspector(db, evm_env, cheats).into_nested_evm();
         f(&mut evm)?;
         Ok(evm.ctx_ref().evm_clone())
     }

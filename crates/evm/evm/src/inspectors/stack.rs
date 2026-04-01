@@ -15,7 +15,7 @@ use foundry_evm_core::{
     FoundryBlock, FoundryTransaction, InspectorExt,
     backend::{DatabaseError, DatabaseExt, JournaledState},
     env::FoundryContextExt,
-    evm::{NestedEvm, new_eth_evm_with_inspector, with_cloned_context},
+    evm::{IntoNestedEvm, NestedEvm, new_eth_evm_with_inspector, with_cloned_context},
 };
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_networks::NetworkConfigs;
@@ -397,7 +397,7 @@ impl<
     ) -> Result<(), EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
-            let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).inner;
+            let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).into_nested_evm();
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
             let sub_inner = evm.journaled_state.inner.clone();
@@ -414,7 +414,7 @@ impl<
         f: NestedEvmClosure<'_, CTX::Tx>,
     ) -> Result<EvmEnv<CTX::Spec, CTX::Block>, EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
-        let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).inner;
+        let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).into_nested_evm();
         f(&mut evm)?;
         Ok(evm.ctx_ref().evm_clone())
     }
@@ -781,7 +781,8 @@ impl InspectorStackRefMut<'_, SpecId, BlockEnv, Ethereum> {
         let res = self.with_inspector(|mut inspector| {
             let (res, nested_env) = {
                 let (db, journal) = ecx.db_journal_inner_mut();
-                let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).inner;
+                let mut evm =
+                    new_eth_evm_with_inspector(db, evm_env, &mut inspector).into_nested_evm();
 
                 evm.journal_inner_mut().state = {
                     let mut state = journal.state.clone();
