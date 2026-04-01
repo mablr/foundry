@@ -39,9 +39,6 @@ pub use diagnostic::RevertDiagnostic;
 mod error;
 pub use error::{BackendError, BackendResult, DatabaseError, DatabaseResult};
 
-mod cow;
-pub use cow::CowBackend;
-
 mod in_memory_db;
 pub use in_memory_db::{EmptyDBWrapper, FoundryEvmInMemoryDB, MemDb};
 
@@ -216,7 +213,7 @@ pub trait DatabaseExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
         transaction: B256,
         evm_env: EvmEnv<SPEC, BLOCK>,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+        inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<BLOCK, TX, SPEC>>>,
     ) -> eyre::Result<()>;
 
     /// Executes a given TransactionRequest, commits the new state to the DB
@@ -225,7 +222,7 @@ pub trait DatabaseExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
         tx_env: TX,
         evm_env: EvmEnv<SPEC, BLOCK>,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+        inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<BLOCK, TX, SPEC>>>,
     ) -> eyre::Result<()>;
 
     /// Returns the `ForkId` that's currently used in the database, if fork mode is on
@@ -381,8 +378,6 @@ pub trait DatabaseExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
     /// - Setting a blockhash for blocks older than `block.number - 256` has no effect
     fn set_blockhash(&mut self, block_number: U256, block_hash: B256);
 }
-
-struct _ObjectSafe(dyn DatabaseExt);
 
 /// Provides the underlying `revm::Database` implementation.
 ///
@@ -781,7 +776,7 @@ where
     /// Note: in case there are any cheatcodes executed that modify the environment, this will
     /// update the given `env` with the new values.
     #[instrument(name = "inspect", level = "debug", skip_all)]
-    pub fn inspect<I: for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>>(
+    pub fn inspect<I: for<'db> FoundryInspectorExt<EthEvmContext<&'db mut Self>>>(
         &mut self,
         evm_env: &mut EvmEnv,
         tx_env: &mut TxEnv,
@@ -792,7 +787,7 @@ where
         F::Spec: From<SpecId>,
     {
         self.initialize(evm_env.cfg_env.spec, tx_env.caller(), tx_env.kind());
-        let mut evm = crate::evm::new_eth_evm_with_inspector(self, evm_env.to_owned(), inspector);
+        let mut evm = crate::evm::new_eth_evm_with_inspector::<Self, I>(self, evm_env.to_owned(), inspector);
 
         let res = evm.transact(tx_env.clone()).wrap_err("EVM error")?;
 
@@ -951,7 +946,7 @@ where
     }
 }
 
-impl<N: Network> DatabaseExt for Backend<N>
+impl<N: Network> DatabaseExt<BlockEnv, TxEnv, SpecId> for Backend<N>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
 {
@@ -1311,7 +1306,7 @@ where
         transaction: B256,
         mut evm_env: EvmEnv,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+        inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut Self>>,
     ) -> eyre::Result<()> {
         trace!(?maybe_id, ?transaction, "execute transaction");
         let persistent_accounts = self.inner.persistent_accounts.clone();
@@ -1351,7 +1346,7 @@ where
         tx_env: TxEnv,
         evm_env: EvmEnv,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+        inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut Self>>,
     ) -> eyre::Result<()> {
         trace!(?tx_env, "execute signed transaction");
 
@@ -2032,7 +2027,7 @@ fn commit_transaction<N: Network>(
     fork: &mut Fork<N>,
     fork_id: &ForkId,
     persistent_accounts: &HashSet<Address>,
-    inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+    inspector: &mut dyn for<'db> FoundryInspectorExt<EthEvmContext<&'db mut Backend<N>>>,
 ) -> eyre::Result<()>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
