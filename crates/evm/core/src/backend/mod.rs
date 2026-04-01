@@ -21,7 +21,7 @@ use itertools::Itertools;
 use revm::{
     Database, DatabaseCommit, JournalEntry,
     bytecode::Bytecode,
-    context::{BlockEnv, CfgEnv, JournalInner, TxEnv},
+    context::{Block, BlockEnv, CfgEnv, JournalInner, Transaction, TxEnv},
     context_interface::{journaled_state::account::JournaledAccountTr, result::ResultAndState},
     database::{CacheDB, DatabaseRef, EmptyDB},
     primitives::{AddressMap, HashMap as Map, KECCAK_EMPTY, Log, hardfork::SpecId},
@@ -472,7 +472,6 @@ pub struct Backend<N: Network = AnyNetwork, F: FoundryEvmFactory = EthEvmFactory
 impl<N: Network, F: FoundryEvmFactory> Backend<N, F>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
-    F::BlockEnv: FoundryBlock + Unpin,
 {
     /// Creates a new Backend with a spawned multi fork thread.
     ///
@@ -793,7 +792,7 @@ where
         Self: DatabaseExt,
         F::Spec: From<SpecId>,
     {
-        self.initialize(evm_env.cfg_env.spec, tx_env.caller, tx_env.kind);
+        self.initialize(evm_env.cfg_env.spec, tx_env.caller(), tx_env.kind());
         let mut evm = crate::evm::new_eth_evm_with_inspector(self, evm_env.to_owned(), inspector);
 
         let res = evm.transact(tx_env.clone()).wrap_err("EVM error")?;
@@ -906,7 +905,7 @@ where
 
         let fork = self.inner.get_fork_by_id_mut(id)?;
         let full_block =
-            fork.backend().get_full_block(evm_env.block_env.number.saturating_to::<u64>())?;
+            fork.backend().get_full_block(evm_env.block_env.number().saturating_to::<u64>())?;
 
         // Collect non-system transactions up to and including the target.
         let txs = full_block
@@ -934,7 +933,7 @@ where
             let mut evm = alloy_evm::EthEvmFactory::default().create_evm(replay_db, evm_env);
 
             for tx in &txs_to_replay {
-                let tx_env: TxEnv = tx.try_any_to_tx_env()?;
+                let tx_env = tx.try_any_to_tx_env()?;
                 trace!(tx=?tx.tx_hash(), "committing transaction");
                 evm.transact_commit(tx_env).wrap_err("backend: failed committing transaction")?;
             }
@@ -1096,8 +1095,8 @@ where
         if let Some(active_fork_id) = self.active_fork_id() {
             self.forks.update_block(
                 self.ensure_fork_id(active_fork_id).cloned()?,
-                evm_env.block_env.number,
-                evm_env.block_env.timestamp,
+                evm_env.block_env.number(),
+                evm_env.block_env.timestamp(),
             )?;
         }
 
@@ -1113,8 +1112,8 @@ where
         if let Some(active) = self.active_fork_mut() {
             active.journaled_state = active_journaled_state.clone();
 
-            let caller = tx_env.caller;
-            let caller_account = active.journaled_state.state.get(&tx_env.caller).cloned();
+            let caller = tx_env.caller();
+            let caller_account = active.journaled_state.state.get(&caller).cloned();
             let target_fork = self.inner.get_fork_mut(idx);
 
             // depth 0 will be the default value when the fork was created
@@ -1179,11 +1178,11 @@ where
             // another edge case where a fork is created and selected during setup with not
             // necessarily the same caller as for the test, however we must always
             // ensure that fork's state contains the current sender
-            let caller = tx_env.caller;
+            let caller = tx_env.caller();
             fork.journaled_state.state.entry(caller).or_insert_with(|| {
                 let caller_account = active_journaled_state
                     .state
-                    .get(&tx_env.caller)
+                    .get(&caller)
                     .map(|acc| acc.info.clone())
                     .unwrap_or_default();
 
@@ -1541,7 +1540,6 @@ where
 impl<N: Network, F: FoundryEvmFactory> DatabaseRef for Backend<N, F>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
-    F::BlockEnv: FoundryBlock + Unpin,
 {
     type Error = DatabaseError;
 
@@ -1581,7 +1579,6 @@ where
 impl<N: Network, F: FoundryEvmFactory> DatabaseCommit for Backend<N, F>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
-    F::BlockEnv: FoundryBlock + Unpin,
 {
     fn commit(&mut self, changes: AddressMap<Account>) {
         if let Some(db) = self.active_fork_db_mut() {
@@ -1595,7 +1592,6 @@ where
 impl<N: Network, F: FoundryEvmFactory> Database for Backend<N, F>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
-    F::BlockEnv: FoundryBlock + Unpin,
 {
     type Error = DatabaseError;
     fn basic(&mut self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
