@@ -2788,6 +2788,44 @@ where
         f(Box::new(cache_db), block_info)
     }
 
+    /// Returns the ERC20/TIP20 token balance for an account.
+    ///
+    /// Calls `balanceOf(address)` on the token contract. Returns `U256::ZERO` if
+    /// the call fails (e.g. the token contract doesn't exist).
+    pub async fn get_fee_token_balance(
+        &self,
+        token: Address,
+        account: Address,
+    ) -> Result<U256, BlockchainError> {
+        // balanceOf(address) selector: 0x70a08231
+        let mut calldata = vec![0x70, 0xa0, 0x82, 0x31];
+        // ABI-encode the address (left-padded to 32 bytes)
+        calldata.extend_from_slice(&[0u8; 12]);
+        calldata.extend_from_slice(account.as_slice());
+
+        let request = WithOtherFields::new(TransactionRequest {
+            from: Some(Address::ZERO),
+            to: Some(TxKind::Call(token)),
+            input: calldata.into(),
+            ..Default::default()
+        });
+
+        let fee_details = FeeDetails::zero();
+        let (exit, out, _, _) = self.call(request, fee_details, None, Default::default()).await?;
+
+        // Check if call succeeded
+        if exit != InstructionResult::Return && exit != InstructionResult::Stop {
+            // Return zero balance if call failed (token might not exist)
+            return Ok(U256::ZERO);
+        }
+
+        // Decode U256 from output
+        match out {
+            Some(Output::Call(data)) if data.len() >= 32 => Ok(U256::from_be_slice(&data[..32])),
+            _ => Ok(U256::ZERO),
+        }
+    }
+
     /// Executes the [TransactionRequest] without writing to the DB
     ///
     /// # Errors
@@ -4049,7 +4087,60 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
     ) -> Result<(), BlockchainError> {
         let address = *tx.sender();
         let account = self.get_account(address).await?;
-        Ok(self.validate_pool_transaction_for(tx, &account, &self.next_evm_env())?)
+        let evm_env = self.next_evm_env();
+
+        // Tempo AA: validate time bounds and fee token balance (async checks)
+        if let FoundryTxEnvelope::Tempo(aa_tx) = tx.transaction.as_ref() {
+            let tempo_tx = aa_tx.tx();
+            let current_time = evm_env.block_env.timestamp.saturating_to::<u64>();
+
+            // Reject if valid_before is expired or too close to current time (< 3 seconds)
+            const AA_VALID_BEFORE_MIN_SECS: u64 = 3;
+            if let Some(valid_before) = tempo_tx.valid_before {
+                let min_allowed = current_time.saturating_add(AA_VALID_BEFORE_MIN_SECS);
+                if valid_before <= min_allowed {
+                    return Err(InvalidTransactionError::TempoValidBeforeExpired {
+                        valid_before,
+                        min_allowed,
+                    }
+                    .into());
+                }
+            }
+
+            // Reject if valid_after is too far in the future (> 1 hour)
+            const AA_VALID_AFTER_MAX_SECS: u64 = 3600;
+            if let Some(valid_after) = tempo_tx.valid_after {
+                let max_allowed = current_time.saturating_add(AA_VALID_AFTER_MAX_SECS);
+                if valid_after > max_allowed {
+                    return Err(InvalidTransactionError::TempoValidAfterTooFar {
+                        valid_after,
+                        max_allowed,
+                    }
+                    .into());
+                }
+            }
+
+            // Fee token balance check
+            let fee_payer = tempo_tx.recover_fee_payer(address).unwrap_or(address);
+            let fee_token =
+                tempo_tx.fee_token.unwrap_or(foundry_evm::core::tempo::PATH_USD_ADDRESS);
+
+            // gas_limit * max_fee_per_gas in wei, scaled to 6-decimal token units
+            let required_wei =
+                U256::from(tempo_tx.gas_limit).saturating_mul(U256::from(tempo_tx.max_fee_per_gas));
+            let required = required_wei / U256::from(10u64.pow(12));
+
+            let balance = self.get_fee_token_balance(fee_token, fee_payer).await?;
+            if balance < required {
+                return Err(InvalidTransactionError::TempoInsufficientFeeTokenBalance {
+                    balance,
+                    required,
+                }
+                .into());
+            }
+        }
+
+        Ok(self.validate_pool_transaction_for(tx, &account, &evm_env)?)
     }
 
     fn validate_pool_transaction_for(
