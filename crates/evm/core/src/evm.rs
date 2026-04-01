@@ -689,7 +689,7 @@ impl<
     }
 }
 
-/// Tempo counterpart of [`FoundryHandler`]. Wraps [`TempoEvmHandler`] and injects CREATE2
+/// Tempo counterpart of [`EthFoundryHandler`]. Wraps [`TempoEvmHandler`] and injects CREATE2
 /// factory redirect logic into the execution loop. Delegates all [`Handler`] methods to
 /// [`TempoEvmHandler`] for proper Tempo validation, fee collection, AA dispatch, and gas
 /// handling.
