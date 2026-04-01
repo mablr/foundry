@@ -43,7 +43,7 @@ use tempo_revm::{
 
 pub trait FoundryEvmFactory:
     EvmFactory<
-        Spec: Into<SpecId> + Default + Copy + Clone + Unpin + Send + 'static,
+        Spec: Into<SpecId> + Default + Copy + Unpin + Send + 'static,
         BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
         Tx: Clone + IntoTxEnv<Self::Tx> + FoundryTransaction,
         Precompiles = PrecompilesMap,
