@@ -439,9 +439,9 @@ struct _ObjectSafe(dyn DatabaseExt);
 /// after reverting the snapshot.
 #[derive(Clone, Debug)]
 #[must_use]
-pub struct Backend<N: Network = AnyNetwork> {
+pub struct Backend<N: Network = AnyNetwork, F: FoundryEvmFactory = EthEvmFactory> {
     /// The access point for managing forks
-    forks: MultiFork<N, SpecId, BlockEnv>,
+    forks: MultiFork<N, F::Spec, F::BlockEnv>,
     // The default in memory db
     mem_db: FoundryEvmInMemoryDB,
     /// The journaled_state to use to initialize new forks with
@@ -466,19 +466,20 @@ pub struct Backend<N: Network = AnyNetwork> {
     /// If this is set, then the Backend is currently in forking mode
     active_fork_ids: Option<(LocalForkId, ForkLookupIndex)>,
     /// holds additional Backend data
-    inner: BackendInner<N>,
+    inner: BackendInner<N, F>,
 }
 
-impl<N: Network> Backend<N>
+impl<N: Network, F: FoundryEvmFactory> Backend<N, F>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
+    F::BlockEnv: FoundryBlock + Unpin,
 {
     /// Creates a new Backend with a spawned multi fork thread.
     ///
     /// If `fork` is `Some` this will use a `fork` database, otherwise with an in-memory
     /// database.
     pub fn spawn(fork: Option<CreateFork>) -> eyre::Result<Self> {
-        Self::new(MultiFork::<N, SpecId, BlockEnv>::spawn(), fork)
+        Self::new(MultiFork::<N, F::Spec, F::BlockEnv>::spawn(), fork)
     }
 
     /// Creates a new instance of `Backend`
@@ -488,7 +489,7 @@ where
     ///
     /// Prefer using [`spawn`](Self::spawn) instead.
     pub fn new(
-        forks: MultiFork<N, SpecId, BlockEnv>,
+        forks: MultiFork<N, F::Spec, F::BlockEnv>,
         fork: Option<CreateFork>,
     ) -> eyre::Result<Self> {
         trace!(target: "backend", forking_mode=?fork.is_some(), "creating executor backend");
@@ -527,7 +528,7 @@ where
     /// as active
     pub(crate) fn new_with_fork(
         id: &ForkId,
-        fork: Fork<N>,
+        fork: Fork<N, F::BlockEnv>,
         journaled_state: JournaledState,
     ) -> eyre::Result<Self> {
         let mut backend = Self::spawn(None)?;
@@ -587,9 +588,12 @@ where
     }
 
     /// Returns all snapshots created in this backend
+    #[allow(clippy::type_complexity)]
     pub fn state_snapshots(
         &self,
-    ) -> &StateSnapshots<BackendStateSnapshot<BackendDatabaseSnapshot<N>, SpecId, BlockEnv>> {
+    ) -> &StateSnapshots<
+        BackendStateSnapshot<BackendDatabaseSnapshot<N, F::BlockEnv>, F::Spec, F::BlockEnv>,
+    > {
         &self.inner.state_snapshots
     }
 
@@ -601,8 +605,8 @@ where
     /// This will also grant cheatcode access to the test account
     pub fn set_test_contract(&mut self, acc: Address) -> &mut Self {
         trace!(?acc, "setting test account");
-        self.add_persistent_account(acc);
-        self.allow_cheatcode_access(acc);
+        self.inner.persistent_accounts.insert(acc);
+        self.inner.cheatcode_access_accounts.insert(acc);
         self
     }
 
@@ -610,14 +614,13 @@ where
     pub fn set_caller(&mut self, acc: Address) -> &mut Self {
         trace!(?acc, "setting caller account");
         self.inner.caller = Some(acc);
-        self.allow_cheatcode_access(acc);
+        self.inner.cheatcode_access_accounts.insert(acc);
         self
     }
 
     /// Sets the current spec id
-    pub fn set_spec_id(&mut self, spec_id: SpecId) -> &mut Self {
-        trace!(?spec_id, "setting spec ID");
-        self.inner.spec_id = spec_id;
+    pub fn set_spec_id(&mut self, spec_id: impl Into<F::Spec>) -> &mut Self {
+        self.inner.spec_id = spec_id.into();
         self
     }
 
@@ -644,7 +647,7 @@ where
     pub(crate) fn update_fork_db(
         &self,
         active_journaled_state: &mut JournaledState,
-        target_fork: &mut Fork<N>,
+        target_fork: &mut Fork<N, F::BlockEnv>,
     ) {
         self.update_fork_db_contracts(
             self.inner.persistent_accounts.iter().copied(),
@@ -658,7 +661,7 @@ where
         &self,
         accounts: impl IntoIterator<Item = Address>,
         active_journaled_state: &mut JournaledState,
-        target_fork: &mut Fork<N>,
+        target_fork: &mut Fork<N, F::BlockEnv>,
     ) {
         if let Some(db) = self.active_fork_db() {
             merge_account_data(accounts, db, active_journaled_state, target_fork)
@@ -683,22 +686,22 @@ where
     }
 
     /// Returns the currently active `Fork`, if any
-    pub fn active_fork(&self) -> Option<&Fork<N>> {
+    pub fn active_fork(&self) -> Option<&Fork<N, F::BlockEnv>> {
         self.active_fork_ids.map(|(_, idx)| self.inner.get_fork(idx))
     }
 
     /// Returns the currently active `Fork`, if any
-    pub fn active_fork_mut(&mut self) -> Option<&mut Fork<N>> {
+    pub fn active_fork_mut(&mut self) -> Option<&mut Fork<N, F::BlockEnv>> {
         self.active_fork_ids.map(|(_, idx)| self.inner.get_fork_mut(idx))
     }
 
     /// Returns the currently active `ForkDB`, if any
-    pub fn active_fork_db(&self) -> Option<&ForkDB<N, BlockEnv>> {
+    pub fn active_fork_db(&self) -> Option<&ForkDB<N, F::BlockEnv>> {
         self.active_fork().map(|f| &f.db)
     }
 
     /// Returns the currently active `ForkDB`, if any
-    pub fn active_fork_db_mut(&mut self) -> Option<&mut ForkDB<N, BlockEnv>> {
+    pub fn active_fork_db_mut(&mut self) -> Option<&mut ForkDB<N, F::BlockEnv>> {
         self.active_fork_mut().map(|f| &mut f.db)
     }
 
@@ -719,7 +722,7 @@ where
     }
 
     /// Creates a snapshot of the currently active database
-    pub(crate) fn create_db_snapshot(&self) -> BackendDatabaseSnapshot<N> {
+    pub(crate) fn create_db_snapshot(&self) -> BackendDatabaseSnapshot<N, F::BlockEnv> {
         if let Some((id, idx)) = self.active_fork_ids {
             let fork = self.inner.get_fork(idx).clone();
             let fork_id = self.inner.ensure_fork_id(id).cloned().expect("Exists; qed");
@@ -755,7 +758,12 @@ where
     /// Initializes settings we need to keep track of.
     ///
     /// We need to track these mainly to prevent issues when switching between different evms
-    pub(crate) fn initialize(&mut self, spec_id: SpecId, caller: Address, tx_kind: TxKind) {
+    pub(crate) fn initialize(
+        &mut self,
+        spec_id: impl Into<F::Spec>,
+        caller: Address,
+        tx_kind: TxKind,
+    ) {
         self.set_caller(caller);
         self.set_spec_id(spec_id);
 
@@ -780,7 +788,11 @@ where
         evm_env: &mut EvmEnv,
         tx_env: &mut TxEnv,
         inspector: I,
-    ) -> eyre::Result<ResultAndState> {
+    ) -> eyre::Result<ResultAndState>
+    where
+        Self: DatabaseExt,
+        F::Spec: From<SpecId>,
+    {
         self.initialize(evm_env.cfg_env.spec, tx_env.caller, tx_env.kind);
         let mut evm = crate::evm::new_eth_evm_with_inspector(self, evm_env.to_owned(), inspector);
 
@@ -818,7 +830,10 @@ where
             .fork_init_journaled_state
             .state
             .iter()
-            .filter(|(addr, _)| !self.is_existing_precompile(addr) && !self.is_persistent(addr))
+            .filter(|(addr, _)| {
+                !self.is_existing_precompile(addr)
+                    && !self.inner.persistent_accounts.contains(*addr)
+            })
             .map(|(addr, _)| addr)
             .copied()
             .collect::<Vec<_>>();
@@ -1523,9 +1538,10 @@ where
     }
 }
 
-impl<N: Network> DatabaseRef for Backend<N>
+impl<N: Network, F: FoundryEvmFactory> DatabaseRef for Backend<N, F>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
+    F::BlockEnv: FoundryBlock + Unpin,
 {
     type Error = DatabaseError;
 
@@ -1562,9 +1578,10 @@ where
     }
 }
 
-impl<N: Network> DatabaseCommit for Backend<N>
+impl<N: Network, F: FoundryEvmFactory> DatabaseCommit for Backend<N, F>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
+    F::BlockEnv: FoundryBlock + Unpin,
 {
     fn commit(&mut self, changes: AddressMap<Account>) {
         if let Some(db) = self.active_fork_db_mut() {
@@ -1575,9 +1592,10 @@ where
     }
 }
 
-impl<N: Network> Database for Backend<N>
+impl<N: Network, F: FoundryEvmFactory> Database for Backend<N, F>
 where
     N::TransactionResponse: TryAnyToTxEnv<TxEnv>,
+    F::BlockEnv: FoundryBlock + Unpin,
 {
     type Error = DatabaseError;
     fn basic(&mut self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
@@ -1615,11 +1633,11 @@ where
 
 /// Variants of a [revm::Database]
 #[derive(Clone, Debug)]
-pub enum BackendDatabaseSnapshot<N: Network> {
+pub enum BackendDatabaseSnapshot<N: Network, B: ForkBlockEnv = BlockEnv> {
     /// Simple in-memory [revm::Database]
     InMemory(FoundryEvmInMemoryDB),
     /// Contains the entire forking mode database
-    Forked(LocalForkId, ForkId, ForkLookupIndex, Box<Fork<N>>),
+    Forked(LocalForkId, ForkId, ForkLookupIndex, Box<Fork<N, B>>),
 }
 
 /// Represents a fork
@@ -1660,7 +1678,7 @@ impl<N: Network, B: ForkBlockEnv> Fork<N, B> {
 
 /// Container type for various Backend related data
 #[derive(Clone, Debug)]
-pub struct BackendInner<N: Network, F: FoundryEvmFactory = EthEvmFactory> {
+pub struct BackendInner<N: Network, F: FoundryEvmFactory> {
     /// Stores the `ForkId` of the fork the `Backend` launched with from the start.
     ///
     /// In other words if [`Backend::spawn()`] was called with a `CreateFork` command, to launch
@@ -1685,8 +1703,10 @@ pub struct BackendInner<N: Network, F: FoundryEvmFactory = EthEvmFactory> {
     // Note: data is stored in an `Option` so we can remove it without reshuffling
     pub forks: Vec<Option<Fork<N, F::BlockEnv>>>,
     /// Contains state snapshots made at a certain point
-    pub state_snapshots:
-        StateSnapshots<BackendStateSnapshot<BackendDatabaseSnapshot<N>, F::Spec, F::BlockEnv>>,
+    #[allow(clippy::type_complexity)]
+    pub state_snapshots: StateSnapshots<
+        BackendStateSnapshot<BackendDatabaseSnapshot<N, F::BlockEnv>, F::Spec, F::BlockEnv>,
+    >,
     /// Tracks whether there was a failure in a snapshot that was reverted
     ///
     /// The Test contract contains a bool variable that is set to true when an `assert` function
@@ -1914,11 +1934,11 @@ impl<N: Network, F: FoundryEvmFactory> Default for BackendInner<N, F> {
 
 /// Clones the data of the given `accounts` from the `active` database into the `fork_db`
 /// This includes the data held in storage (`CacheDB`) and kept in the `JournaledState`.
-pub(crate) fn merge_account_data<ExtDB: DatabaseRef, N: Network>(
+pub(crate) fn merge_account_data<ExtDB: DatabaseRef, N: Network, B: ForkBlockEnv>(
     accounts: impl IntoIterator<Item = Address>,
     active: &CacheDB<ExtDB>,
     active_journaled_state: &mut JournaledState,
-    target_fork: &mut Fork<N>,
+    target_fork: &mut Fork<N, B>,
 ) {
     for addr in accounts.into_iter() {
         merge_db_account_data(addr, active, &mut target_fork.db);
@@ -2066,10 +2086,10 @@ pub fn update_state<DB: Database>(
 
 /// Applies the changeset of a transaction to the active journaled state and also commits it in the
 /// forked db
-fn apply_state_changeset<N: Network>(
+fn apply_state_changeset<N: Network, B: ForkBlockEnv>(
     state: EvmState,
     journaled_state: &mut JournaledState,
-    fork: &mut Fork<N>,
+    fork: &mut Fork<N, B>,
     persistent_accounts: &HashSet<Address>,
 ) -> Result<(), BackendError> {
     // commit the state and update the loaded accounts

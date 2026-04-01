@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    FoundryContextExt, FoundryInspectorExt,
+    FoundryBlock, FoundryContextExt, FoundryInspectorExt,
     backend::{DatabaseExt, JournaledState},
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
@@ -44,8 +44,11 @@ use tempo_revm::{
 /// [`PrecompilesMap`] as the precompile provider, enabling use across the backend and cheatcode
 /// layers without depending on a concrete EVM type.
 pub trait FoundryEvmFactory:
-    EvmFactory<Spec: Into<SpecId>, BlockEnv: ForkBlockEnv + Default, Precompiles = PrecompilesMap>
-    + Clone
+    EvmFactory<
+        Spec: Into<SpecId> + Default + Copy + Clone + Unpin + Send + 'static,
+        BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
+        Precompiles = PrecompilesMap,
+    > + Clone
     + Debug
     + Default
 {
@@ -53,8 +56,8 @@ pub trait FoundryEvmFactory:
 
 impl<
     F: EvmFactory<
-            Spec: Into<SpecId>,
-            BlockEnv: ForkBlockEnv + Default,
+            Spec: Into<SpecId> + Default + Copy + Clone + Unpin + Send + 'static,
+            BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
             Precompiles = PrecompilesMap,
         > + Clone
         + Debug
