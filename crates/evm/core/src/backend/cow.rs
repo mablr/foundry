@@ -2,25 +2,23 @@
 
 use super::BackendError;
 use crate::{
-    FoundryInspectorExt,
-    backend::{
+    FoundryInspectorExt, backend::{
         Backend, DatabaseExt, JournaledState, LocalForkId, RevertStateSnapshotAction,
         diagnostic::RevertDiagnostic,
-    },
-    fork::{CreateFork, ForkId},
+    }, evm::{FoundryEvmFactory, transact_with_factory}, fork::{CreateFork, ForkId}
 };
-use alloy_evm::{Evm, EvmEnv, eth::EthEvmContext};
+use alloy_evm::{EthEvmFactory, EvmEnv, eth::EthEvmContext};
 use alloy_genesis::GenesisAccount;
+use alloy_network::{AnyNetwork, Network};
 use alloy_primitives::{Address, B256, TxKind, U256};
-use eyre::WrapErr;
 use foundry_fork_db::DatabaseError;
 use revm::{
     Database, DatabaseCommit,
     bytecode::Bytecode,
-    context::TxEnv,
+    context::{Transaction, TxEnv},
     context_interface::result::ResultAndState,
     database::DatabaseRef,
-    primitives::{AddressMap, hardfork::SpecId},
+    primitives::AddressMap,
     state::{Account, AccountInfo, EvmState},
 };
 use std::{borrow::Cow, collections::BTreeMap};
@@ -42,19 +40,19 @@ use std::{borrow::Cow, collections::BTreeMap};
 /// which would add significant overhead for large fuzz sets even if the Database is not big after
 /// setup.
 #[derive(Clone, Debug)]
-pub struct CowBackend<'a> {
+pub struct CowBackend<'a, N: Network = AnyNetwork, F: FoundryEvmFactory<'a> = EthEvmFactory> {
     /// The underlying `Backend`.
     ///
     /// No calls on the `CowBackend` will ever persistently modify the `backend`'s state.
-    pub backend: Cow<'a, Backend>,
+    pub backend: Cow<'a, Backend<N, F>>,
     /// Pending initialization params for the backend on first mutable access.
     /// `None` means the backend has already been initialized for the current call.
-    pending_init: Option<(SpecId, Address, TxKind)>,
+    pending_init: Option<(F::Spec, Address, TxKind)>,
 }
 
-impl<'a> CowBackend<'a> {
+impl<'a, N: Network, F: FoundryEvmFactory<'a>> CowBackend<'a, N, F> {
     /// Creates a new `CowBackend` with the given `Backend`.
-    pub fn new_borrowed(backend: &'a Backend) -> Self {
+    pub fn new_borrowed(backend: &'a Backend<N, F>) -> Self {
         Self { backend: Cow::Borrowed(backend), pending_init: None }
     }
 
@@ -63,24 +61,15 @@ impl<'a> CowBackend<'a> {
     /// Note: in case there are any cheatcodes executed that modify the environment, this will
     /// update the given `env` with the new values.
     #[instrument(name = "inspect", level = "debug", skip_all)]
-    pub fn inspect<I: for<'db> FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>>(
+    pub fn inspect<I: FoundryInspectorExt<F::Context<F::Db>>>(
         &mut self,
-        evm_env: &mut EvmEnv,
-        tx_env: &mut TxEnv,
+        evm_env: &mut EvmEnv<F::Spec, F::BlockEnv>,
+        tx_env: &mut F::Tx,
         inspector: I,
-    ) -> eyre::Result<ResultAndState> {
-        // this is a new call to inspect with a new env, so even if we've cloned the backend
-        // already, we reset the initialized state
-        self.pending_init = Some((evm_env.cfg_env.spec, tx_env.caller, tx_env.kind));
+    ) -> eyre::Result<ResultAndState<F::HaltReason>> {
+        self.pending_init = Some((evm_env.cfg_env.spec, tx_env.caller(), tx_env.kind()));
 
-        let mut evm = crate::evm::new_eth_evm_with_inspector(self, evm_env.clone(), inspector);
-
-        let res = evm.transact(tx_env.clone()).wrap_err("EVM error")?;
-
-        *tx_env = evm.tx.clone();
-        *evm_env = evm.finish().1;
-
-        Ok(res)
+        transact_with_factory(self, evm_env, tx_env, inspector, &F::default())
     }
 
     /// Returns whether there was a state snapshot failure in the backend.

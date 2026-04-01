@@ -5,12 +5,16 @@ use std::{
 };
 
 use crate::{
-    FoundryBlock, FoundryContextExt, FoundryInspectorExt,
+    FoundryBlock, FoundryContextExt, FoundryInspectorExt, FoundryTransaction,
     backend::{DatabaseExt, JournaledState},
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
 use alloy_consensus::constants::KECCAK_EMPTY;
-use alloy_evm::{Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::PrecompilesMap};
+use alloy_evm::{
+    Evm, EvmEnv, EvmFactory, IntoTxEnv,
+    eth::{EthEvmContext, EthEvmFactory},
+    precompiles::PrecompilesMap,
+};
 use alloy_primitives::{Address, Bytes, U256};
 use foundry_fork_db::{DatabaseError, ForkBlockEnv};
 use revm::{
@@ -38,13 +42,17 @@ use tempo_revm::{
     gas_params::tempo_gas_params, handler::TempoEvmHandler,
 };
 
-/// Marker trait for [`EvmFactory`] implementations compatible with Foundry's EVM infrastructure.
+/// Factory for constructing a Foundry-wrapped EVM with custom handler logic (CREATE2 factory
+/// redirect) and network precompile injection.
 ///
-/// Requires a spec type convertible to [`SpecId`], a defaultable block environment, and
-/// [`PrecompilesMap`] as the precompile provider, enabling use across the backend and cheatcode
-/// layers without depending on a concrete EVM type.
+/// This is the central abstraction for network-generic EVM construction in Foundry. Each
+/// network (Ethereum, Tempo, etc.) implements this trait. It extends [`EvmFactory`] so that
+/// the raw alloy factory is also available (e.g. for precompile queries in [`BackendInner`]).
+///
+/// [`BackendInner`]: crate::backend::BackendInner
 pub trait FoundryEvmFactory:
     EvmFactory<
+        Tx: Clone + IntoTxEnv<Self::Tx> + FoundryTransaction + Debug,
         Spec: Into<SpecId> + Default + Copy + Clone + Unpin + Send + 'static,
         BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
         Precompiles = PrecompilesMap,
@@ -52,18 +60,68 @@ pub trait FoundryEvmFactory:
     + Debug
     + Default
 {
+    type FoundryContext<DB: DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>: FoundryContextExt<Db = DB>;
+    type FoundryEvm<DB: DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>, I: FoundryInspectorExt<Self::FoundryContext<DB>>>: Evm<
+            DB = DB,
+            Tx = Self::Tx,
+            BlockEnv = Self::BlockEnv,
+            Spec = Self::Spec,
+            HaltReason = Self::HaltReason,
+            Inspector = I,
+        > + Deref<Target: ContextTr<Tx = Self::Tx>>;
+
+    /// Creates a Foundry-wrapped EVM with the given inspector.
+    fn create_foundry_evm<DB: DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>, I: FoundryInspectorExt<Self::FoundryContext<DB>>>(
+        &self,
+        db: DB,
+        evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
+        inspector: I,
+    ) -> Self::FoundryEvm<DB, I>;
 }
 
-impl<
-    F: EvmFactory<
-            Spec: Into<SpecId> + Default + Copy + Clone + Unpin + Send + 'static,
-            BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
-            Precompiles = PrecompilesMap,
-        > + Clone
-        + Debug
-        + Default,
-> FoundryEvmFactory for F
+impl FoundryEvmFactory for EthEvmFactory {
+    type FoundryContext<DB: DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>> = EthEvmContext<DB>;
+
+    type FoundryEvm<DB: DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>, I: FoundryInspectorExt<Self::FoundryContext<DB>>> = FoundryEvm<DB, I>;
+
+    fn create_foundry_evm<DB: DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>, I: FoundryInspectorExt<Self::FoundryContext<DB>>>(
+        &self,
+        db: DB,
+        evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
+        inspector: I,
+    ) -> Self::FoundryEvm<DB, I> {
+        new_eth_evm_with_inspector(db, evm_env, inspector)
+    }
+}
+
+/// Builds an EVM using the given factory, executes a transaction, and writes back the
+/// modified tx env and `EvmEnv`.
+///
+/// Shared by [`Backend::inspect_with_factory`] and [`CowBackend::inspect_with_factory`].
+///
+/// [`Backend::inspect_with_factory`]: crate::backend::Backend::inspect_with_factory
+/// [`CowBackend::inspect_with_factory`]: crate::backend::CowBackend::inspect_with_factory
+pub fn transact_with_factory<'db, F: FoundryEvmFactory<'db>, I>(
+    db: F::Db,
+    evm_env: &mut EvmEnv<F::Spec, F::BlockEnv>,
+    tx_env: &mut F::Tx,
+    inspector: I,
+    factory: &F,
+) -> eyre::Result<ResultAndState<F::HaltReason>>
+where
+    I: FoundryInspectorExt<
+        F::Context<F::Db>,
+    >,
 {
+    let mut evm =
+        F::create_foundry_evm(factory, db, evm_env.clone(), inspector);
+
+    let res = evm.transact_raw(tx_env.clone()).map_err(|e| eyre::eyre!("EVM error; {e}"))?;
+
+    *tx_env = evm.tx().clone();
+    *evm_env = evm.finish().1;
+
+    Ok(res)
 }
 
 pub fn new_eth_evm_with_inspector<
@@ -75,7 +133,7 @@ pub fn new_eth_evm_with_inspector<
     inspector: I,
 ) -> FoundryEvm<'db, I> {
     let eth_evm =
-        alloy_evm::EthEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
+        EvmFactory::create_evm_with_inspector(&EthEvmFactory::default(), db, evm_env, inspector);
     let mut inner = eth_evm.into_inner();
     inner.ctx.cfg.tx_chain_id_check = true;
 
