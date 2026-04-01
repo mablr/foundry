@@ -1060,14 +1060,14 @@ impl<N: Network> Backend<N> {
     }
 
     /// Creates a concrete EVM, injects precompiles, transacts, and returns the result mapped
-    /// to [`OpHaltReason`] so all call sites share a single halt-reason type.
+    /// to [`HaltReason`] so all call sites share a single halt-reason type.
     fn transact_with_inspector_ref<'db, I, DB>(
         &self,
         db: &'db DB,
         evm_env: &EvmEnv,
         inspector: &mut I,
         tx_env: OpTransaction<TxEnv>,
-    ) -> Result<ResultAndState<OpHaltReason>, BlockchainError>
+    ) -> Result<ResultAndState<HaltReason>, BlockchainError>
     where
         DB: DatabaseRef + ?Sized,
         I: Inspector<EthEvmContext<WrapDatabaseRef<&'db DB>>>
@@ -1086,31 +1086,21 @@ impl<N: Network> Backend<N> {
                 inspector,
             );
             self.inject_precompiles(evm.precompiles_mut());
-            Ok(evm.transact(tx_env)?)
-        } else if self.is_tempo() {
-            let hardfork = TempoHardfork::from(evm_env.cfg_env.spec);
-            let tempo_env = EvmEnv::new(
-                evm_env
-                    .cfg_env
-                    .clone()
-                    .with_spec_and_gas_params(hardfork, tempo_gas_params(hardfork)),
-                TempoBlockEnv { inner: evm_env.block_env.clone(), timestamp_millis_part: 0 },
-            );
-            let mut evm = TempoEvmFactory::default().create_evm_with_inspector(
-                WrapDatabaseRef(db),
-                tempo_env,
-                inspector,
-            );
-            self.inject_precompiles(evm.precompiles_mut());
-            let tempo_tx = TempoTxEnv::from(tx_env.base);
-            let result = evm.transact(tempo_tx)?;
+            let result = evm.transact(tx_env)?;
             Ok(ResultAndState {
                 result: result.result.map_haltreason(|h| match h {
-                    TempoHaltReason::Ethereum(eth) => OpHaltReason::Base(eth),
-                    _ => OpHaltReason::Base(HaltReason::PrecompileError),
+                    OpHaltReason::Base(eth) => eth,
+                    _ => HaltReason::PrecompileError,
                 }),
                 state: result.state,
             })
+        } else if self.is_tempo() {
+            self.transact_tempo_with_inspector_ref(
+                db,
+                evm_env,
+                inspector,
+                TempoTxEnv::from(tx_env.base),
+            )
         } else {
             let mut evm = EthEvmFactory::default().create_evm_with_inspector(
                 WrapDatabaseRef(db),
@@ -1118,12 +1108,74 @@ impl<N: Network> Backend<N> {
                 inspector,
             );
             self.inject_precompiles(evm.precompiles_mut());
-            let result = evm.transact(tx_env.base)?;
-            Ok(ResultAndState {
-                result: result.result.map_haltreason(OpHaltReason::Base),
-                state: result.state,
-            })
+            Ok(evm.transact(tx_env.base)?)
         }
+    }
+
+    /// Builds the appropriate tx env from a [`FoundryTxEnvelope`], executes via the correct
+    /// EVM backend (Op/Tempo/Eth), and returns both the result and the base [`TxEnv`].
+    fn transact_envelope_with_inspector_ref<'db, I, DB>(
+        &self,
+        db: &'db DB,
+        evm_env: &EvmEnv,
+        inspector: &mut I,
+        tx: &FoundryTxEnvelope,
+        sender: Address,
+    ) -> Result<(ResultAndState<HaltReason>, TxEnv), BlockchainError>
+    where
+        DB: DatabaseRef + ?Sized,
+        I: Inspector<EthEvmContext<WrapDatabaseRef<&'db DB>>>
+            + Inspector<OpContext<WrapDatabaseRef<&'db DB>>>
+            + Inspector<TempoContext<WrapDatabaseRef<&'db DB>>>,
+        WrapDatabaseRef<&'db DB>: Database<Error = DatabaseError>,
+    {
+        if matches!(tx, FoundryTxEnvelope::Tempo(_)) {
+            let tx_env: TempoTxEnv =
+                FromTxWithEncoded::from_encoded_tx(tx, sender, tx.encoded_2718().into());
+            let base = tx_env.inner.clone();
+            let result = self.transact_tempo_with_inspector_ref(db, evm_env, inspector, tx_env)?;
+            Ok((result, base))
+        } else {
+            let tx_env: OpTransaction<TxEnv> =
+                FromTxWithEncoded::from_encoded_tx(tx, sender, tx.encoded_2718().into());
+            let base = tx_env.base.clone();
+            let result = self.transact_with_inspector_ref(db, evm_env, inspector, tx_env)?;
+            Ok((result, base))
+        }
+    }
+
+    /// Creates a Tempo EVM, injects precompiles, and transacts with a native [`TempoTxEnv`].
+    fn transact_tempo_with_inspector_ref<'db, I, DB>(
+        &self,
+        db: &'db DB,
+        evm_env: &EvmEnv,
+        inspector: &mut I,
+        tx_env: TempoTxEnv,
+    ) -> Result<ResultAndState<HaltReason>, BlockchainError>
+    where
+        DB: DatabaseRef + ?Sized,
+        I: Inspector<TempoContext<WrapDatabaseRef<&'db DB>>>,
+        WrapDatabaseRef<&'db DB>: Database<Error = DatabaseError>,
+    {
+        let hardfork = TempoHardfork::from(evm_env.cfg_env.spec);
+        let tempo_env = EvmEnv::new(
+            evm_env.cfg_env.clone().with_spec_and_gas_params(hardfork, tempo_gas_params(hardfork)),
+            TempoBlockEnv { inner: evm_env.block_env.clone(), timestamp_millis_part: 0 },
+        );
+        let mut evm = TempoEvmFactory::default().create_evm_with_inspector(
+            WrapDatabaseRef(db),
+            tempo_env,
+            inspector,
+        );
+        self.inject_precompiles(evm.precompiles_mut());
+        let result = evm.transact(tx_env)?;
+        Ok(ResultAndState {
+            result: result.result.map_haltreason(|h| match h {
+                TempoHaltReason::Ethereum(eth) => eth,
+                _ => HaltReason::PrecompileError,
+            }),
+            state: result.state,
+        })
     }
 
     /// Creates a concrete EVM + [`AnvilBlockExecutor`], runs pre-execution changes, and
@@ -1619,18 +1671,17 @@ impl<N: Network> Backend<N> {
             // Create a fresh inspector for this transaction
             let mut inspector = TracingInspector::new(trace_config);
 
-            // Prepare transaction environment
+            // Prepare transaction environment and execute
             let pending_tx =
                 PendingTransaction::from_maybe_impersonated(tx_envelope.clone()).ok()?;
-            let tx_env: OpTransaction<TxEnv> = FromTxWithEncoded::from_encoded_tx(
-                pending_tx.transaction.as_ref(),
-                *pending_tx.sender(),
-                pending_tx.transaction.encoded_2718().into(),
-            );
-
-            // Execute the transaction with the inspector
-            let result = self
-                .transact_with_inspector_ref(&cache_db, &evm_env, &mut inspector, tx_env)
+            let (result, _) = self
+                .transact_envelope_with_inspector_ref(
+                    &cache_db,
+                    &evm_env,
+                    &mut inspector,
+                    pending_tx.transaction.as_ref(),
+                    *pending_tx.sender(),
+                )
                 .ok()?;
 
             // Build TraceResults from the inspector and execution result
@@ -2159,16 +2210,15 @@ impl<N: Network> Backend<N> {
         BlockchainError,
     > {
         let evm_env = self.next_evm_env();
-        let tx_env: OpTransaction<TxEnv> = FromTxWithEncoded::from_encoded_tx(
-            tx.pending_transaction.transaction.as_ref(),
-            *tx.pending_transaction.sender(),
-            tx.pending_transaction.transaction.encoded_2718().into(),
-        );
-
         let db = self.db.read().await;
         let mut inspector = self.build_inspector();
-        let ResultAndState { result, state } =
-            self.transact_with_inspector_ref(&**db, &evm_env, &mut inspector, tx_env)?;
+        let (ResultAndState { result, state }, _) = self.transact_envelope_with_inspector_ref(
+            &**db,
+            &evm_env,
+            &mut inspector,
+            tx.pending_transaction.transaction.as_ref(),
+            *tx.pending_transaction.sender(),
+        )?;
         let (exit_reason, gas_used, out, logs) = match result {
             ExecutionResult::Success { reason, gas, logs, output, .. } => {
                 (reason.into(), gas.used(), Some(output), logs)
@@ -3083,7 +3133,7 @@ where
             + Inspector<TempoContext<WrapDatabaseRef<&'a CacheDB<Box<&'a StateDb>>>>>
             + 'a,
         for<'a> F:
-            FnOnce(ResultAndState<OpHaltReason>, CacheDB<Box<&'a StateDb>>, I, TxEnv, EvmEnv) -> T,
+            FnOnce(ResultAndState<HaltReason>, CacheDB<Box<&'a StateDb>>, I, TxEnv, EvmEnv) -> T,
     {
         let block = {
             let storage = self.blockchain.storage.read();
@@ -3162,20 +3212,15 @@ where
 
             let target_tx = block.body.transactions[index].clone();
             let target_tx = PendingTransaction::from_maybe_impersonated(target_tx)?;
-            let tx_env: OpTransaction<TxEnv> = FromTxWithEncoded::from_encoded_tx(
-                target_tx.transaction.as_ref(),
-                *target_tx.sender(),
-                target_tx.transaction.encoded_2718().into(),
-            );
-
-            let result = self.transact_with_inspector_ref(
+            let (result, base_tx_env) = self.transact_envelope_with_inspector_ref(
                 &cache_db,
                 &evm_env,
                 &mut inspector,
-                tx_env.clone(),
+                target_tx.transaction.as_ref(),
+                *target_tx.sender(),
             )?;
 
-            Ok(f(result, cache_db, inspector, tx_env.base, evm_env))
+            Ok(f(result, cache_db, inspector, base_tx_env, evm_env))
         };
 
         let read_guard = self.states.upgradable_read();
