@@ -10,7 +10,9 @@ use crate::{
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
 use alloy_consensus::constants::KECCAK_EMPTY;
-use alloy_evm::{Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::PrecompilesMap};
+use alloy_evm::{
+    EthEvmFactory, Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::PrecompilesMap,
+};
 use alloy_primitives::{Address, Bytes, U256};
 use foundry_fork_db::{DatabaseError, ForkBlockEnv};
 use revm::{
@@ -66,6 +68,8 @@ impl<
 {
 }
 
+/// Creates a new Eth EVM instance with an inspector, analogous to
+/// Delegates to [`EthFoundryEvmFactory`].
 pub fn new_eth_evm_with_inspector<
     'db,
     I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
@@ -73,15 +77,35 @@ pub fn new_eth_evm_with_inspector<
     db: &'db mut dyn DatabaseExt,
     evm_env: EvmEnv,
     inspector: I,
-) -> FoundryEvm<'db, I> {
-    let eth_evm =
-        alloy_evm::EthEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
-    let mut inner = eth_evm.into_inner();
-    inner.ctx.cfg.tx_chain_id_check = true;
+) -> EthFoundryEvm<'db, I> {
+    EthFoundryEvmFactory.create_eth_evm_with_inspector(db, evm_env, inspector)
+}
 
-    let mut evm = FoundryEvm { inner };
-    evm.inspector().get_networks().inject_precompiles(evm.precompiles_mut());
-    evm
+/// Factory for creating [`EthFoundryEvm`] instances. Wraps [`EthEvmFactory`] and applies
+/// Foundry-specific setup (gas params, chain ID check, network precompile injection).
+#[derive(Debug, Default, Clone)]
+pub struct EthFoundryEvmFactory;
+
+impl EthFoundryEvmFactory {
+    /// Creates a new Eth EVM with an inspector, applying TIP-1000 gas params and injecting
+    /// network precompiles.
+    pub fn create_eth_evm_with_inspector<
+        'db,
+        I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+    >(
+        &self,
+        db: &'db mut dyn DatabaseExt,
+        evm_env: EvmEnv,
+        inspector: I,
+    ) -> EthFoundryEvm<'db, I> {
+        let eth_evm = EthEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
+        let mut inner = eth_evm.into_inner();
+        inner.ctx.cfg.tx_chain_id_check = true;
+
+        let mut evm = EthFoundryEvm { inner };
+        evm.inspector().get_networks().inject_precompiles(evm.precompiles_mut());
+        evm
+    }
 }
 
 /// Get the call inputs for the CREATE2 factory.
@@ -113,12 +137,12 @@ type EthRevmEvm<'db, I> = RevmEvm<
     EthFrame<EthInterpreter>,
 >;
 
-pub struct FoundryEvm<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> {
+pub struct EthFoundryEvm<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> {
     pub inner: EthRevmEvm<'db, I>,
 }
 
 impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Evm
-    for FoundryEvm<'db, I>
+    for EthFoundryEvm<'db, I>
 {
     type Precompiles = PrecompilesMap;
     type Inspector = I;
@@ -185,7 +209,7 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Evm
 }
 
 impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Deref
-    for FoundryEvm<'db, I>
+    for EthFoundryEvm<'db, I>
 {
     type Target = Context<BlockEnv, TxEnv, CfgEnv, &'db mut dyn DatabaseExt>;
 
@@ -195,7 +219,7 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Deref
 }
 
 impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> DerefMut
-    for FoundryEvm<'db, I>
+    for EthFoundryEvm<'db, I>
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner.ctx
