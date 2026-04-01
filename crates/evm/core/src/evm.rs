@@ -5,13 +5,14 @@ use std::{
 };
 
 use crate::{
-    FoundryBlock, FoundryContextExt, FoundryInspectorExt,
+    FoundryBlock, FoundryContextExt, FoundryInspectorExt, FoundryTransaction,
     backend::{DatabaseExt, JournaledState},
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
 use alloy_consensus::constants::KECCAK_EMPTY;
 use alloy_evm::{
-    EthEvmFactory, Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::PrecompilesMap,
+    EthEvmFactory, Evm, EvmEnv, EvmFactory, IntoTxEnv, eth::EthEvmContext,
+    precompiles::PrecompilesMap,
 };
 use alloy_primitives::{Address, Bytes, U256};
 use foundry_fork_db::{DatabaseError, ForkBlockEnv};
@@ -40,32 +41,64 @@ use tempo_revm::{
     gas_params::tempo_gas_params, handler::TempoEvmHandler,
 };
 
-/// Marker trait for [`EvmFactory`] implementations compatible with Foundry's EVM infrastructure.
-///
-/// Requires a spec type convertible to [`SpecId`], a defaultable block environment, and
-/// [`PrecompilesMap`] as the precompile provider, enabling use across the backend and cheatcode
-/// layers without depending on a concrete EVM type.
 pub trait FoundryEvmFactory:
     EvmFactory<
         Spec: Into<SpecId> + Default + Copy + Clone + Unpin + Send + 'static,
         BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
+        Tx: Clone + IntoTxEnv<Self::Tx> + FoundryTransaction,
         Precompiles = PrecompilesMap,
     > + Clone
     + Debug
     + Default
 {
+    /// The Foundry-wrapped EVM type produced by this factory.
+    type FoundryEvm<'db, I>: Evm<
+            DB = &'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>,
+            Tx = Self::Tx,
+            BlockEnv = Self::BlockEnv,
+            Spec = Self::Spec,
+            HaltReason = Self::HaltReason,
+        > + Deref<Target: ContextTr>
+    where
+        I: FoundryInspectorExt<
+            Self::Context<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>,
+        >,
+        Self::Context<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>:
+            FoundryContextExt,
+        Self: 'db;
+
+    /// Creates a Foundry-wrapped EVM with the given inspector.
+    fn create_foundry_evm_with_inspector<'db, I>(
+        &self,
+        db: &'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>,
+        evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
+        inspector: I,
+    ) -> Self::FoundryEvm<'db, I>
+    where
+        I: FoundryInspectorExt<
+            Self::Context<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>,
+        >,
+        Self::Context<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>:
+            FoundryContextExt;
 }
 
-impl<
-    F: EvmFactory<
-            Spec: Into<SpecId> + Default + Copy + Clone + Unpin + Send + 'static,
-            BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
-            Precompiles = PrecompilesMap,
-        > + Clone
-        + Debug
-        + Default,
-> FoundryEvmFactory for F
-{
+impl FoundryEvmFactory for EthEvmFactory {
+    type FoundryEvm<'db, I>
+        = EthFoundryEvm<'db, I>
+    where
+        I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>;
+
+    fn create_foundry_evm_with_inspector<'db, I>(
+        &self,
+        db: &'db mut dyn DatabaseExt,
+        evm_env: EvmEnv,
+        inspector: I,
+    ) -> Self::FoundryEvm<'db, I>
+    where
+        I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
+    {
+        new_eth_evm_with_inspector(db, evm_env, inspector)
+    }
 }
 
 /// Creates a new Eth EVM instance with an inspector, analogous to
@@ -522,6 +555,31 @@ pub fn new_tempo_evm_with_inspector<
     TempoFoundryEvmFactory.create_tempo_evm_with_inspector(db, evm_env, inspector)
 }
 
+impl FoundryEvmFactory for TempoEvmFactory {
+    type FoundryEvm<'db, I>
+        = TempoFoundryEvm<'db, I>
+    where
+        I: FoundryInspectorExt<
+            TempoContext<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>,
+        >,
+        Self::Context<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>:
+            FoundryContextExt;
+
+    fn create_foundry_evm_with_inspector<'db, I>(
+        &self,
+        db: &'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>,
+        evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
+        inspector: I,
+    ) -> Self::FoundryEvm<'db, I>
+    where
+        I: FoundryInspectorExt<
+            TempoContext<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>,
+        >,
+    {
+        new_tempo_evm_with_inspector(db, evm_env, inspector)
+    }
+}
+
 /// Factory for creating [`TempoFoundryEvm`] instances. Wraps [`TempoEvmFactory`] and applies
 /// Foundry-specific setup (gas params, chain ID check, network precompile injection).
 ///
@@ -624,6 +682,32 @@ impl<
         let revm_evm = self.inner.inner;
         let Context { block: block_env, cfg: cfg_env, journaled_state, .. } = revm_evm.ctx;
         (journaled_state.database, EvmEnv { block_env, cfg_env })
+    }
+}
+
+impl<
+    'db,
+    I: FoundryInspectorExt<
+        TempoContext<&'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>>,
+    >,
+> Deref for TempoFoundryEvm<'db, I>
+{
+    type Target = TempoContext<&'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner.ctx
+    }
+}
+
+impl<
+    'db,
+    I: FoundryInspectorExt<
+        TempoContext<&'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>>,
+    >,
+> DerefMut for TempoFoundryEvm<'db, I>
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner.ctx
     }
 }
 
