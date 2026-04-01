@@ -188,9 +188,12 @@ where
 {
     fn from(err: EVMError<T, TempoInvalidTransaction>) -> Self {
         match err {
-            EVMError::Transaction(err) => {
-                Self::Message(format!("tempo transaction error: {err:?}"))
-            }
+            EVMError::Transaction(err) => match err {
+                TempoInvalidTransaction::EthInvalidTransaction(err) => {
+                    InvalidTransactionError::from(err).into()
+                }
+                err => Self::Message(format!("tempo transaction error: {err}")),
+            },
             EVMError::Header(err) => match err {
                 InvalidHeader::ExcessBlobGasNotSet => Self::ExcessBlobGasNotSet,
                 InvalidHeader::PrevrandaoNotSet => Self::PrevrandaoNotSet,

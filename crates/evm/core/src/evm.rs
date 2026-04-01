@@ -593,7 +593,10 @@ fn map_tempo_error(e: EVMError<DatabaseError, TempoInvalidTransaction>) -> EVMEr
         EVMError::Database(db) => EVMError::Database(db),
         EVMError::Header(h) => EVMError::Header(h),
         EVMError::Custom(s) => EVMError::Custom(s),
-        EVMError::Transaction(t) => EVMError::Custom(format!("tempo transaction error: {t:?}")),
+        EVMError::Transaction(t) => match t {
+            TempoInvalidTransaction::EthInvalidTransaction(eth) => EVMError::Transaction(eth),
+            t => EVMError::Custom(format!("tempo transaction error: {t}")),
+        },
     }
 }
 
