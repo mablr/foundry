@@ -51,8 +51,11 @@ pub trait FoundryEvmFactory:
     + Debug
     + Default
 {
+    /// Foundry Context abstraction
+    type FoundryContext<'db>: FoundryContextExt;
+
     /// The Foundry-wrapped EVM type produced by this factory.
-    type FoundryEvm<'db, I>: Evm<
+    type FoundryEvm<'db, I: FoundryInspectorExt<Self::FoundryContext<'db>>>: Evm<
             DB = &'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>,
             Tx = Self::Tx,
             BlockEnv = Self::BlockEnv,
@@ -60,43 +63,28 @@ pub trait FoundryEvmFactory:
             HaltReason = Self::HaltReason,
         > + Deref<Target: ContextTr>
     where
-        I: FoundryInspectorExt<
-            Self::Context<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>,
-        >,
-        Self::Context<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>:
-            FoundryContextExt,
         Self: 'db;
 
     /// Creates a Foundry-wrapped EVM with the given inspector.
-    fn create_foundry_evm_with_inspector<'db, I>(
+    fn create_foundry_evm_with_inspector<'db, I: FoundryInspectorExt<Self::FoundryContext<'db>>>(
         &self,
         db: &'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>,
         evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
         inspector: I,
-    ) -> Self::FoundryEvm<'db, I>
-    where
-        I: FoundryInspectorExt<
-            Self::Context<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>,
-        >,
-        Self::Context<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>:
-            FoundryContextExt;
+    ) -> Self::FoundryEvm<'db, I>;
 }
 
 impl FoundryEvmFactory for EthEvmFactory {
-    type FoundryEvm<'db, I>
-        = EthFoundryEvm<'db, I>
-    where
-        I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>;
+    type FoundryContext<'db> = EthEvmContext<&'db mut dyn DatabaseExt>;
 
-    fn create_foundry_evm_with_inspector<'db, I>(
+    type FoundryEvm<'db, I: FoundryInspectorExt<Self::FoundryContext<'db>>> = EthFoundryEvm<'db, I>;
+
+    fn create_foundry_evm_with_inspector<'db, I: FoundryInspectorExt<Self::FoundryContext<'db>>>(
         &self,
         db: &'db mut dyn DatabaseExt,
         evm_env: EvmEnv,
         inspector: I,
-    ) -> Self::FoundryEvm<'db, I>
-    where
-        I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
-    {
+    ) -> Self::FoundryEvm<'db, I> {
         new_eth_evm_with_inspector(db, evm_env, inspector)
     }
 }
@@ -542,26 +530,18 @@ pub fn new_tempo_evm_with_inspector<
 }
 
 impl FoundryEvmFactory for TempoEvmFactory {
-    type FoundryEvm<'db, I>
-        = TempoFoundryEvm<'db, I>
-    where
-        I: FoundryInspectorExt<
-            TempoContext<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>,
-        >,
-        Self::Context<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>:
-            FoundryContextExt;
+    type FoundryContext<'db> =
+        TempoContext<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>;
 
-    fn create_foundry_evm_with_inspector<'db, I>(
+    type FoundryEvm<'db, I: FoundryInspectorExt<Self::FoundryContext<'db>>> =
+        TempoFoundryEvm<'db, I>;
+
+    fn create_foundry_evm_with_inspector<'db, I: FoundryInspectorExt<Self::FoundryContext<'db>>>(
         &self,
         db: &'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>,
         evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
         inspector: I,
-    ) -> Self::FoundryEvm<'db, I>
-    where
-        I: FoundryInspectorExt<
-            TempoContext<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>,
-        >,
-    {
+    ) -> Self::FoundryEvm<'db, I> {
         new_tempo_evm_with_inspector(db, evm_env, inspector)
     }
 }
