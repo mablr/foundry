@@ -487,7 +487,7 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Inspe
 // Will be removed when the next revm release includes bluealloy/revm#3518.
 type TempoRevmEvm<'db, I> = tempo_revm::TempoEvm<&'db mut dyn DatabaseExt, I>;
 
-/// Tempo counterpart of [`FoundryEvm`]. Wraps `tempo_revm::TempoEvm` and routes execution
+/// Tempo counterpart of [`EthFoundryEvm`]. Wraps `tempo_revm::TempoEvm` and routes execution
 /// through [`TempoFoundryHandler`] which composes [`TempoEvmHandler`] with CREATE2 factory
 /// redirect logic.
 ///
