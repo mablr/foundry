@@ -4076,10 +4076,30 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
             }
         }
 
-        // Nonce validation
+        // Reject native value transfers on Tempo networks
+        if self.is_tempo() && !tx.value().is_zero() {
+            warn!(target: "backend", "[{:?}] native value transfer not allowed in Tempo mode", tx.hash());
+            return Err(InvalidTransactionError::TempoNativeValueTransfer);
+        }
+
+        // Tempo AA: cap authorization list size
+        if let FoundryTxEnvelope::Tempo(aa_tx) = tx.as_ref() {
+            const MAX_TEMPO_AUTHORIZATIONS: usize = 16;
+            let auth_count = aa_tx.tx().tempo_authorization_list.len();
+            if auth_count > MAX_TEMPO_AUTHORIZATIONS {
+                warn!(target: "backend", "[{:?}] Tempo tx has too many authorizations: {}", tx.hash(), auth_count);
+                return Err(InvalidTransactionError::TempoTooManyAuthorizations {
+                    count: auth_count,
+                    max: MAX_TEMPO_AUTHORIZATIONS,
+                });
+            }
+        }
+
+        // Nonce validation — skip for deposits (L1→L2) and Tempo txs (2D nonce system)
         let is_deposit_tx = matches!(pending.transaction.as_ref(), FoundryTxEnvelope::Deposit(_));
+        let is_tempo_tx = matches!(pending.transaction.as_ref(), FoundryTxEnvelope::Tempo(_));
         let nonce = tx.nonce();
-        if nonce < account.nonce && !is_deposit_tx {
+        if nonce < account.nonce && !is_deposit_tx && !is_tempo_tx {
             debug!(target: "backend", "[{:?}] nonce too low", tx.hash());
             return Err(InvalidTransactionError::NonceTooLow);
         }
@@ -4202,6 +4222,10 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
                         debug!(target: "backend", "[{:?}] insufficient balance={}, required={} account={:?}", tx.hash(), account.balance + U256::from(deposit_tx.mint), value, *pending.sender());
                         return Err(InvalidTransactionError::InsufficientFunds);
                     }
+                }
+                FoundryTxEnvelope::Tempo(_) => {
+                    // Tempo AA transactions pay gas with fee tokens, not ETH.
+                    // Fee token balance is validated in validate_pool_transaction (async).
                 }
                 _ => {
                     // check sufficient funds: `gas * price + value`
