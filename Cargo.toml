@@ -440,15 +440,15 @@ flate2 = "1.1"
 ethereum_ssz = "0.10"
 
 # Tempo
-tempo-chainspec = { git = "https://github.com/tempoxyz/tempo", rev = "68baccf2e13665b57cc8edbcd22aa8c7c46249c0", default-features = false }
-tempo-primitives = { git = "https://github.com/tempoxyz/tempo", rev = "68baccf2e13665b57cc8edbcd22aa8c7c46249c0", default-features = false, features = [
+tempo-chainspec = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0", default-features = false }
+tempo-primitives = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0", default-features = false, features = [
     "serde",
 ] }
-tempo-alloy = { git = "https://github.com/tempoxyz/tempo", rev = "68baccf2e13665b57cc8edbcd22aa8c7c46249c0", default-features = false }
-tempo-evm = { git = "https://github.com/tempoxyz/tempo", rev = "68baccf2e13665b57cc8edbcd22aa8c7c46249c0", default-features = false }
-tempo-revm = { git = "https://github.com/tempoxyz/tempo", rev = "68baccf2e13665b57cc8edbcd22aa8c7c46249c0", default-features = false }
-tempo-contracts = { git = "https://github.com/tempoxyz/tempo", rev = "68baccf2e13665b57cc8edbcd22aa8c7c46249c0" }
-tempo-precompiles = { git = "https://github.com/tempoxyz/tempo", rev = "68baccf2e13665b57cc8edbcd22aa8c7c46249c0" }
+tempo-alloy = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0", default-features = false }
+tempo-evm = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0", default-features = false }
+tempo-revm = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0", default-features = false }
+tempo-contracts = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0" }
+tempo-precompiles = { git = "https://github.com/tempoxyz/tempo", branch = "alloy-2.0" }
 
 ## Pinned dependencies. Enabled for the workspace in crates/test-utils.
 
@@ -524,7 +524,7 @@ alloy-op-hardforks = { git = "https://github.com/foundry-rs/optimism", branch = 
 revm-inspectors = { git = "https://github.com/paradigmxyz/revm-inspectors.git", branch = "alloy-2.0" }
 
 ## foundry
-foundry-fork-db = { git = "https://github.com/foundry-rs/foundry-fork-db", rev = "4d34a233817e8ba881951ac8012aede44cfd95c3" }
+foundry-fork-db = { git = "https://github.com/foundry-rs/foundry-fork-db", branch = "main" }
 
 # solar
 solar = { package = "solar-compiler", git = "https://github.com/paradigmxyz/solar", rev = "530f129" }
