@@ -138,6 +138,7 @@ use std::{
 use storage::{Blockchain, DEFAULT_HISTORY_LIMIT, MinedTransaction};
 use tempo_chainspec::hardfork::TempoHardfork;
 use tempo_evm::evm::TempoEvmFactory;
+use tempo_primitives::TEMPO_TX_TYPE_ID;
 use tempo_revm::{
     TempoBlockEnv, TempoHaltReason, TempoTxEnv, evm::TempoContext, gas_params::tempo_gas_params,
 };
@@ -576,6 +577,14 @@ impl<N: Network> Backend<N> {
             return Ok(());
         }
         Err(BlockchainError::DepositTransactionUnsupported)
+    }
+
+    /// Returns an error if Tempo transactions are not active
+    pub fn ensure_tempo_active(&self) -> Result<(), BlockchainError> {
+        if self.is_tempo() {
+            return Ok(());
+        }
+        Err(BlockchainError::TempoTransactionUnsupported)
     }
 
     /// Returns the block gas limit
@@ -4278,6 +4287,41 @@ pub fn transaction_build(
         }
     }
 
+    if let FoundryTxEnvelope::Tempo(tempo_tx) = eth_transaction.as_ref() {
+        let from = eth_transaction.recover().unwrap_or_default();
+        let ser = serde_json::to_value(tempo_tx).expect("could not serialize Tempo transaction");
+        let maybe_tempo_fields = OtherFields::try_from(ser);
+
+        match maybe_tempo_fields {
+            Ok(fields) => {
+                let inner = UnknownTypedTransaction {
+                    ty: AnyTxType(TEMPO_TX_TYPE_ID),
+                    fields,
+                    memo: Default::default(),
+                };
+
+                let envelope = AnyTxEnvelope::Unknown(UnknownTxEnvelope {
+                    hash: eth_transaction.hash(),
+                    inner,
+                });
+
+                let tx = Transaction {
+                    inner: Recovered::new_unchecked(envelope, from),
+                    block_hash: block.as_ref().map(|block| block.header.hash_slow()),
+                    block_number: block.as_ref().map(|block| block.header.number()),
+                    transaction_index: info.as_ref().map(|info| info.transaction_index),
+                    effective_gas_price: None,
+                    block_timestamp: block.as_ref().map(|block| block.header.timestamp()),
+                };
+
+                return AnyRpcTransaction::from(WithOtherFields::new(tx));
+            }
+            Err(_) => {
+                error!(target: "backend", "failed to serialize tempo transaction");
+            }
+        }
+    }
+
     let from = eth_transaction.recover().unwrap_or_default();
     let effective_gas_price = eth_transaction.effective_gas_price(base_fee);
 
@@ -4288,11 +4332,9 @@ pub fn transaction_build(
     // there's no `info` yet.
     let hash = tx_hash.unwrap_or_else(|| eth_transaction.hash());
 
-    // TODO: this panics for non-standard tx types (e.g. Tempo) that aren't handled above
-    // (pre-existing issue from the original `into_rpc_transaction`).
     let eth_envelope = FoundryTxEnvelope::from(eth_transaction)
         .try_into_eth()
-        .expect("deposit transactions are handled above");
+        .expect("non-standard transactions are handled above");
 
     let envelope = match eth_envelope {
         TxEnvelope::Legacy(signed_tx) => {
