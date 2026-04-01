@@ -78,8 +78,8 @@ use anvil_rpc::{error::RpcError, response::ResponseResult};
 use foundry_common::provider::ProviderBuilder;
 use foundry_evm::decode::RevertDecoder;
 use foundry_primitives::{
-    FoundryNetwork, FoundryTransactionRequest, FoundryTxEnvelope, FoundryTxReceipt, FoundryTxType,
-    FoundryTypedTx,
+    FoundryNetwork, FoundryReceiptEnvelope, FoundryTransactionRequest, FoundryTxEnvelope,
+    FoundryTxReceipt, FoundryTxType, FoundryTypedTx,
 };
 use futures::{
     StreamExt, TryFutureExt,
@@ -717,6 +717,16 @@ impl<N: Network> EthApi<N> {
     }
 }
 
+impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> EthApi<N> {
+    /// Returns the current state
+    pub async fn serialized_state(
+        &self,
+        preserve_historical_states: bool,
+    ) -> Result<SerializableState> {
+        self.backend.serialized_state(preserve_historical_states).await
+    }
+}
+
 // == impl EthApi anvil endpoints ==
 
 impl EthApi<FoundryNetwork> {
@@ -730,14 +740,6 @@ impl EthApi<FoundryNetwork> {
     ) -> Result<Bytes> {
         node_info!("anvil_dumpState");
         self.backend.dump_state(preserve_historical_states.unwrap_or(false)).await
-    }
-
-    /// Returns the current state
-    pub async fn serialized_state(
-        &self,
-        preserve_historical_states: bool,
-    ) -> Result<SerializableState> {
-        self.backend.serialized_state(preserve_historical_states).await
     }
 
     /// Append chain state buffer to current chain. Will overwrite any conflicting addresses or
