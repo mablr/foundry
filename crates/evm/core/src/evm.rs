@@ -101,8 +101,8 @@ impl FoundryEvmFactory for EthEvmFactory {
     }
 }
 
-/// Creates a new Eth EVM instance with an inspector, analogous to
-/// Delegates to [`EthFoundryEvmFactory`].
+/// Creates a new Eth EVM instance with an inspector, applying Foundry-specific setup
+/// (chain ID check, network precompile injection).
 pub fn new_eth_evm_with_inspector<
     'db,
     I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
@@ -111,34 +111,13 @@ pub fn new_eth_evm_with_inspector<
     evm_env: EvmEnv,
     inspector: I,
 ) -> EthFoundryEvm<'db, I> {
-    EthFoundryEvmFactory.create_eth_evm_with_inspector(db, evm_env, inspector)
-}
+    let eth_evm = EthEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
+    let mut inner = eth_evm.into_inner();
+    inner.ctx.cfg.tx_chain_id_check = true;
 
-/// Factory for creating [`EthFoundryEvm`] instances. Wraps [`EthEvmFactory`] and applies
-/// Foundry-specific setup (gas params, chain ID check, network precompile injection).
-#[derive(Debug, Default, Clone)]
-pub struct EthFoundryEvmFactory;
-
-impl EthFoundryEvmFactory {
-    /// Creates a new Eth EVM with an inspector, applying TIP-1000 gas params and injecting
-    /// network precompiles.
-    pub fn create_eth_evm_with_inspector<
-        'db,
-        I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>,
-    >(
-        &self,
-        db: &'db mut dyn DatabaseExt,
-        evm_env: EvmEnv,
-        inspector: I,
-    ) -> EthFoundryEvm<'db, I> {
-        let eth_evm = EthEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
-        let mut inner = eth_evm.into_inner();
-        inner.ctx.cfg.tx_chain_id_check = true;
-
-        let mut evm = EthFoundryEvm { inner };
-        evm.inspector().get_networks().inject_precompiles(evm.precompiles_mut());
-        evm
-    }
+    let mut evm = EthFoundryEvm { inner };
+    evm.inspector().get_networks().inject_precompiles(evm.precompiles_mut());
+    evm
 }
 
 /// Get the call inputs for the CREATE2 factory.
@@ -538,10 +517,8 @@ pub struct TempoFoundryEvm<
     pub inner: TempoRevmEvm<'db, I>,
 }
 
-/// Creates a new Tempo EVM instance with an inspector, analogous to
-/// [`new_eth_evm_with_inspector`].
-///
-/// Delegates to [`TempoFoundryEvmFactory`].
+/// Creates a new Tempo EVM instance with an inspector, applying Foundry-specific setup
+/// (gas params, chain ID check, network precompile injection).
 pub fn new_tempo_evm_with_inspector<
     'db,
     I: FoundryInspectorExt<
@@ -549,10 +526,19 @@ pub fn new_tempo_evm_with_inspector<
     >,
 >(
     db: &'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>,
-    evm_env: EvmEnv<TempoHardfork, TempoBlockEnv>,
+    mut evm_env: EvmEnv<TempoHardfork, TempoBlockEnv>,
     inspector: I,
 ) -> TempoFoundryEvm<'db, I> {
-    TempoFoundryEvmFactory.create_tempo_evm_with_inspector(db, evm_env, inspector)
+    evm_env.cfg_env.gas_params = tempo_gas_params(evm_env.cfg_env.spec);
+    evm_env.cfg_env.tx_chain_id_check = true;
+
+    let tempo_evm = TempoEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
+    let inner = tempo_evm.into_inner();
+
+    let mut evm = TempoFoundryEvm { inner };
+    let networks = Evm::inspector(&evm).get_networks();
+    networks.inject_precompiles(evm.precompiles_mut());
+    evm
 }
 
 impl FoundryEvmFactory for TempoEvmFactory {
@@ -577,42 +563,6 @@ impl FoundryEvmFactory for TempoEvmFactory {
         >,
     {
         new_tempo_evm_with_inspector(db, evm_env, inspector)
-    }
-}
-
-/// Factory for creating [`TempoFoundryEvm`] instances. Wraps [`TempoEvmFactory`] and applies
-/// Foundry-specific setup (gas params, chain ID check, network precompile injection).
-///
-/// When `Executor` becomes generic over `EvmFactory`, this factory will be used directly
-/// instead of the [`new_tempo_evm_with_inspector`] free function.
-#[derive(Debug, Default, Clone)]
-pub struct TempoFoundryEvmFactory;
-
-impl TempoFoundryEvmFactory {
-    /// Creates a new Tempo EVM with an inspector, applying TIP-1000 gas params and injecting
-    /// network precompiles.
-    pub fn create_tempo_evm_with_inspector<
-        'db,
-        I: FoundryInspectorExt<
-            TempoContext<&'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>>,
-        >,
-    >(
-        &self,
-        db: &'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>,
-        mut evm_env: EvmEnv<TempoHardfork, TempoBlockEnv>,
-        inspector: I,
-    ) -> TempoFoundryEvm<'db, I> {
-        evm_env.cfg_env.gas_params = tempo_gas_params(evm_env.cfg_env.spec);
-        evm_env.cfg_env.tx_chain_id_check = true;
-
-        let tempo_evm =
-            TempoEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
-        let inner = tempo_evm.into_inner();
-
-        let mut evm = TempoFoundryEvm { inner };
-        let networks = Evm::inspector(&evm).get_networks();
-        networks.inject_precompiles(evm.precompiles_mut());
-        evm
     }
 }
 
