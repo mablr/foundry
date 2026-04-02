@@ -943,7 +943,7 @@ impl<N: Network, F: FoundryEvmFactory> Default for RawCallResult<N, F> {
             transactions: None,
             state_changeset: HashMap::default(),
             evm_env: EvmEnv::default(),
-            tx_env: TX::default(),
+            tx_env: F::Tx::default(),
             cheatcodes: Default::default(),
             out: None,
             chisel_state: None,

@@ -15,12 +15,9 @@ use foundry_cheatcodes::{CheatcodeAnalysis, CheatcodesExecutor, NestedEvmClosure
 use foundry_common::compile::Analysis;
 use foundry_evm_core::{
     FoundryBlock, FoundryTransaction, InspectorExt,
-    backend::{DatabaseError, DatabaseExt, JournaledState},
+    backend::{DatabaseError, JournaledState},
     env::FoundryContextExt,
-    evm::{
-        FoundryEvmFactory, IntoNestedEvm, NestedEvm, new_eth_evm_with_inspector,
-        with_cloned_context,
-    },
+    evm::{FoundryEvmFactory, IntoNestedEvm, NestedEvm, with_cloned_context},
 };
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_networks::NetworkConfigs;
@@ -29,17 +26,15 @@ use foundry_primitives::FoundryTransactionBuilder;
 use revm::{
     Inspector,
     context::{
-        Block, BlockEnv, Cfg, ContextTr, JournalTr, Transaction, TxEnv,
+        Block, Cfg, ContextTr, JournalTr, Transaction,
         result::{EVMError, ExecutionResult, Output},
     },
     context_interface::CreateScheme,
-    handler::EvmTr,
     inspector::JournalExt,
     interpreter::{
         CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, Gas, InstructionResult,
         Interpreter, InterpreterResult,
     },
-    primitives::hardfork::SpecId,
     state::{Account, AccountStatus},
 };
 use revm_inspectors::edge_cov::EdgeCovInspector;
@@ -113,7 +108,7 @@ impl<BLOCK: Clone> Default for InspectorStackBuilder<BLOCK> {
     }
 }
 
-impl InspectorStackBuilder<BlockEnv> {
+impl<BLOCK: Clone> InspectorStackBuilder<BLOCK> {
     /// Create a new inspector stack builder.
     #[inline]
     pub fn new() -> Self {
@@ -129,7 +124,7 @@ impl InspectorStackBuilder<BlockEnv> {
 
     /// Set the block environment.
     #[inline]
-    pub fn block(mut self, block: BlockEnv) -> Self {
+    pub fn block(mut self, block: BLOCK) -> Self {
         self.block = Some(block);
         self
     }
@@ -227,13 +222,10 @@ impl InspectorStackBuilder<BlockEnv> {
                 TxEnvelope: Decodable + SignerRecoverable,
                 TransactionRequest: FoundryTransactionBuilder<N>,
             >,
-        F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+        F: FoundryEvmFactory<BlockEnv = BLOCK, Tx: FromRecoveredTx<N::TxEnvelope>>,
     >(
         self,
-    ) -> InspectorStack<N, F>
-    where
-        F::Tx: FromRecoveredTx<N::TxEnvelope>,
-    {
+    ) -> InspectorStack<N, F> {
         let Self {
             analysis,
             block,
@@ -408,7 +400,7 @@ impl<
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 > CheatcodesExecutor<N, F> for InspectorStackInner
 {
     fn with_nested_evm(
@@ -424,7 +416,7 @@ impl<
                 .into_nested_evm();
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
-            let sub_inner = evm.journaled_state.inner.clone();
+            let sub_inner = evm.journal_inner_mut().clone();
             let sub_evm_env = evm.to_evm_env();
             Ok((sub_evm_env, sub_inner))
         })
@@ -455,7 +447,7 @@ impl<
         let evm_env = ecx.evm_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
-        db.transact(fork_id, transaction, evm_env, inner, &mut inspector)
+        F::default().db_transact(db, fork_id, transaction, evm_env, inner, &mut inspector)
     }
 
     fn transact_from_tx_on_db(
@@ -467,7 +459,7 @@ impl<
         let evm_env = ecx.evm_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
-        db.transact_from_tx(tx_env, evm_env, inner, &mut inspector)
+        F::default().db_transact_from_tx(db, tx_env, evm_env, inner, &mut inspector)
     }
 
     fn console_log(&mut self, msg: &str) {
@@ -497,10 +489,8 @@ impl<
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 > Default for InspectorStack<N, F>
-where
-    F::Tx: FromRecoveredTx<N::TxEnvelope>,
 {
     fn default() -> Self {
         Self::new()
@@ -512,10 +502,8 @@ impl<
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 > InspectorStack<N, F>
-where
-    F::Tx: FromRecoveredTx<N::TxEnvelope>,
 {
     /// Creates a new inspector stack.
     ///
@@ -703,10 +691,8 @@ impl<
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 > InspectorStackRefMut<'_, N, F>
-where
-    F::Tx: FromRecoveredTx<N::TxEnvelope>,
 {
     /// Adjusts the EVM data for the inner EVM context.
     /// Should be called on the top-level call of inner context (depth == 0 &&
@@ -1013,10 +999,8 @@ impl<
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 > Inspector<F::FoundryContext<'_>> for InspectorStackRefMut<'_, N, F>
-where
-    F::Tx: FromRecoveredTx<N::TxEnvelope>,
 {
     fn initialize_interp(
         &mut self,
@@ -1281,10 +1265,8 @@ impl<
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 > Inspector<F::FoundryContext<'_>> for InspectorStack<N, F>
-where
-    F::Tx: FromRecoveredTx<N::TxEnvelope>,
 {
     fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
         self.as_mut().step_inlined(interpreter, ecx)
@@ -1361,10 +1343,8 @@ impl<
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 > InspectorExt for InspectorStack<N, F>
-where
-    F::Tx: FromRecoveredTx<N::TxEnvelope>,
 {
     fn should_use_create2_factory(&mut self, depth: usize, inputs: &CreateInputs) -> bool {
         self.as_mut().should_use_create2_factory(depth, inputs)

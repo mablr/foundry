@@ -174,7 +174,7 @@ impl<
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 > CheatcodesExecutor<N, F> for TransparentCheatcodesExecutor
 where
     F::Tx: FromRecoveredTx<N::TxEnvelope>,
@@ -219,7 +219,7 @@ where
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let (db, inner) = ecx.db_journal_inner_mut();
-        db.transact(fork_id, transaction, evm_env, inner, cheats)
+        F::default().db_transact(db, fork_id, transaction, evm_env, inner, cheats)
     }
 
     fn transact_from_tx_on_db(
@@ -230,7 +230,7 @@ where
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let (db, inner) = ecx.db_journal_inner_mut();
-        db.transact_from_tx(tx, evm_env, inner, cheats)
+        F::default().db_transact_from_tx(db, tx, evm_env, inner, cheats)
     }
 
     fn console_log(&mut self, _msg: &str) {}
