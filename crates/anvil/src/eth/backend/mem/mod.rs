@@ -110,7 +110,7 @@ use foundry_primitives::{
     FoundryTxReceipt, get_deposit_tx_parts,
 };
 use futures::channel::mpsc::{UnboundedSender, unbounded};
-use op_alloy_consensus::DEPOSIT_TX_TYPE_ID;
+use op_alloy_consensus::{DEPOSIT_TX_TYPE_ID, OpTransaction as OpTransactionTrait};
 use op_revm::{OpContext, OpHaltReason, OpSpecId, OpTransaction};
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use revm::{
@@ -1138,7 +1138,7 @@ impl<N: Network> Backend<N> {
             + Inspector<TempoContext<WrapDatabaseRef<&'db DB>>>,
         WrapDatabaseRef<&'db DB>: Database<Error = DatabaseError>,
     {
-        if matches!(tx, FoundryTxEnvelope::Tempo(_)) {
+        if tx.is_tempo() {
             let tx_env: TempoTxEnv =
                 FromTxWithEncoded::from_encoded_tx(tx, sender, tx.encoded_2718().into());
             let base = tx_env.inner.clone();
@@ -4187,8 +4187,8 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
         }
 
         // Nonce validation — skip for deposits (L1→L2) and Tempo txs (2D nonce system)
-        let is_deposit_tx = matches!(pending.transaction.as_ref(), FoundryTxEnvelope::Deposit(_));
-        let is_tempo_tx = matches!(pending.transaction.as_ref(), FoundryTxEnvelope::Tempo(_));
+        let is_deposit_tx = pending.transaction.as_ref().is_deposit();
+        let is_tempo_tx = pending.transaction.as_ref().is_tempo();
         let nonce = tx.nonce();
         if nonce < account.nonce && !is_deposit_tx && !is_tempo_tx {
             debug!(target: "backend", "[{:?}] nonce too low", tx.hash());
