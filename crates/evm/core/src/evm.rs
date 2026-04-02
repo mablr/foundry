@@ -11,16 +11,14 @@ use crate::{
 };
 use alloy_consensus::constants::KECCAK_EMPTY;
 use alloy_evm::{
-    EthEvmFactory, Evm, EvmEnv, EvmFactory, IntoTxEnv, eth::EthEvmContext,
-    precompiles::PrecompilesMap,
+    EthEvmFactory, Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::PrecompilesMap,
 };
 use alloy_primitives::{Address, Bytes, U256};
 use foundry_fork_db::{DatabaseError, ForkBlockEnv};
 use revm::{
     Context,
     context::{
-        BlockEnv, CfgEnv, ContextTr, CreateScheme, Evm as RevmEvm, JournalTr, LocalContextTr,
-        TxEnv,
+        BlockEnv, ContextTr, CreateScheme, Evm as RevmEvm, JournalTr, LocalContextTr, TxEnv,
         result::{EVMError, ExecResultAndState, ExecutionResult, HaltReason, ResultAndState},
     },
     handler::{
@@ -45,14 +43,16 @@ pub trait FoundryEvmFactory:
     EvmFactory<
         Spec: Into<SpecId> + Default + Copy + Unpin + Send + 'static,
         BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
-        Tx: Clone + IntoTxEnv<Self::Tx> + FoundryTransaction,
+        Tx: Clone + FoundryTransaction,
         Precompiles = PrecompilesMap,
     > + Clone
     + Debug
     + Default
 {
     /// Foundry Context abstraction
-    type FoundryContext<'db>: FoundryContextExt;
+    type FoundryContext<'db>: FoundryContextExt<Block = Self::BlockEnv, Tx = Self::Tx, Spec = Self::Spec>
+    where
+        Self: 'db;
 
     /// The Foundry-wrapped EVM type produced by this factory.
     type FoundryEvm<'db, I: FoundryInspectorExt<Self::FoundryContext<'db>>>: Evm<
@@ -61,7 +61,7 @@ pub trait FoundryEvmFactory:
             BlockEnv = Self::BlockEnv,
             Spec = Self::Spec,
             HaltReason = Self::HaltReason,
-        > + Deref<Target: ContextTr>
+        > + Deref<Target = Self::FoundryContext<'db>>
     where
         Self: 'db;
 
@@ -72,6 +72,30 @@ pub trait FoundryEvmFactory:
         evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
         inspector: I,
     ) -> Self::FoundryEvm<'db, I>;
+
+    /// Creates a Foundry-wrapped EVM with a dynamic inspector, sets the journal depth, executes
+    /// a raw transaction and returns the resulting state.
+    ///
+    /// This helper exists because `&mut dyn FoundryInspectorExt<FoundryContext>` cannot satisfy
+    /// the generic `I: FoundryInspectorExt<Self::FoundryContext<'db>>` bound when the context
+    /// type is only known through an associated type.  Each concrete factory implements this
+    /// directly, side-stepping the higher-kinded lifetime issue.
+    #[allow(clippy::type_complexity)]
+    fn transact_with_dyn_inspector(
+        &self,
+        db: &mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>,
+        evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
+        inspector: &mut dyn for<'db> FoundryInspectorExt<
+            revm::Context<
+                Self::BlockEnv,
+                Self::Tx,
+                revm::context::CfgEnv<Self::Spec>,
+                &'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>,
+            >,
+        >,
+        depth: usize,
+        tx_env: Self::Tx,
+    ) -> eyre::Result<ResultAndState<Self::HaltReason>>;
 }
 
 impl FoundryEvmFactory for EthEvmFactory {
@@ -86,6 +110,19 @@ impl FoundryEvmFactory for EthEvmFactory {
         inspector: I,
     ) -> Self::FoundryEvm<'db, I> {
         new_eth_evm_with_inspector(db, evm_env, inspector)
+    }
+
+    fn transact_with_dyn_inspector(
+        &self,
+        db: &mut dyn DatabaseExt,
+        evm_env: EvmEnv,
+        inspector: &mut dyn for<'db> FoundryInspectorExt<Self::FoundryContext<'db>>,
+        depth: usize,
+        tx_env: TxEnv,
+    ) -> eyre::Result<ResultAndState<Self::HaltReason>> {
+        let mut evm = new_eth_evm_with_inspector(db, evm_env, inspector);
+        evm.journaled_state.depth = depth;
+        Ok(evm.transact_raw(tx_env)?)
     }
 }
 
@@ -211,7 +248,7 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Evm
 impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Deref
     for EthFoundryEvm<'db, I>
 {
-    type Target = Context<BlockEnv, TxEnv, CfgEnv, &'db mut dyn DatabaseExt>;
+    type Target = EthEvmContext<&'db mut dyn DatabaseExt>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner.ctx
@@ -543,6 +580,19 @@ impl FoundryEvmFactory for TempoEvmFactory {
         inspector: I,
     ) -> Self::FoundryEvm<'db, I> {
         new_tempo_evm_with_inspector(db, evm_env, inspector)
+    }
+
+    fn transact_with_dyn_inspector(
+        &self,
+        db: &mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>,
+        evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
+        inspector: &mut dyn for<'db> FoundryInspectorExt<Self::FoundryContext<'db>>,
+        depth: usize,
+        tx_env: TempoTxEnv,
+    ) -> eyre::Result<ResultAndState<Self::HaltReason>> {
+        let mut evm = new_tempo_evm_with_inspector(db, evm_env, inspector);
+        evm.journaled_state.depth = depth;
+        Ok(evm.transact_raw(tx_env)?)
     }
 }
 
