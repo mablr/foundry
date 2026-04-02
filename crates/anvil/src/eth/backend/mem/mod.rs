@@ -3367,7 +3367,12 @@ where
         })
         .await?
     }
+}
 
+impl<N: Network> Backend<N>
+where
+    N: Network<TxEnvelope = FoundryTxEnvelope, ReceiptEnvelope = FoundryReceiptEnvelope>,
+{
     /// Rollback the chain to a common height.
     ///
     /// The state of the chain is rewound using `rewind` to the common block, including the db,
@@ -4081,7 +4086,10 @@ fn get_pool_transactions_nonce(
 }
 
 #[async_trait::async_trait]
-impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
+impl<N: Network> TransactionValidator<FoundryTxEnvelope> for Backend<N>
+where
+    N: Network<TxEnvelope = FoundryTxEnvelope, ReceiptEnvelope = FoundryReceiptEnvelope>,
+{
     async fn validate_pool_transaction(
         &self,
         tx: &PendingTransaction<FoundryTxEnvelope>,
