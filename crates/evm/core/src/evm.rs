@@ -14,6 +14,7 @@ use alloy_evm::{
     EthEvmFactory, Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::PrecompilesMap,
 };
 use alloy_primitives::{Address, Bytes, U256};
+use foundry_config::FromEvmVersion;
 use foundry_fork_db::{DatabaseError, ForkBlockEnv};
 use revm::{
     Context,
@@ -41,7 +42,7 @@ use tempo_revm::{
 
 pub trait FoundryEvmFactory:
     EvmFactory<
-        Spec: Into<SpecId> + Default + Copy + Unpin + Send + 'static,
+        Spec: Into<SpecId> + FromEvmVersion + Default + Copy + Unpin + Send + 'static,
         BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
         Tx: Clone + FoundryTransaction,
         Precompiles = PrecompilesMap,
@@ -50,7 +51,12 @@ pub trait FoundryEvmFactory:
     + Default
 {
     /// Foundry Context abstraction
-    type FoundryContext<'db>: FoundryContextExt<Block = Self::BlockEnv, Tx = Self::Tx, Spec = Self::Spec>
+    type FoundryContext<'db>: FoundryContextExt<
+            Block = Self::BlockEnv,
+            Tx = Self::Tx,
+            Spec = Self::Spec,
+            Db: DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>,
+        >
     where
         Self: 'db;
 
@@ -62,6 +68,7 @@ pub trait FoundryEvmFactory:
             Spec = Self::Spec,
             HaltReason = Self::HaltReason,
         > + Deref<Target = Self::FoundryContext<'db>>
+        + IntoNestedEvm
     where
         Self: 'db;
 
@@ -260,6 +267,28 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Deref
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner.ctx
+    }
+}
+
+/// Trait for converting a Foundry EVM wrapper into its inner `NestedEvm` implementation.
+///
+/// Both [`EthFoundryEvm`] and [`TempoFoundryEvm`] wrap an inner revm EVM that implements
+/// [`NestedEvm`]. This trait provides a uniform way to unwrap them.
+pub trait IntoNestedEvm {
+    /// The inner type that implements [`NestedEvm`].
+    type Inner: NestedEvm;
+
+    /// Consumes the wrapper, returning the inner revm EVM.
+    fn into_nested_evm(self) -> Self::Inner;
+}
+
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> IntoNestedEvm
+    for EthFoundryEvm<'db, I>
+{
+    type Inner = EthRevmEvm<'db, I>;
+
+    fn into_nested_evm(self) -> Self::Inner {
+        self.inner
     }
 }
 
@@ -688,6 +717,20 @@ impl<
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner.ctx
+    }
+}
+
+impl<
+    'db,
+    I: FoundryInspectorExt<
+        TempoContext<&'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>>,
+    >,
+> IntoNestedEvm for TempoFoundryEvm<'db, I>
+{
+    type Inner = TempoRevmEvm<'db, I>;
+
+    fn into_nested_evm(self) -> Self::Inner {
+        self.inner
     }
 }
 
