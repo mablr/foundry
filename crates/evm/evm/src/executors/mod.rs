@@ -10,6 +10,7 @@ use crate::inspectors::{
     Cheatcodes, InspectorData, InspectorStack, cheatcodes::BroadcastableTransactions,
 };
 use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
+use alloy_evm::EthEvmFactory;
 use alloy_json_abi::Function;
 use alloy_network::Ethereum;
 use alloy_primitives::{
@@ -102,7 +103,7 @@ pub struct Executor {
     /// The transaction environment.
     tx_env: TxEnv,
     /// The Revm inspector stack.
-    inspector: InspectorStack<SpecId, BlockEnv, Ethereum>,
+    inspector: InspectorStack<Ethereum, EthEvmFactory>,
     /// The gas limit for calls and deployments.
     gas_limit: u64,
     /// Whether `failed()` should be called on the test contract to determine if the test failed.
@@ -116,7 +117,7 @@ impl Executor {
         mut backend: Backend,
         evm_env: EvmEnv,
         tx_env: TxEnv,
-        inspector: InspectorStack<SpecId, BlockEnv, Ethereum>,
+        inspector: InspectorStack<Ethereum, EthEvmFactory>,
         gas_limit: u64,
         legacy_assertions: bool,
     ) -> Self {
@@ -189,12 +190,12 @@ impl Executor {
     }
 
     /// Returns a reference to the EVM inspector.
-    pub fn inspector(&self) -> &InspectorStack<SpecId, BlockEnv, Ethereum> {
+    pub fn inspector(&self) -> &InspectorStack<Ethereum, EthEvmFactory> {
         &self.inspector
     }
 
     /// Returns a mutable reference to the EVM inspector.
-    pub fn inspector_mut(&mut self) -> &mut InspectorStack<SpecId, BlockEnv, Ethereum> {
+    pub fn inspector_mut(&mut self) -> &mut InspectorStack<Ethereum, EthEvmFactory> {
         &mut self.inspector
     }
 
@@ -1078,7 +1079,7 @@ impl std::ops::DerefMut for CallResult {
 fn convert_executed_result(
     evm_env: EvmEnv,
     tx_env: TxEnv,
-    inspector: InspectorStack<SpecId, BlockEnv, Ethereum>,
+    inspector: InspectorStack<Ethereum, EthEvmFactory>,
     ResultAndState { result, state: state_changeset }: ResultAndState,
     has_state_snapshot_failure: bool,
 ) -> eyre::Result<RawCallResult> {
