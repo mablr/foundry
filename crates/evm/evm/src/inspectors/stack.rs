@@ -323,13 +323,13 @@ macro_rules! call_inspectors {
 }
 
 /// The collected results of [`InspectorStack`].
-pub struct InspectorData<SPEC, BLOCK, N: Network> {
+pub struct InspectorData<N: Network, F: FoundryEvmFactory> {
     pub logs: Vec<Log>,
     pub labels: AddressHashMap<String>,
     pub traces: Option<SparsedTraceArena>,
     pub line_coverage: Option<HitMaps>,
     pub edge_coverage: Option<Vec<u8>>,
-    pub cheatcodes: Option<Box<Cheatcodes<SPEC, BLOCK, N>>>,
+    pub cheatcodes: Option<Box<Cheatcodes<N, F>>>,
     pub chisel_state: Option<(Vec<U256>, Vec<u8>)>,
     pub reverter: Option<Address>,
 }
@@ -358,7 +358,7 @@ pub struct InnerContextData {
 #[derive(Clone, Debug)]
 pub struct InspectorStack<N: Network = Ethereum, F: FoundryEvmFactory = EthEvmFactory> {
     #[allow(clippy::type_complexity)]
-    pub cheatcodes: Option<Box<Cheatcodes<F::Spec, F::BlockEnv, N>>>,
+    pub cheatcodes: Option<Box<Cheatcodes<N, F>>>,
     pub inner: InspectorStackInner,
 }
 
@@ -399,80 +399,73 @@ pub struct InspectorStackInner {
 /// Struct keeping mutable references to both parts of [InspectorStack] and implementing
 /// [revm::Inspector]. This struct can be obtained via [InspectorStack::as_mut].
 pub struct InspectorStackRefMut<'a, N: Network = Ethereum, F: FoundryEvmFactory = EthEvmFactory> {
-    pub cheatcodes: Option<&'a mut Cheatcodes<F::Spec, F::BlockEnv, N>>,
+    pub cheatcodes: Option<&'a mut Cheatcodes<N, F>>,
     pub inner: &'a mut InspectorStackInner,
 }
 
 impl<
-    CTX: FoundryContextExt<
-            Spec = SpecId,
-            Block = BlockEnv,
-            Tx = TxEnv,
-            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
-        >,
     N: Network<
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-> CheatcodesExecutor<CTX, N> for InspectorStackInner
-where
-    CTX::Tx: FromRecoveredTx<N::TxEnvelope>,
+    F: FoundryEvmFactory,
+> CheatcodesExecutor<N, F> for InspectorStackInner
 {
     fn with_nested_evm(
         &mut self,
-        cheats: &mut Cheatcodes<CTX::Spec, CTX::Block, N>,
-        ecx: &mut CTX,
-        f: NestedEvmClosure<'_, <CTX::Cfg as Cfg>::Spec, CTX::Block, CTX::Tx>,
+        cheats: &mut Cheatcodes<N, F>,
+        ecx: &mut F::FoundryContext<'_>,
+        f: NestedEvmClosure<'_, F::Spec, F::BlockEnv, F::Tx>,
     ) -> Result<(), EVMError<DatabaseError>> {
-        let mut inspector: InspectorStackRefMut<'_, N, EthEvmFactory> =
-            InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
+        let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
-            let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).into_nested_evm();
+            let mut evm = F::default()
+                .create_foundry_evm_with_inspector(db, evm_env, &mut inspector)
+                .into_nested_evm();
             *evm.journal_inner_mut() = journal_inner;
             f(&mut evm)?;
             let sub_inner = evm.journaled_state.inner.clone();
-            let sub_evm_env = evm.ctx_ref().evm_clone();
+            let sub_evm_env = evm.to_evm_env();
             Ok((sub_evm_env, sub_inner))
         })
     }
 
     fn with_fresh_nested_evm(
         &mut self,
-        cheats: &mut Cheatcodes<CTX::Spec, CTX::Block, N>,
-        db: &mut CTX::Db,
-        evm_env: EvmEnv<CTX::Spec, CTX::Block>,
-        f: NestedEvmClosure<'_, <CTX::Cfg as Cfg>::Spec, CTX::Block, CTX::Tx>,
-    ) -> Result<EvmEnv<CTX::Spec, CTX::Block>, EVMError<DatabaseError>> {
-        let mut inspector: InspectorStackRefMut<'_, N, EthEvmFactory> =
-            InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
-        let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).into_nested_evm();
+        cheats: &mut Cheatcodes<N, F>,
+        db: &mut <F::FoundryContext<'_> as ContextTr>::Db,
+        evm_env: EvmEnv<F::Spec, F::BlockEnv>,
+        f: NestedEvmClosure<'_, F::Spec, F::BlockEnv, F::Tx>,
+    ) -> Result<EvmEnv<F::Spec, F::BlockEnv>, EVMError<DatabaseError>> {
+        let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
+        let mut evm = F::default()
+            .create_foundry_evm_with_inspector(db, evm_env, &mut inspector)
+            .into_nested_evm();
         f(&mut evm)?;
-        Ok(evm.ctx_ref().evm_clone())
+        Ok(evm.to_evm_env())
     }
 
     fn transact_on_db(
         &mut self,
-        cheats: &mut Cheatcodes<CTX::Spec, CTX::Block, N>,
-        ecx: &mut CTX,
+        cheats: &mut Cheatcodes<N, F>,
+        ecx: &mut F::FoundryContext<'_>,
         fork_id: Option<U256>,
         transaction: B256,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
-        let mut inspector: InspectorStackRefMut<'_, N, EthEvmFactory> =
-            InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
+        let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
         db.transact(fork_id, transaction, evm_env, inner, &mut inspector)
     }
 
     fn transact_from_tx_on_db(
         &mut self,
-        cheats: &mut Cheatcodes<CTX::Spec, CTX::Block, N>,
-        ecx: &mut CTX,
-        tx_env: CTX::Tx,
+        cheats: &mut Cheatcodes<N, F>,
+        ecx: &mut F::FoundryContext<'_>,
+        tx_env: F::Tx,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
-        let mut inspector: InspectorStackRefMut<'_, N, EthEvmFactory> =
-            InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
+        let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
         db.transact_from_tx(tx_env, evm_env, inner, &mut inspector)
     }
@@ -558,7 +551,7 @@ where
 
     /// Set the cheatcodes inspector.
     #[inline]
-    pub fn set_cheatcodes(&mut self, cheatcodes: Cheatcodes<F::Spec, F::BlockEnv, N>) {
+    pub fn set_cheatcodes(&mut self, cheatcodes: Cheatcodes<N, F>) {
         self.cheatcodes = Some(cheatcodes.into());
     }
 
@@ -652,7 +645,7 @@ where
     }
 
     /// Collects all the data gathered during inspection into a single struct.
-    pub fn collect(self) -> InspectorData<F::Spec, F::BlockEnv, N> {
+    pub fn collect(self) -> InspectorData<N, F> {
         let Self {
             mut cheatcodes,
             inner:
