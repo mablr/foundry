@@ -17,9 +17,9 @@ use alloy_primitives::{Address, B256, TxKind, U256};
 use eyre::WrapErr;
 use foundry_fork_db::DatabaseError;
 use revm::{
-    Context, Database, DatabaseCommit,
+    Database, DatabaseCommit,
     bytecode::Bytecode,
-    context::{CfgEnv, ContextTr, Transaction},
+    context::{ContextTr, Transaction},
     context_interface::result::ResultAndState,
     database::DatabaseRef,
     primitives::AddressMap,
@@ -117,7 +117,7 @@ where
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> DatabaseExt<F::BlockEnv, F::Tx, F::Spec>
+impl<'db, N: Network, F: FoundryEvmFactory> DatabaseExt<'db, F>
     for CowBackend<'_, N, F>
 where
     N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
@@ -203,14 +203,7 @@ where
         transaction: B256,
         evm_env: EvmEnv<F::Spec, F::BlockEnv>,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn for<'db> FoundryInspectorExt<
-            Context<
-                F::BlockEnv,
-                F::Tx,
-                CfgEnv<F::Spec>,
-                &'db mut dyn DatabaseExt<F::BlockEnv, F::Tx, F::Spec>,
-            >,
-        >,
+        inspector: &mut dyn FoundryInspectorExt<F::FoundryContext<'db>>,
     ) -> eyre::Result<()> {
         self.backend_mut().transact(id, transaction, evm_env, journaled_state, inspector)
     }
@@ -220,14 +213,7 @@ where
         tx_env: F::Tx,
         evm_env: EvmEnv<F::Spec, F::BlockEnv>,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn for<'db> FoundryInspectorExt<
-            Context<
-                F::BlockEnv,
-                F::Tx,
-                CfgEnv<F::Spec>,
-                &'db mut dyn DatabaseExt<F::BlockEnv, F::Tx, F::Spec>,
-            >,
-        >,
+        inspector: &mut dyn FoundryInspectorExt<F::FoundryContext<'db>>,
     ) -> eyre::Result<()> {
         self.backend_mut().transact_from_tx(tx_env, evm_env, journaled_state, inspector)
     }
