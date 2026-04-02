@@ -49,6 +49,7 @@ pub trait FoundryEvmFactory:
     > + Clone
     + Debug
     + Default
+    + 'static
 {
     /// Foundry Context abstraction
     type FoundryContext<'db>: FoundryContextExt<

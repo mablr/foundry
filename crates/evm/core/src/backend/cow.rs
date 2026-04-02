@@ -203,7 +203,7 @@ where
         transaction: B256,
         evm_env: EvmEnv<F::Spec, F::BlockEnv>,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn FoundryInspectorExt<F::FoundryContext<'db>>,
+        inspector: &mut dyn for<'evm> FoundryInspectorExt<F::FoundryContext<'evm>>,
     ) -> eyre::Result<()> {
         self.backend_mut().transact(id, transaction, evm_env, journaled_state, inspector)
     }
@@ -213,7 +213,7 @@ where
         tx_env: F::Tx,
         evm_env: EvmEnv<F::Spec, F::BlockEnv>,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn FoundryInspectorExt<F::FoundryContext<'db>>,
+        inspector: &mut dyn for<'evm> FoundryInspectorExt<F::FoundryContext<'evm>>,
     ) -> eyre::Result<()> {
         self.backend_mut().transact_from_tx(tx_env, evm_env, journaled_state, inspector)
     }

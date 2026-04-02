@@ -217,7 +217,7 @@ pub trait DatabaseExt<'db, F: FoundryEvmFactory>:
         transaction: B256,
         evm_env: EvmEnv<F::Spec, F::BlockEnv>,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn FoundryInspectorExt<F::FoundryContext<'db>>,
+        inspector: &mut dyn for<'evm> FoundryInspectorExt<F::FoundryContext<'evm>>,
     ) -> eyre::Result<()>;
 
     /// Executes a given TransactionRequest, commits the new state to the DB
@@ -227,7 +227,7 @@ pub trait DatabaseExt<'db, F: FoundryEvmFactory>:
         tx_env: F::Tx,
         evm_env: EvmEnv<F::Spec, F::BlockEnv>,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn FoundryInspectorExt<F::FoundryContext<'db>>,
+        inspector: &mut dyn for<'evm> FoundryInspectorExt<F::FoundryContext<'evm>>,
     ) -> eyre::Result<()>;
 
     /// Returns the `ForkId` that's currently used in the database, if fork mode is on
@@ -783,16 +783,15 @@ where
     /// Note: in case there are any cheatcodes executed that modify the environment, this will
     /// update the given `env` with the new values.
     #[instrument(name = "inspect", level = "debug", skip_all)]
-    pub fn inspect<'db, I: FoundryInspectorExt<F::FoundryContext<'db>>>(
+    pub fn inspect<I: for<'db> FoundryInspectorExt<F::FoundryContext<'db>>>(
         &mut self,
         evm_env: &mut EvmEnv<F::Spec, F::BlockEnv>,
         tx_env: &mut F::Tx,
         inspector: I,
     ) -> eyre::Result<ResultAndState<F::HaltReason>>
     where
-        Self: DatabaseExt<'db, F>,
+        Self: for<'db> DatabaseExt<'db, F>,
         F::Spec: From<SpecId>,
-        F: 'db
     {
         self.initialize(evm_env.cfg_env.spec, tx_env.caller(), tx_env.kind());
         let mut evm =
@@ -1318,7 +1317,7 @@ where
         transaction: B256,
         mut evm_env: EvmEnv<F::Spec, F::BlockEnv>,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn FoundryInspectorExt<F::FoundryContext<'db>>,
+        inspector: &mut dyn for<'evm> FoundryInspectorExt<F::FoundryContext<'evm>>,
     ) -> eyre::Result<()> {
         trace!(?maybe_id, ?transaction, "execute transaction");
         let persistent_accounts = self.inner.persistent_accounts.clone();
@@ -1358,18 +1357,17 @@ where
         tx_env: F::Tx,
         evm_env: EvmEnv<F::Spec, F::BlockEnv>,
         journaled_state: &mut JournaledState,
-        inspector: &mut dyn FoundryInspectorExt<F::FoundryContext<'db>>,
+        inspector: &mut dyn for<'evm> FoundryInspectorExt<F::FoundryContext<'evm>>,
     ) -> eyre::Result<()> {
         trace!("execute signed transaction");
 
         self.commit(journaled_state.state.clone());
 
-        let res = {
-            let mut db = self.clone();
-            let mut evm = F::default().create_foundry_evm_with_inspector(&mut db, evm_env, inspector);
-            evm.journal_inner_mut().depth = journaled_state.depth + 1;
-            evm.transact_raw(tx_env)?
-        };
+        let mut db = self.clone();
+        let mut evm = F::default().create_foundry_evm_with_inspector(&mut db, evm_env, inspector);
+        evm.journal_inner_mut().depth = journaled_state.depth + 1;
+        let res = evm.transact_raw(tx_env)?;
+        drop(evm);
 
         self.commit(res.state);
         update_state(&mut journaled_state.state, self, None)?;
@@ -2032,24 +2030,24 @@ fn update_env_block<SPEC, BLOCK: FoundryBlock>(
 /// Executes the given transaction and commits state changes to the database _and_ the journaled
 /// state, with an inspector.
 #[allow(clippy::type_complexity)]
-fn commit_transaction<'db, N: Network, F: FoundryEvmFactory>(
+fn commit_transaction<N: Network, F: FoundryEvmFactory>(
     evm_env: EvmEnv<F::Spec, F::BlockEnv>,
     tx_env: F::Tx,
     journaled_state: &mut JournaledState,
     fork: &mut Fork<N, F::BlockEnv>,
     fork_id: &ForkId,
     persistent_accounts: &HashSet<Address>,
-    inspector: &mut dyn FoundryInspectorExt<F::FoundryContext<'db>>,
+    inspector: &mut dyn for<'evm> FoundryInspectorExt<F::FoundryContext<'evm>>,
 ) -> eyre::Result<()>
 where
     N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
 {
     let now = Instant::now();
+    let fork_clone = fork.clone();
+    let journaled_state_clone = journaled_state.clone();
+    let depth = journaled_state_clone.depth;
+    let mut db = Backend::new_with_fork(fork_id, fork_clone, journaled_state_clone)?;
     let res = {
-        let fork = fork.clone();
-        let journaled_state = journaled_state.clone();
-        let depth = journaled_state.depth;
-        let mut db = Backend::new_with_fork(fork_id, fork, journaled_state)?;
         let mut evm = F::default().create_foundry_evm_with_inspector(&mut db, evm_env, inspector);
         evm.journal_inner_mut().depth = depth + 1;
         evm.transact_raw(tx_env)?
