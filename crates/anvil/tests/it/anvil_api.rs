@@ -459,6 +459,7 @@ async fn can_get_node_info() {
             fork_block_number: None,
             fork_retry_backoff: None,
         },
+        network: None,
     };
 
     assert_eq!(node_info, expected_node_info);
