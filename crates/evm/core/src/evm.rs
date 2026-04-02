@@ -68,7 +68,7 @@ pub trait FoundryEvmFactory:
             Spec = Self::Spec,
             HaltReason = Self::HaltReason,
         > + Deref<Target = Self::FoundryContext<'db>>
-        + IntoNestedEvm
+        + IntoNestedEvm<Self::Tx>
     where
         Self: 'db;
 
@@ -274,15 +274,15 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> Deref
 ///
 /// Both [`EthFoundryEvm`] and [`TempoFoundryEvm`] wrap an inner revm EVM that implements
 /// [`NestedEvm`]. This trait provides a uniform way to unwrap them.
-pub trait IntoNestedEvm {
+pub trait IntoNestedEvm<TX> {
     /// The inner type that implements [`NestedEvm`].
-    type Inner: NestedEvm;
+    type Inner: NestedEvm<Tx = TX>;
 
     /// Consumes the wrapper, returning the inner revm EVM.
     fn into_nested_evm(self) -> Self::Inner;
 }
 
-impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> IntoNestedEvm
+impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt>>> IntoNestedEvm<TxEnv>
     for EthFoundryEvm<'db, I>
 {
     type Inner = EthRevmEvm<'db, I>;
@@ -725,7 +725,7 @@ impl<
     I: FoundryInspectorExt<
         TempoContext<&'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>>,
     >,
-> IntoNestedEvm for TempoFoundryEvm<'db, I>
+> IntoNestedEvm<TempoTxEnv> for TempoFoundryEvm<'db, I>
 {
     type Inner = TempoRevmEvm<'db, I>;
 
