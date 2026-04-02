@@ -2,13 +2,15 @@ use super::{
     Cheatcodes, CheatsConfig, ChiselState, CustomPrintTracer, Fuzzer, LineCoverageCollector,
     LogCollector, RevertDiagnostic, ScriptExecutionInspector, TempoLabels, TracingInspector,
 };
-use alloy_evm::{EthEvmFactory, EvmEnv};
+use alloy_consensus::transaction::SignerRecoverable;
+use alloy_evm::{EthEvmFactory, EvmEnv, FromRecoveredTx};
 use alloy_network::{Ethereum, Network};
 use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256,
     map::{AddressHashMap, AddressMap},
 };
 
+use alloy_rlp::Decodable;
 use foundry_cheatcodes::{CheatcodeAnalysis, CheatcodesExecutor, NestedEvmClosure, Wallets};
 use foundry_common::compile::Analysis;
 use foundry_evm_core::{
@@ -23,6 +25,7 @@ use foundry_evm_core::{
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::{SparsedTraceArena, TraceMode};
+use foundry_primitives::FoundryTransactionBuilder;
 use revm::{
     Inspector,
     context::{
@@ -110,7 +113,7 @@ impl<BLOCK: Clone> Default for InspectorStackBuilder<BLOCK> {
     }
 }
 
-impl<BLOCK: Clone> InspectorStackBuilder<BLOCK> {
+impl InspectorStackBuilder<BlockEnv> {
     /// Create a new inspector stack builder.
     #[inline]
     pub fn new() -> Self {
@@ -126,7 +129,7 @@ impl<BLOCK: Clone> InspectorStackBuilder<BLOCK> {
 
     /// Set the block environment.
     #[inline]
-    pub fn block(mut self, block: BLOCK) -> Self {
+    pub fn block(mut self, block: BlockEnv) -> Self {
         self.block = Some(block);
         self
     }
@@ -219,7 +222,18 @@ impl<BLOCK: Clone> InspectorStackBuilder<BLOCK> {
     }
 
     /// Builds the stack of inspectors to use when transacting/committing on the EVM.
-    pub fn build<N: Network, F: FoundryEvmFactory<BlockEnv = BLOCK>>(self) -> InspectorStack<N, F> {
+    pub fn build<
+        N: Network<
+                TxEnvelope: Decodable + SignerRecoverable,
+                TransactionRequest: FoundryTransactionBuilder<N>,
+            >,
+        F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+    >(
+        self,
+    ) -> InspectorStack<N, F>
+    where
+        F::Tx: FromRecoveredTx<N::TxEnvelope>,
+    {
         let Self {
             analysis,
             block,
@@ -396,15 +410,22 @@ impl<
             Tx = TxEnv,
             Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
         >,
-> CheatcodesExecutor<CTX, Ethereum> for InspectorStackInner
+    N: Network<
+            TxEnvelope: Decodable + SignerRecoverable,
+            TransactionRequest: FoundryTransactionBuilder<N>,
+        >,
+> CheatcodesExecutor<CTX, N> for InspectorStackInner
+where
+    CTX::Tx: FromRecoveredTx<N::TxEnvelope>,
 {
     fn with_nested_evm(
         &mut self,
-        cheats: &mut Cheatcodes<SpecId, BlockEnv, Ethereum>,
+        cheats: &mut Cheatcodes<CTX::Spec, CTX::Block, N>,
         ecx: &mut CTX,
-        f: NestedEvmClosure<'_, CTX::Tx>,
+        f: NestedEvmClosure<'_, <CTX::Cfg as Cfg>::Spec, CTX::Block, CTX::Tx>,
     ) -> Result<(), EVMError<DatabaseError>> {
-        let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
+        let mut inspector: InspectorStackRefMut<'_, N, EthEvmFactory> =
+            InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
             let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).into_nested_evm();
             *evm.journal_inner_mut() = journal_inner;
@@ -417,12 +438,13 @@ impl<
 
     fn with_fresh_nested_evm(
         &mut self,
-        cheats: &mut Cheatcodes<SpecId, BlockEnv, Ethereum>,
+        cheats: &mut Cheatcodes<CTX::Spec, CTX::Block, N>,
         db: &mut CTX::Db,
         evm_env: EvmEnv<CTX::Spec, CTX::Block>,
-        f: NestedEvmClosure<'_, CTX::Tx>,
+        f: NestedEvmClosure<'_, <CTX::Cfg as Cfg>::Spec, CTX::Block, CTX::Tx>,
     ) -> Result<EvmEnv<CTX::Spec, CTX::Block>, EVMError<DatabaseError>> {
-        let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
+        let mut inspector: InspectorStackRefMut<'_, N, EthEvmFactory> =
+            InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let mut evm = new_eth_evm_with_inspector(db, evm_env, &mut inspector).into_nested_evm();
         f(&mut evm)?;
         Ok(evm.ctx_ref().evm_clone())
@@ -430,25 +452,27 @@ impl<
 
     fn transact_on_db(
         &mut self,
-        cheats: &mut Cheatcodes<SpecId, BlockEnv, Ethereum>,
+        cheats: &mut Cheatcodes<CTX::Spec, CTX::Block, N>,
         ecx: &mut CTX,
         fork_id: Option<U256>,
         transaction: B256,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
-        let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
+        let mut inspector: InspectorStackRefMut<'_, N, EthEvmFactory> =
+            InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
         db.transact(fork_id, transaction, evm_env, inner, &mut inspector)
     }
 
     fn transact_from_tx_on_db(
         &mut self,
-        cheats: &mut Cheatcodes<SpecId, BlockEnv, Ethereum>,
+        cheats: &mut Cheatcodes<CTX::Spec, CTX::Block, N>,
         ecx: &mut CTX,
         tx_env: CTX::Tx,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
-        let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
+        let mut inspector: InspectorStackRefMut<'_, N, EthEvmFactory> =
+            InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
         db.transact_from_tx(tx_env, evm_env, inner, &mut inspector)
     }
@@ -475,13 +499,31 @@ impl<
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> Default for InspectorStack<N, F> {
+impl<
+    N: Network<
+            TxEnvelope: Decodable + SignerRecoverable,
+            TransactionRequest: FoundryTransactionBuilder<N>,
+        >,
+    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+> Default for InspectorStack<N, F>
+where
+    F::Tx: FromRecoveredTx<N::TxEnvelope>,
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> InspectorStack<N, F> {
+impl<
+    N: Network<
+            TxEnvelope: Decodable + SignerRecoverable,
+            TransactionRequest: FoundryTransactionBuilder<N>,
+        >,
+    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+> InspectorStack<N, F>
+where
+    F::Tx: FromRecoveredTx<N::TxEnvelope>,
+{
     /// Creates a new inspector stack.
     ///
     /// Note that the stack is empty by default, and you must add inspectors to it.
@@ -663,7 +705,16 @@ impl<N: Network, F: FoundryEvmFactory> InspectorStack<N, F> {
     }
 }
 
-impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
+impl<
+    N: Network<
+            TxEnvelope: Decodable + SignerRecoverable,
+            TransactionRequest: FoundryTransactionBuilder<N>,
+        >,
+    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+> InspectorStackRefMut<'_, N, F>
+where
+    F::Tx: FromRecoveredTx<N::TxEnvelope>,
+{
     /// Adjusts the EVM data for the inner EVM context.
     /// Should be called on the top-level call of inner context (depth == 0 &&
     /// self.in_inner_context) Decreases sender nonce for CALLs to keep backwards compatibility
@@ -674,16 +725,9 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
         ecx.tx_mut().set_caller(inner_context_data.original_origin);
     }
 
-    fn do_call_end<
-        CTX: FoundryContextExt<
-                Spec = SpecId,
-                Block = BlockEnv,
-                Tx = TxEnv,
-                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
-            >,
-    >(
+    fn do_call_end(
         &mut self,
-        ecx: &mut CTX,
+        ecx: &mut F::FoundryContext<'_>,
         inputs: &CallInputs,
         outcome: &mut CallOutcome,
     ) {
@@ -716,16 +760,9 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
         }
     }
 
-    fn do_create_end<
-        CTX: FoundryContextExt<
-                Spec = SpecId,
-                Block = BlockEnv,
-                Tx = TxEnv,
-                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
-            >,
-    >(
+    fn do_create_end(
         &mut self,
-        ecx: &mut CTX,
+        ecx: &mut F::FoundryContext<'_>,
         call: &CreateInputs,
         outcome: &mut CreateOutcome,
     ) {
@@ -747,16 +784,9 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
         );
     }
 
-    fn transact_inner<
-        CTX: FoundryContextExt<
-                Spec = SpecId,
-                Block = BlockEnv,
-                Tx = TxEnv,
-                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
-            >,
-    >(
+    fn transact_inner(
         &mut self,
-        ecx: &mut CTX,
+        ecx: &mut F::FoundryContext<'_>,
         kind: TxKind,
         caller: Address,
         input: Bytes,
@@ -785,7 +815,8 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
         }
         ecx.tx_mut().set_gas_price(0);
 
-        self.inner_context_data = Some(InnerContextData { original_origin: cached_tx_env.caller });
+        self.inner_context_data =
+            Some(InnerContextData { original_origin: cached_tx_env.caller() });
         self.in_inner_context = true;
 
         let evm_env = ecx.evm_clone();
@@ -794,8 +825,9 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
         let res = self.with_inspector(|mut inspector| {
             let (res, nested_env) = {
                 let (db, journal) = ecx.db_journal_inner_mut();
-                let mut evm =
-                    new_eth_evm_with_inspector(db, evm_env, &mut inspector).into_nested_evm();
+                let mut evm = F::default()
+                    .create_foundry_evm_with_inspector(db, evm_env, &mut inspector)
+                    .into_nested_evm();
 
                 evm.journal_inner_mut().state = {
                     let mut state = journal.state.clone();
@@ -820,14 +852,14 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
                 evm.journal_inner_mut().depth = 1;
 
                 let res = evm.transact_raw(tx_env);
-                let nested_evm_env = evm.ctx_ref().evm_clone();
+                let nested_evm_env = evm.to_evm_env();
                 (res, nested_evm_env)
             };
 
             // Restore env, preserving cheatcode cfg/block changes from the nested EVM
             // but restoring the original tx and basefee (which we zeroed for the nested call).
             let mut restored_evm_env = nested_env;
-            restored_evm_env.block_env.basefee = cached_evm_env.block_env.basefee;
+            restored_evm_env.block_env.set_basefee(cached_evm_env.block_env.basefee());
             ecx.set_evm(restored_evm_env);
             ecx.set_tx(cached_tx_env);
 
@@ -895,10 +927,7 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
 
     /// Moves out of references, constructs a new [`InspectorStackRefMut`] and runs the given
     /// closure with it.
-    fn with_inspector<O>(
-        &mut self,
-        f: impl FnOnce(InspectorStackRefMut<'_, Ethereum, EthEvmFactory>) -> O,
-    ) -> O {
+    fn with_inspector<O>(&mut self, f: impl FnOnce(InspectorStackRefMut<'_, N, F>) -> O) -> O {
         let mut cheatcodes = self
             .cheatcodes
             .as_deref_mut()
@@ -917,7 +946,7 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
     }
 
     /// Invoked at the beginning of a new top-level (0 depth) frame.
-    fn top_level_frame_start<CTX: ContextTr<Journal: JournalExt>>(&mut self, ecx: &mut CTX) {
+    fn top_level_frame_start(&mut self, ecx: &mut F::FoundryContext<'_>) {
         if self.enable_isolation {
             // If we're in isolation mode, we need to keep track of the state at the beginning of
             // the frame to be able to roll back on revert
@@ -926,11 +955,7 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
     }
 
     /// Invoked at the end of root frame.
-    fn top_level_frame_end<CTX: ContextTr<Journal: JournalExt>>(
-        &mut self,
-        ecx: &mut CTX,
-        result: InstructionResult,
-    ) {
+    fn top_level_frame_end(&mut self, ecx: &mut F::FoundryContext<'_>, result: InstructionResult) {
         if !result.is_revert() {
             return;
         }
@@ -955,18 +980,7 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
     // delegate to `InspectorStackRefMut` in this case.
 
     #[inline(always)]
-    fn step_inlined<
-        CTX: FoundryContextExt<
-                Spec = SpecId,
-                Block = BlockEnv,
-                Tx = TxEnv,
-                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
-            >,
-    >(
-        &mut self,
-        interpreter: &mut Interpreter,
-        ecx: &mut CTX,
-    ) {
+    fn step_inlined(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -985,18 +999,7 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
     }
 
     #[inline(always)]
-    fn step_end_inlined<
-        CTX: FoundryContextExt<
-                Spec = SpecId,
-                Block = BlockEnv,
-                Tx = TxEnv,
-                Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
-            >,
-    >(
-        &mut self,
-        interpreter: &mut Interpreter,
-        ecx: &mut CTX,
-    ) {
+    fn step_end_inlined(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -1013,15 +1016,20 @@ impl InspectorStackRefMut<'_, Ethereum, EthEvmFactory> {
 }
 
 impl<
-    CTX: FoundryContextExt<
-            Spec = SpecId,
-            Block = BlockEnv,
-            Tx = TxEnv,
-            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+    N: Network<
+            TxEnvelope: Decodable + SignerRecoverable,
+            TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-> Inspector<CTX> for InspectorStackRefMut<'_, Ethereum, EthEvmFactory>
+    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+> Inspector<F::FoundryContext<'_>> for InspectorStackRefMut<'_, N, F>
+where
+    F::Tx: FromRecoveredTx<N::TxEnvelope>,
 {
-    fn initialize_interp(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn initialize_interp(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut F::FoundryContext<'_>,
+    ) {
         call_inspectors!(
             [
                 &mut self.line_coverage,
@@ -1034,16 +1042,16 @@ impl<
         );
     }
 
-    fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
         self.step_inlined(interpreter, ecx);
     }
 
-    fn step_end(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step_end(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
         self.step_end_inlined(interpreter, ecx);
     }
 
     #[allow(clippy::redundant_clone)]
-    fn log(&mut self, ecx: &mut CTX, log: Log) {
+    fn log(&mut self, ecx: &mut F::FoundryContext<'_>, log: Log) {
         call_inspectors!(
             [&mut self.tracer, &mut self.log_collector, &mut self.cheatcodes, &mut self.printer],
             |inspector| inspector.log(ecx, log.clone()),
@@ -1051,14 +1059,23 @@ impl<
     }
 
     #[allow(clippy::redundant_clone)]
-    fn log_full(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX, log: Log) {
+    fn log_full(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut F::FoundryContext<'_>,
+        log: Log,
+    ) {
         call_inspectors!(
             [&mut self.tracer, &mut self.log_collector, &mut self.cheatcodes, &mut self.printer],
             |inspector| inspector.log_full(interpreter, ecx, log.clone()),
         );
     }
 
-    fn call(&mut self, ecx: &mut CTX, call: &mut CallInputs) -> Option<CallOutcome> {
+    fn call(
+        &mut self,
+        ecx: &mut F::FoundryContext<'_>,
+        call: &mut CallInputs,
+    ) -> Option<CallOutcome> {
         if self.in_inner_context && ecx.journal().depth() == 1 {
             self.adjust_evm_data_for_inner_context(ecx);
             return None;
@@ -1156,7 +1173,12 @@ impl<
         None
     }
 
-    fn call_end(&mut self, ecx: &mut CTX, inputs: &CallInputs, outcome: &mut CallOutcome) {
+    fn call_end(
+        &mut self,
+        ecx: &mut F::FoundryContext<'_>,
+        inputs: &CallInputs,
+        outcome: &mut CallOutcome,
+    ) {
         // We are processing inner context outputs in the outer context, so need to avoid processing
         // twice.
         if self.in_inner_context && ecx.journal().depth() == 1 {
@@ -1170,7 +1192,11 @@ impl<
         }
     }
 
-    fn create(&mut self, ecx: &mut CTX, create: &mut CreateInputs) -> Option<CreateOutcome> {
+    fn create(
+        &mut self,
+        ecx: &mut F::FoundryContext<'_>,
+        create: &mut CreateInputs,
+    ) -> Option<CreateOutcome> {
         if self.in_inner_context && ecx.journal().depth() == 1 {
             self.adjust_evm_data_for_inner_context(ecx);
             return None;
@@ -1205,7 +1231,12 @@ impl<
         None
     }
 
-    fn create_end(&mut self, ecx: &mut CTX, call: &CreateInputs, outcome: &mut CreateOutcome) {
+    fn create_end(
+        &mut self,
+        ecx: &mut F::FoundryContext<'_>,
+        call: &CreateInputs,
+        outcome: &mut CreateOutcome,
+    ) {
         // We are processing inner context outputs in the outer context, so need to avoid processing
         // twice.
         if self.in_inner_context && ecx.journal().depth() == 1 {
@@ -1220,9 +1251,9 @@ impl<
     }
 
     fn selfdestruct(&mut self, contract: Address, target: Address, value: U256) {
-        call_inspectors!([&mut self.printer], |inspector| Inspector::<CTX>::selfdestruct(
-            inspector, contract, target, value,
-        ));
+        call_inspectors!([&mut self.printer], |inspector| {
+            Inspector::<F::FoundryContext<'_>>::selfdestruct(inspector, contract, target, value)
+        });
     }
 }
 
@@ -1253,58 +1284,95 @@ impl<N: Network, F: FoundryEvmFactory> InspectorExt for InspectorStackRefMut<'_,
 }
 
 impl<
-    CTX: FoundryContextExt<
-            Spec = SpecId,
-            Block = BlockEnv,
-            Tx = TxEnv,
-            Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>,
+    N: Network<
+            TxEnvelope: Decodable + SignerRecoverable,
+            TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-> Inspector<CTX> for InspectorStack<Ethereum, EthEvmFactory>
+    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+> Inspector<F::FoundryContext<'_>> for InspectorStack<N, F>
+where
+    F::Tx: FromRecoveredTx<N::TxEnvelope>,
 {
-    fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
         self.as_mut().step_inlined(interpreter, ecx)
     }
 
-    fn step_end(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn step_end(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
         self.as_mut().step_end_inlined(interpreter, ecx)
     }
 
-    fn call(&mut self, context: &mut CTX, inputs: &mut CallInputs) -> Option<CallOutcome> {
+    fn call(
+        &mut self,
+        context: &mut F::FoundryContext<'_>,
+        inputs: &mut CallInputs,
+    ) -> Option<CallOutcome> {
         self.as_mut().call(context, inputs)
     }
 
-    fn call_end(&mut self, context: &mut CTX, inputs: &CallInputs, outcome: &mut CallOutcome) {
+    fn call_end(
+        &mut self,
+        context: &mut F::FoundryContext<'_>,
+        inputs: &CallInputs,
+        outcome: &mut CallOutcome,
+    ) {
         self.as_mut().call_end(context, inputs, outcome)
     }
 
-    fn create(&mut self, context: &mut CTX, create: &mut CreateInputs) -> Option<CreateOutcome> {
+    fn create(
+        &mut self,
+        context: &mut F::FoundryContext<'_>,
+        create: &mut CreateInputs,
+    ) -> Option<CreateOutcome> {
         self.as_mut().create(context, create)
     }
 
-    fn create_end(&mut self, context: &mut CTX, call: &CreateInputs, outcome: &mut CreateOutcome) {
+    fn create_end(
+        &mut self,
+        context: &mut F::FoundryContext<'_>,
+        call: &CreateInputs,
+        outcome: &mut CreateOutcome,
+    ) {
         self.as_mut().create_end(context, call, outcome)
     }
 
-    fn initialize_interp(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX) {
+    fn initialize_interp(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut F::FoundryContext<'_>,
+    ) {
         self.as_mut().initialize_interp(interpreter, ecx)
     }
 
-    fn log(&mut self, ecx: &mut CTX, log: Log) {
+    fn log(&mut self, ecx: &mut F::FoundryContext<'_>, log: Log) {
         self.as_mut().log(ecx, log)
     }
 
-    fn log_full(&mut self, interpreter: &mut Interpreter, ecx: &mut CTX, log: Log) {
+    fn log_full(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut F::FoundryContext<'_>,
+        log: Log,
+    ) {
         self.as_mut().log_full(interpreter, ecx, log)
     }
 
     fn selfdestruct(&mut self, contract: Address, target: Address, value: U256) {
-        call_inspectors!([&mut self.inner.printer], |inspector| Inspector::<CTX>::selfdestruct(
-            inspector, contract, target, value,
-        ));
+        call_inspectors!([&mut self.inner.printer], |inspector| {
+            Inspector::<F::FoundryContext<'_>>::selfdestruct(inspector, contract, target, value)
+        });
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> InspectorExt for InspectorStack<N, F> {
+impl<
+    N: Network<
+            TxEnvelope: Decodable + SignerRecoverable,
+            TransactionRequest: FoundryTransactionBuilder<N>,
+        >,
+    F: FoundryEvmFactory<Spec = SpecId, BlockEnv = BlockEnv, Tx = TxEnv>,
+> InspectorExt for InspectorStack<N, F>
+where
+    F::Tx: FromRecoveredTx<N::TxEnvelope>,
+{
     fn should_use_create2_factory(&mut self, depth: usize, inputs: &CreateInputs) -> bool {
         self.as_mut().should_use_create2_factory(depth, inputs)
     }

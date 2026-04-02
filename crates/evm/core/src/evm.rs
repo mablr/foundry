@@ -68,7 +68,7 @@ pub trait FoundryEvmFactory:
             Spec = Self::Spec,
             HaltReason = Self::HaltReason,
         > + Deref<Target = Self::FoundryContext<'db>>
-        + IntoNestedEvm<Self::Tx>
+        + IntoNestedEvm<Self::Spec, Self::BlockEnv, Self::Tx>
     where
         Self: 'db;
 
@@ -280,16 +280,16 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<BlockEnv
 ///
 /// Both [`EthFoundryEvm`] and [`TempoFoundryEvm`] wrap an inner revm EVM that implements
 /// [`NestedEvm`]. This trait provides a uniform way to unwrap them.
-pub trait IntoNestedEvm<TX> {
+pub trait IntoNestedEvm<SPEC, BLOCK, TX> {
     /// The inner type that implements [`NestedEvm`].
-    type Inner: NestedEvm<Tx = TX>;
+    type Inner: NestedEvm<Spec = SPEC, Block = BLOCK, Tx = TX>;
 
     /// Consumes the wrapper, returning the inner revm EVM.
     fn into_nested_evm(self) -> Self::Inner;
 }
 
 impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<BlockEnv, TxEnv, SpecId>>>>
-    IntoNestedEvm<TxEnv> for EthFoundryEvm<'db, I>
+    IntoNestedEvm<SpecId, BlockEnv, TxEnv> for EthFoundryEvm<'db, I>
 {
     type Inner = EthRevmEvm<'db, I>;
 
@@ -303,6 +303,10 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<BlockEnv
 /// This abstracts over the concrete EVM type (`FoundryEvm`, future `TempoEvm`, etc.)
 /// so that cheatcode impls can build and run nested EVMs without knowing the concrete type.
 pub trait NestedEvm {
+    /// The spec type.
+    type Spec;
+    /// The block environment type.
+    type Block;
     /// The transaction environment type.
     type Tx;
 
@@ -317,11 +321,15 @@ pub trait NestedEvm {
         &mut self,
         tx: Self::Tx,
     ) -> Result<ResultAndState<HaltReason>, EVMError<DatabaseError>>;
+
+    fn to_evm_env(&self) -> EvmEnv<Self::Spec, Self::Block>;
 }
 
 impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<BlockEnv, TxEnv, SpecId>>>>
     NestedEvm for EthRevmEvm<'db, I>
 {
+    type Spec = SpecId;
+    type Block = BlockEnv;
     type Tx = TxEnv;
 
     fn journal_inner_mut(&mut self) -> &mut JournaledState {
@@ -356,11 +364,17 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<BlockEnv
 
         Ok(ResultAndState::new(result, self.ctx.journaled_state.inner.state.clone()))
     }
+
+    fn to_evm_env(&self) -> EvmEnv<Self::Spec, Self::Block> {
+        self.ctx_ref().evm_clone()
+    }
 }
 
 /// Closure type used by `CheatcodesExecutor` methods that run nested EVM operations.
-pub type NestedEvmClosure<'a, Tx> =
-    &'a mut dyn FnMut(&mut dyn NestedEvm<Tx = Tx>) -> Result<(), EVMError<DatabaseError>>;
+pub type NestedEvmClosure<'a, Spec, Block, Tx> =
+    &'a mut dyn FnMut(
+        &mut dyn NestedEvm<Spec = Spec, Block = Block, Tx = Tx>,
+    ) -> Result<(), EVMError<DatabaseError>>;
 
 /// Clones the current context (env + journal), passes the database, cloned env,
 /// and cloned journal inner to the callback. The callback builds whatever EVM it
@@ -737,7 +751,7 @@ impl<
     I: FoundryInspectorExt<
         TempoContext<&'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>>,
     >,
-> IntoNestedEvm<TempoTxEnv> for TempoFoundryEvm<'db, I>
+> IntoNestedEvm<TempoHardfork, TempoBlockEnv, TempoTxEnv> for TempoFoundryEvm<'db, I>
 {
     type Inner = TempoRevmEvm<'db, I>;
 
@@ -769,6 +783,8 @@ impl<
     >,
 > NestedEvm for TempoRevmEvm<'db, I>
 {
+    type Spec = TempoHardfork;
+    type Block = TempoBlockEnv;
     type Tx = TempoTxEnv;
 
     fn journal_inner_mut(&mut self) -> &mut JournaledState {
@@ -805,6 +821,10 @@ impl<
         });
 
         Ok(ResultAndState::new(result, self.ctx.journaled_state.inner.state.clone()))
+    }
+
+    fn to_evm_env(&self) -> EvmEnv<Self::Spec, Self::Block> {
+        self.ctx_ref().evm_clone()
     }
 }
 

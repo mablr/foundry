@@ -94,7 +94,7 @@ pub trait CheatcodesExecutor<CTX: ContextTr, N: Network> {
         &mut self,
         cheats: &mut Cheatcodes<<CTX::Cfg as Cfg>::Spec, CTX::Block, N>,
         ecx: &mut CTX,
-        f: NestedEvmClosure<'_, CTX::Tx>,
+        f: NestedEvmClosure<'_, <CTX::Cfg as Cfg>::Spec, CTX::Block, CTX::Tx>,
     ) -> Result<(), EVMError<DatabaseError>>;
 
     /// Replays a historical transaction on the database. Inspector is assembled internally.
@@ -124,7 +124,7 @@ pub trait CheatcodesExecutor<CTX: ContextTr, N: Network> {
         cheats: &mut Cheatcodes<<CTX::Cfg as Cfg>::Spec, CTX::Block, N>,
         db: &mut CTX::Db,
         evm_env: EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>,
-        f: NestedEvmClosure<'_, CTX::Tx>,
+        f: NestedEvmClosure<'_, <CTX::Cfg as Cfg>::Spec, CTX::Block, CTX::Tx>,
     ) -> Result<EvmEnv<<CTX::Cfg as Cfg>::Spec, CTX::Block>, EVMError<DatabaseError>>;
 
     /// Simulates `console.log` invocation.
@@ -192,7 +192,7 @@ where
         &mut self,
         cheats: &mut Cheatcodes<<CTX::Cfg as Cfg>::Spec, CTX::Block, N>,
         ecx: &mut CTX,
-        f: NestedEvmClosure<'_, CTX::Tx>,
+        f: NestedEvmClosure<'_, <CTX::Cfg as Cfg>::Spec, CTX::Block, CTX::Tx>,
     ) -> Result<(), EVMError<DatabaseError>> {
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
             let mut evm = new_eth_evm_with_inspector(db, evm_env, cheats).into_nested_evm();
@@ -209,7 +209,7 @@ where
         cheats: &mut Cheatcodes<<CTX::Cfg as Cfg>::Spec, CTX::Block, N>,
         db: &mut CTX::Db,
         evm_env: EvmEnv<CTX::Spec, CTX::Block>,
-        f: NestedEvmClosure<'_, CTX::Tx>,
+        f: NestedEvmClosure<'_, <CTX::Cfg as Cfg>::Spec, CTX::Block, CTX::Tx>,
     ) -> Result<EvmEnv<CTX::Spec, CTX::Block>, EVMError<DatabaseError>> {
         let mut evm = new_eth_evm_with_inspector(db, evm_env, cheats).into_nested_evm();
         f(&mut evm)?;
