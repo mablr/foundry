@@ -12,14 +12,14 @@ use crate::inspectors::{
 use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
 use alloy_evm::EthEvmFactory;
 use alloy_json_abi::Function;
-use alloy_network::{Ethereum, Network};
+use alloy_network::{AnyNetwork, AnyRpcTransaction, Ethereum, Network};
 use alloy_primitives::{
     Address, Bytes, Log, TxKind, U256, keccak256,
     map::{AddressHashMap, HashMap},
 };
 use alloy_sol_types::{SolCall, sol};
 use foundry_evm_core::{
-    EvmEnv,
+    EvmEnv, TryAnyToTxEnv,
     backend::{Backend, BackendError, BackendResult, CowBackend, DatabaseExt, GLOBAL_FAIL_SLOT},
     constants::{
         CALLER, CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, DEFAULT_CREATE2_DEPLOYER,
@@ -40,7 +40,6 @@ use revm::{
     },
     database::{DatabaseCommit, DatabaseRef},
     interpreter::{InstructionResult, return_ok},
-    primitives::hardfork::SpecId,
 };
 use std::{
     borrow::Cow,
@@ -89,7 +88,7 @@ sol! {
 ///   deployment
 /// - `setup`: a special case of `transact`, used to set up the environment for a test
 #[derive(Clone, Debug)]
-pub struct Executor {
+pub struct Executor<F: FoundryEvmFactory = EthEvmFactory> {
     /// The underlying `revm::Database` that contains the EVM storage.
     ///
     /// Wrapped in `Arc` for efficient cloning during parallel fuzzing. Use [`Arc::make_mut`]
@@ -98,27 +97,30 @@ pub struct Executor {
     // only interested in the database. REVM's `EVM` is a thin
     // wrapper around spawning a new EVM on every call anyway,
     // so the performance difference should be negligible.
-    backend: Arc<Backend>,
+    backend: Arc<Backend<AnyNetwork, F>>,
     /// The EVM environment (block and cfg).
-    evm_env: EvmEnv,
+    evm_env: EvmEnv<F::Spec, F::BlockEnv>,
     /// The transaction environment.
-    tx_env: TxEnv,
+    tx_env: F::Tx,
     /// The Revm inspector stack.
-    inspector: InspectorStack<Ethereum, EthEvmFactory>,
+    inspector: InspectorStack<Ethereum, F>,
     /// The gas limit for calls and deployments.
     gas_limit: u64,
     /// Whether `failed()` should be called on the test contract to determine if the test failed.
     legacy_assertions: bool,
 }
 
-impl Executor {
+impl<F: FoundryEvmFactory> Executor<F>
+where
+    AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
+{
     /// Creates a new `Executor` with the given arguments.
     #[inline]
     pub fn new(
-        mut backend: Backend,
-        evm_env: EvmEnv,
-        tx_env: TxEnv,
-        inspector: InspectorStack<Ethereum, EthEvmFactory>,
+        mut backend: Backend<AnyNetwork, F>,
+        evm_env: EvmEnv<F::Spec, F::BlockEnv>,
+        tx_env: F::Tx,
+        inspector: InspectorStack<Ethereum, F>,
         gas_limit: u64,
         legacy_assertions: bool,
     ) -> Self {
@@ -145,7 +147,7 @@ impl Executor {
         }
     }
 
-    fn clone_with_backend(&self, backend: Backend) -> Self {
+    fn clone_with_backend(&self, backend: Backend<AnyNetwork, F>) -> Self {
         let evm_env = self.evm_env.clone();
         Self {
             backend: Arc::new(backend),
@@ -158,7 +160,7 @@ impl Executor {
     }
 
     /// Returns a reference to the EVM backend.
-    pub fn backend(&self) -> &Backend {
+    pub fn backend(&self) -> &Backend<AnyNetwork, F> {
         &self.backend
     }
 
@@ -166,47 +168,47 @@ impl Executor {
     ///
     /// Uses copy-on-write semantics: if other clones of this executor share the backend,
     /// this will clone the backend first.
-    pub fn backend_mut(&mut self) -> &mut Backend {
+    pub fn backend_mut(&mut self) -> &mut Backend<AnyNetwork, F> {
         Arc::make_mut(&mut self.backend)
     }
 
     /// Returns a reference to the EVM environment (block and cfg).
-    pub fn evm_env(&self) -> &EvmEnv {
+    pub fn evm_env(&self) -> &EvmEnv<F::Spec, F::BlockEnv> {
         &self.evm_env
     }
 
     /// Returns a mutable reference to the EVM environment (block and cfg).
-    pub fn evm_env_mut(&mut self) -> &mut EvmEnv {
+    pub fn evm_env_mut(&mut self) -> &mut EvmEnv<F::Spec, F::BlockEnv> {
         &mut self.evm_env
     }
 
     /// Returns a reference to the transaction environment.
-    pub fn tx_env(&self) -> &TxEnv {
+    pub fn tx_env(&self) -> &F::Tx {
         &self.tx_env
     }
 
     /// Returns a mutable reference to the transaction environment.
-    pub fn tx_env_mut(&mut self) -> &mut TxEnv {
+    pub fn tx_env_mut(&mut self) -> &mut F::Tx {
         &mut self.tx_env
     }
 
     /// Returns a reference to the EVM inspector.
-    pub fn inspector(&self) -> &InspectorStack<Ethereum, EthEvmFactory> {
+    pub fn inspector(&self) -> &InspectorStack<Ethereum, F> {
         &self.inspector
     }
 
     /// Returns a mutable reference to the EVM inspector.
-    pub fn inspector_mut(&mut self) -> &mut InspectorStack<Ethereum, EthEvmFactory> {
+    pub fn inspector_mut(&mut self) -> &mut InspectorStack<Ethereum, F> {
         &mut self.inspector
     }
 
-    /// Returns the EVM spec ID.
-    pub fn spec_id(&self) -> SpecId {
+    /// Returns the EVM spec.
+    pub fn spec_id(&self) -> F::Spec {
         self.evm_env.cfg_env.spec
     }
 
-    /// Sets the EVM spec ID.
-    pub fn set_spec_id(&mut self, spec_id: SpecId) {
+    /// Sets the EVM spec.
+    pub fn set_spec_id(&mut self, spec_id: F::Spec) {
         self.evm_env.cfg_env.spec = spec_id;
     }
 
@@ -234,7 +236,10 @@ impl Executor {
     pub fn set_legacy_assertions(&mut self, legacy_assertions: bool) {
         self.legacy_assertions = legacy_assertions;
     }
+}
 
+/// Concrete execution methods pinned to Ethereum types.
+impl Executor {
     /// Creates the default CREATE2 Contract Deployer for local tests and scripts.
     pub fn deploy_create2_deployer(&mut self) -> eyre::Result<()> {
         trace!("deploying local create2 deployer");
