@@ -19,7 +19,7 @@ use alloy_primitives::{
 };
 use alloy_sol_types::{SolCall, sol};
 use foundry_evm_core::{
-    EvmEnv, TryAnyToTxEnv,
+    EvmEnv, FoundryBlock, FoundryTransaction, TryAnyToTxEnv,
     backend::{Backend, BackendError, BackendResult, CowBackend, DatabaseExt, GLOBAL_FAIL_SLOT},
     constants::{
         CALLER, CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, DEFAULT_CREATE2_DEPLOYER,
@@ -33,7 +33,7 @@ use foundry_evm_coverage::HitMaps;
 use foundry_evm_traces::{SparsedTraceArena, TraceMode};
 use revm::{
     bytecode::Bytecode,
-    context::{BlockEnv, TxEnv},
+    context::{Transaction, TxEnv},
     context_interface::{
         result::{ExecutionResult, Output, ResultAndState},
         transaction::SignedAuthorization,
@@ -284,7 +284,7 @@ impl Executor<Ethereum, EthEvmFactory> {
         let mut account = self.backend().basic_ref(address)?.unwrap_or_default();
         account.nonce = nonce;
         self.backend_mut().insert_account_info(address, account);
-        self.tx_env_mut().nonce = nonce;
+        self.tx_env_mut().set_nonce(nonce);
         Ok(())
     }
 
@@ -379,11 +379,11 @@ impl Executor<Ethereum, EthEvmFactory> {
         rd: Option<&RevertDecoder>,
     ) -> Result<DeployResult, EvmError> {
         assert!(
-            matches!(tx_env.kind, TxKind::Create),
+            matches!(tx_env.kind(), TxKind::Create),
             "Expected create transaction, got {:?}",
-            tx_env.kind
+            tx_env.kind()
         );
-        trace!(sender=%tx_env.caller, "deploying contract");
+        trace!(sender=%tx_env.caller(), "deploying contract");
 
         let mut result = self.transact_with_env(evm_env, tx_env)?;
         result = result.into_result(rd)?;
@@ -504,7 +504,7 @@ impl Executor<Ethereum, EthEvmFactory> {
     ) -> eyre::Result<RawCallResult> {
         let (evm_env, mut tx_env) = self.build_test_env(from, to.into(), calldata, value);
         tx_env.set_signed_authorization(authorization_list);
-        tx_env.tx_type = 4;
+        tx_env.set_tx_type(4);
         self.call_with_env(evm_env, tx_env)
     }
 
@@ -532,7 +532,7 @@ impl Executor<Ethereum, EthEvmFactory> {
     ) -> eyre::Result<RawCallResult> {
         let (evm_env, mut tx_env) = self.build_test_env(from, TxKind::Call(to), calldata, value);
         tx_env.set_signed_authorization(authorization_list);
-        tx_env.tx_type = 4;
+        tx_env.set_tx_type(4);
         self.transact_with_env(evm_env, tx_env)
     }
 
@@ -604,7 +604,7 @@ impl Executor<Ethereum, EthEvmFactory> {
 
         // Persist the changed environment.
         self.inspector_mut().set_block(result.evm_env.block_env.clone());
-        self.inspector_mut().set_gas_price(result.tx_env.gas_price);
+        self.inspector_mut().set_gas_price(result.tx_env.gas_price());
     }
 
     /// Returns `true` if a test can be considered successful.
@@ -753,34 +753,28 @@ impl Executor<Ethereum, EthEvmFactory> {
         data: Bytes,
         value: U256,
     ) -> (EvmEnv, TxEnv) {
-        let evm_env = EvmEnv {
-            cfg_env: {
-                let mut cfg = self.evm_env.cfg_env.clone();
-                cfg.spec = self.spec_id();
-                cfg
-            },
-            // We always set the gas price to 0 so we can execute the transaction regardless of
-            // network conditions - the actual gas price is kept in `self.block` and is applied
-            // by the cheatcode handler if it is enabled
-            block_env: BlockEnv {
-                basefee: 0,
-                gas_limit: self.gas_limit,
-                ..self.evm_env.block_env.clone()
-            },
-        };
-        let tx_env = TxEnv {
-            caller,
-            kind,
-            data,
-            value,
-            // As above, we set the gas price to 0.
-            gas_price: 0,
-            gas_priority_fee: None,
-            gas_limit: self.gas_limit,
-            chain_id: Some(self.evm_env.cfg_env.chain_id),
-            ..self.tx_env.clone()
-        };
-        (evm_env, tx_env)
+        let mut cfg_env = self.evm_env.cfg_env.clone();
+        cfg_env.spec = self.spec_id();
+
+        // We always set the gas price to 0 so we can execute the transaction regardless of
+        // network conditions - the actual gas price is kept in `self.block` and is applied
+        // by the cheatcode handler if it is enabled
+        let mut block_env = self.evm_env.block_env.clone();
+        block_env.set_basefee(0);
+        block_env.set_gas_limit(self.gas_limit);
+
+        let mut tx_env = self.tx_env.clone();
+        tx_env.set_caller(caller);
+        tx_env.set_kind(kind);
+        tx_env.set_data(data);
+        tx_env.set_value(value);
+        // As above, we set the gas price to 0.
+        tx_env.set_gas_price(0);
+        tx_env.set_gas_priority_fee(None);
+        tx_env.set_gas_limit(self.gas_limit);
+        tx_env.set_chain_id(Some(self.evm_env.cfg_env.chain_id));
+
+        (EvmEnv { cfg_env, block_env }, tx_env)
     }
 
     pub fn call_sol_default<C: SolCall>(&self, to: Address, args: &C) -> C::Return
