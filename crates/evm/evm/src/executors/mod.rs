@@ -12,7 +12,7 @@ use crate::inspectors::{
 use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
 use alloy_evm::EthEvmFactory;
 use alloy_json_abi::Function;
-use alloy_network::Ethereum;
+use alloy_network::{Ethereum, Network};
 use alloy_primitives::{
     Address, Bytes, Log, TxKind, U256, keccak256,
     map::{AddressHashMap, HashMap},
@@ -879,7 +879,7 @@ impl From<DeployResult> for RawCallResult {
 
 /// The result of a raw call.
 #[derive(Debug)]
-pub struct RawCallResult {
+pub struct RawCallResult<SPEC = SpecId, BLOCK = BlockEnv, TX = TxEnv, N: Network = Ethereum> {
     /// The status of the call
     pub exit_reason: Option<InstructionResult>,
     /// Whether the call reverted or not
@@ -908,15 +908,15 @@ pub struct RawCallResult {
     /// The edge coverage info collected during the call
     pub edge_coverage: Option<Vec<u8>>,
     /// Scripted transactions generated from this call
-    pub transactions: Option<BroadcastableTransactions<Ethereum>>,
+    pub transactions: Option<BroadcastableTransactions<N>>,
     /// The changeset of the state.
     pub state_changeset: StateChangeset,
     /// The `EvmEnv` after the call
-    pub evm_env: EvmEnv,
+    pub evm_env: EvmEnv<SPEC, BLOCK>,
     /// The `TxEnv` after the call
-    pub tx_env: TxEnv,
+    pub tx_env: TX,
     /// The cheatcode states after execution
-    pub cheatcodes: Option<Box<Cheatcodes>>,
+    pub cheatcodes: Option<Box<Cheatcodes<SPEC, BLOCK, N>>>,
     /// The raw output of the execution
     pub out: Option<Output>,
     /// The chisel state
@@ -924,7 +924,9 @@ pub struct RawCallResult {
     pub reverter: Option<Address>,
 }
 
-impl Default for RawCallResult {
+impl<SPEC: Default + Into<SpecId> + Clone, BLOCK: Default, TX: Default, N: Network> Default
+    for RawCallResult<SPEC, BLOCK, TX, N>
+{
     fn default() -> Self {
         Self {
             exit_reason: None,
@@ -942,7 +944,7 @@ impl Default for RawCallResult {
             transactions: None,
             state_changeset: HashMap::default(),
             evm_env: EvmEnv::default(),
-            tx_env: TxEnv::default(),
+            tx_env: TX::default(),
             cheatcodes: Default::default(),
             out: None,
             chisel_state: None,
@@ -994,12 +996,8 @@ impl RawCallResult {
     ) -> Result<CallResult, EvmError> {
         self = self.into_result(rd)?;
         let mut result = func.abi_decode_output(&self.result)?;
-        let decoded_result = if result.len() == 1 {
-            result.pop().unwrap()
-        } else {
-            // combine results into a tuple
-            DynSolValue::Tuple(result)
-        };
+        let decoded_result =
+            if result.len() == 1 { result.pop().unwrap() } else { DynSolValue::Tuple(result) };
         Ok(CallResult { raw: self, decoded_result })
     }
 
@@ -1007,7 +1005,9 @@ impl RawCallResult {
     pub fn transactions(&self) -> Option<&BroadcastableTransactions<Ethereum>> {
         self.cheatcodes.as_ref().map(|c| &c.broadcastable_transactions)
     }
+}
 
+impl<SPEC, BLOCK, TX, N: Network> RawCallResult<SPEC, BLOCK, TX, N> {
     /// Update provided history map with edge coverage info collected during this call.
     /// Uses AFL binning algo <https://github.com/h0mbre/Lucid/blob/3026e7323c52b30b3cf12563954ac1eaa9c6981e/src/coverage.rs#L57-L85>
     pub fn merge_edge_coverage(&mut self, history_map: &mut [u8]) -> (bool, bool) {
