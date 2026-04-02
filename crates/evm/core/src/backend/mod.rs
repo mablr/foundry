@@ -21,7 +21,7 @@ use itertools::Itertools;
 use revm::{
     Database, DatabaseCommit, JournalEntry,
     bytecode::Bytecode,
-    context::{Block, BlockEnv, CfgEnv, ContextTr, JournalInner, Transaction, TxEnv},
+    context::{Block, BlockEnv, CfgEnv, ContextTr, JournalInner, Transaction},
     context_interface::{journaled_state::account::JournaledAccountTr, result::ResultAndState},
     database::{CacheDB, DatabaseRef, EmptyDB},
     primitives::{AddressMap, HashMap as Map, KECCAK_EMPTY, Log, hardfork::SpecId},
@@ -76,7 +76,7 @@ pub type JournaledState = JournalInner<JournalEntry>;
 
 /// An extension trait that allows us to easily extend the `revm::Inspector` capabilities
 #[auto_impl::auto_impl(&mut)]
-pub trait DatabaseExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
+pub trait DatabaseExt<BLOCK, TX, SPEC>:
     Database<Error = DatabaseError> + DatabaseCommit + Debug
 {
     /// Creates a new state snapshot at the current point of execution.
@@ -388,7 +388,7 @@ pub trait DatabaseExt<BLOCK = BlockEnv, TX = TxEnv, SPEC = SpecId>:
     fn set_blockhash(&mut self, block_number: U256, block_hash: B256);
 }
 
-struct _ObjectSafe(dyn DatabaseExt);
+struct _ObjectSafe(dyn DatabaseExt<(), (), ()>);
 
 /// Provides the underlying `revm::Database` implementation.
 ///
