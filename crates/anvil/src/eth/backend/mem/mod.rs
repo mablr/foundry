@@ -110,7 +110,7 @@ use foundry_primitives::{
     FoundryTxReceipt, get_deposit_tx_parts,
 };
 use futures::channel::mpsc::{UnboundedSender, unbounded};
-use op_alloy_consensus::DEPOSIT_TX_TYPE_ID;
+use op_alloy_consensus::{DEPOSIT_TX_TYPE_ID, OpTransaction as OpTransactionTrait};
 use op_revm::{OpContext, OpHaltReason, OpSpecId, OpTransaction};
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use revm::{
@@ -1138,7 +1138,7 @@ impl<N: Network> Backend<N> {
             + Inspector<TempoContext<WrapDatabaseRef<&'db DB>>>,
         WrapDatabaseRef<&'db DB>: Database<Error = DatabaseError>,
     {
-        if matches!(tx, FoundryTxEnvelope::Tempo(_)) {
+        if tx.is_tempo() {
             let tx_env: TempoTxEnv =
                 FromTxWithEncoded::from_encoded_tx(tx, sender, tx.encoded_2718().into());
             let base = tx_env.inner.clone();
@@ -2436,7 +2436,7 @@ where
                 self.states.write().insert(best_hash, db);
             }
 
-            let (block_info, included, invalid, block_hash) = {
+            let (block_info, included, invalid, not_yet_valid, block_hash) = {
                 let mut db = self.db.write().await;
 
                 // finally set the next block timestamp, this is done just before execution, because
@@ -2490,6 +2490,7 @@ where
 
                 let included = pool_result.included;
                 let invalid = pool_result.invalid;
+                let not_yet_valid = pool_result.not_yet_valid;
                 let transaction_infos = pool_result.tx_info;
                 let transactions = pool_result.txs;
 
@@ -2539,7 +2540,7 @@ where
                 let block_hash = block_info.block.header.hash_slow();
                 db.insert_block_hash(U256::from(block_info.block.header.number()), block_hash);
 
-                (block_info, included, invalid, block_hash)
+                (block_info, included, invalid, not_yet_valid, block_hash)
             };
 
             // create the new block with the current timestamp
@@ -2616,7 +2617,7 @@ where
                 node_info!("    Block Time: {:?}\n", timestamp.to_rfc2822());
             }
 
-            let outcome = MinedBlockOutcome { block_number, included, invalid };
+            let outcome = MinedBlockOutcome { block_number, included, invalid, not_yet_valid };
 
             (outcome, header, block_hash)
         };
@@ -4187,8 +4188,8 @@ impl TransactionValidator<FoundryTxEnvelope> for Backend<FoundryNetwork> {
         }
 
         // Nonce validation — skip for deposits (L1→L2) and Tempo txs (2D nonce system)
-        let is_deposit_tx = matches!(pending.transaction.as_ref(), FoundryTxEnvelope::Deposit(_));
-        let is_tempo_tx = matches!(pending.transaction.as_ref(), FoundryTxEnvelope::Tempo(_));
+        let is_deposit_tx = pending.transaction.as_ref().is_deposit();
+        let is_tempo_tx = pending.transaction.as_ref().is_tempo();
         let nonce = tx.nonce();
         if nonce < account.nonce && !is_deposit_tx && !is_tempo_tx {
             debug!(target: "backend", "[{:?}] nonce too low", tx.hash());
