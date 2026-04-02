@@ -2436,7 +2436,7 @@ where
                 self.states.write().insert(best_hash, db);
             }
 
-            let (block_info, included, invalid, block_hash) = {
+            let (block_info, included, invalid, not_yet_valid, block_hash) = {
                 let mut db = self.db.write().await;
 
                 // finally set the next block timestamp, this is done just before execution, because
@@ -2490,6 +2490,7 @@ where
 
                 let included = pool_result.included;
                 let invalid = pool_result.invalid;
+                let not_yet_valid = pool_result.not_yet_valid;
                 let transaction_infos = pool_result.tx_info;
                 let transactions = pool_result.txs;
 
@@ -2539,7 +2540,7 @@ where
                 let block_hash = block_info.block.header.hash_slow();
                 db.insert_block_hash(U256::from(block_info.block.header.number()), block_hash);
 
-                (block_info, included, invalid, block_hash)
+                (block_info, included, invalid, not_yet_valid, block_hash)
             };
 
             // create the new block with the current timestamp
@@ -2616,7 +2617,7 @@ where
                 node_info!("    Block Time: {:?}\n", timestamp.to_rfc2822());
             }
 
-            let outcome = MinedBlockOutcome { block_number, included, invalid };
+            let outcome = MinedBlockOutcome { block_number, included, invalid, not_yet_valid };
 
             (outcome, header, block_hash)
         };
