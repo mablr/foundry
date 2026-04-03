@@ -5,10 +5,7 @@ use alloy_network::Network;
 use alloy_rlp::Decodable;
 use foundry_evm_core::{EvmEnv, backend::Backend, evm::FoundryEvmFactory};
 use foundry_primitives::FoundryTransactionBuilder;
-use revm::{
-    context::{Block, Transaction},
-    primitives::hardfork::SpecId,
-};
+use revm::context::{Block, Transaction};
 use std::marker::PhantomData;
 
 /// The builder that allows to configure an evm [`Executor`] which a stack of optional
@@ -57,7 +54,7 @@ where
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 {
     /// Modify the inspector stack.
     #[inline]

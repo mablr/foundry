@@ -43,7 +43,6 @@ use revm::{
     },
     database::{DatabaseCommit, DatabaseRef},
     interpreter::{InstructionResult, return_ok},
-    primitives::hardfork::SpecId,
 };
 use std::{
     borrow::Cow,
@@ -120,7 +119,7 @@ where
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 {
     /// Creates a new `Executor` with the given arguments.
     #[inline]

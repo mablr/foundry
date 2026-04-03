@@ -12,12 +12,15 @@ extern crate foundry_common;
 extern crate tracing;
 
 use crate::runner::ScriptRunner;
+use alloy_consensus::transaction::SignerRecoverable;
+use alloy_evm::FromRecoveredTx;
 use alloy_json_abi::{Function, JsonAbi};
 use alloy_network::{Ethereum, Network};
 use alloy_primitives::{
     Address, Bytes, Log, U256, hex,
     map::{AddressHashMap, HashMap},
 };
+use alloy_rlp::Decodable;
 use alloy_signer::Signer;
 use broadcast::next_nonce;
 use build::PreprocessedState;
@@ -45,7 +48,7 @@ use foundry_config::{
 };
 use foundry_evm::{
     backend::Backend,
-    core::Breakpoints,
+    core::{Breakpoints, evm::FoundryEvmFactory},
     executors::ExecutorBuilder,
     inspectors::{
         CheatsConfig,
@@ -54,6 +57,7 @@ use foundry_evm::{
     opts::EvmOpts,
     traces::{TraceMode, Traces},
 };
+use foundry_primitives::FoundryTransactionBuilder;
 use foundry_wallets::MultiWalletOpts;
 use serde::Serialize;
 use std::path::PathBuf;
@@ -605,15 +609,20 @@ struct JsonResult<'a, N: Network> {
 }
 
 #[derive(Clone, Debug)]
-pub struct ScriptConfig {
+pub struct ScriptConfig<N: Network, F: FoundryEvmFactory> {
     pub config: Config,
     pub evm_opts: EvmOpts,
     pub sender_nonce: u64,
     /// Maps a rpc url to a backend
-    pub backends: HashMap<String, Backend>,
+    pub backends: HashMap<String, Backend<N, F>>,
 }
 
-impl ScriptConfig {
+impl<N: Network, F: FoundryEvmFactory> ScriptConfig<N, F>
+where
+    N::TxEnvelope: Decodable + SignerRecoverable,
+    N::TransactionRequest: FoundryTransactionBuilder<N>,
+    F::Tx: FromRecoveredTx<N::TxEnvelope>,
+{
     pub async fn new(config: Config, evm_opts: EvmOpts) -> Result<Self> {
         let sender_nonce = if let Some(fork_url) = evm_opts.fork_url.as_ref() {
             next_nonce(evm_opts.sender, fork_url, evm_opts.fork_block_number).await?
@@ -636,7 +645,7 @@ impl ScriptConfig {
         Ok(())
     }
 
-    async fn get_runner(&mut self) -> Result<ScriptRunner> {
+    async fn get_runner(&mut self) -> Result<ScriptRunner<N, F>> {
         self._get_runner(None, false).await
     }
 
@@ -646,7 +655,7 @@ impl ScriptConfig {
         script_wallets: Wallets,
         debug: bool,
         target: ArtifactId,
-    ) -> Result<ScriptRunner> {
+    ) -> Result<ScriptRunner<N, F>> {
         self._get_runner(Some((known_contracts, script_wallets, target)), debug).await
     }
 
@@ -654,7 +663,7 @@ impl ScriptConfig {
         &mut self,
         cheats_data: Option<(ContractsByArtifact, Wallets, ArtifactId)>,
         debug: bool,
-    ) -> Result<ScriptRunner> {
+    ) -> Result<ScriptRunner<N, F>> {
         trace!("preparing script runner");
         let (evm_env, tx_env, fork_block) = self.evm_opts.env().await?;
 
@@ -664,7 +673,7 @@ impl ScriptConfig {
                 None => {
                     let fork =
                         self.evm_opts.get_fork(&self.config, evm_env.cfg_env.chain_id, fork_block);
-                    let backend = Backend::spawn(fork)?;
+                    let backend = Backend::<N, F>::spawn(fork)?;
                     self.backends.insert(fork_url.clone(), backend.clone());
                     backend
                 }

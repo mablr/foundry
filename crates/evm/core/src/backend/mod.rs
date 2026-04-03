@@ -24,7 +24,7 @@ use revm::{
     context::{Block, BlockEnv, CfgEnv, ContextTr, JournalInner, Transaction},
     context_interface::{journaled_state::account::JournaledAccountTr, result::ResultAndState},
     database::{CacheDB, DatabaseRef, EmptyDB},
-    primitives::{AddressMap, HashMap as Map, KECCAK_EMPTY, Log, hardfork::SpecId},
+    primitives::{AddressMap, HashMap as Map, KECCAK_EMPTY, Log},
     state::{Account, AccountInfo, EvmState, EvmStorageSlot},
 };
 use std::{
@@ -792,7 +792,6 @@ impl<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>> Backe
     ) -> eyre::Result<ResultAndState<F::HaltReason>>
     where
         Self: DatabaseExt<F::BlockEnv, F::Tx, F::Spec>,
-        F::Spec: From<SpecId>,
     {
         self.initialize(evm_env.cfg_env.spec, tx_env.caller(), tx_env.kind());
         let mut evm =
