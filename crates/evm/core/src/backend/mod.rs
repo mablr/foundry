@@ -1,7 +1,7 @@
 //! Foundry's main executor backend abstraction and implementation.
 
 use crate::{
-    FoundryBlock, FoundryInspectorExt, FoundryTransaction, TryAnyToTxEnv,
+    FoundryBlock, FoundryInspectorExt, FoundryTransaction,
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, TEST_CONTRACT_ADDRESS},
     evm::FoundryEvmFactory,
     fork::{CreateFork, ForkId, MultiFork},
@@ -9,9 +9,9 @@ use crate::{
     utils::get_blob_base_fee_update_fraction,
 };
 use alloy_consensus::{BlockHeader, Typed2718};
-use alloy_evm::{EthEvmFactory, Evm, EvmEnv};
+use alloy_evm::{EthEvmFactory, Evm, EvmEnv, FromRecoveredTx};
 use alloy_genesis::GenesisAccount;
-use alloy_network::{AnyNetwork, BlockResponse, Network, TransactionResponse};
+use alloy_network::{BlockResponse, Ethereum, Network, TransactionResponse};
 use alloy_primitives::{Address, B256, TxKind, U256, keccak256, uint};
 use alloy_rpc_types::BlockNumberOrTag;
 use eyre::Context;
@@ -444,7 +444,7 @@ struct _ObjectSafe(dyn DatabaseExt<(), (), ()>);
 /// after reverting the snapshot.
 #[derive(Clone, Debug)]
 #[must_use]
-pub struct Backend<N: Network = AnyNetwork, F: FoundryEvmFactory = EthEvmFactory> {
+pub struct Backend<N: Network = Ethereum, F: FoundryEvmFactory = EthEvmFactory> {
     /// The access point for managing forks
     forks: MultiFork<N, F::Spec, F::BlockEnv>,
     // The default in memory db
@@ -474,10 +474,7 @@ pub struct Backend<N: Network = AnyNetwork, F: FoundryEvmFactory = EthEvmFactory
     inner: BackendInner<N, F>,
 }
 
-impl<N: Network, F: FoundryEvmFactory> Backend<N, F>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
-{
+impl<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>> Backend<N, F> {
     /// Creates a new Backend with a spawned multi fork thread.
     ///
     /// If `fork` is `Some` this will use a `fork` database, otherwise with an in-memory
@@ -938,7 +935,7 @@ where
             let mut evm = F::default().create_evm(replay_db, evm_env);
 
             for tx in &txs_to_replay {
-                let tx_env: F::Tx = tx.try_any_to_tx_env()?;
+                let tx_env = F::Tx::from_recovered_tx(tx.as_ref(), tx.from());
                 trace!(tx=?tx.tx_hash(), "committing transaction");
                 evm.transact_commit(tx_env).wrap_err("backend: failed committing transaction")?;
             }
@@ -957,9 +954,8 @@ where
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> DatabaseExt<F::BlockEnv, F::Tx, F::Spec> for Backend<N, F>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
+impl<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>>
+    DatabaseExt<F::BlockEnv, F::Tx, F::Spec> for Backend<N, F>
 {
     fn snapshot_state(
         &mut self,
@@ -1339,7 +1335,7 @@ where
             let fork = self.inner.get_fork_by_id_mut(id)?;
             fork.backend().get_transaction(transaction)?
         };
-        let tx_env = tx.try_any_to_tx_env()?;
+        let tx_env = F::Tx::from_recovered_tx(tx.as_ref(), tx.from());
 
         // This is a bit ambiguous because the user wants to transact an arbitrary transaction in
         // the current context, but we're assuming the user wants to transact the transaction as it
@@ -1563,9 +1559,8 @@ where
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> DatabaseRef for Backend<N, F>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
+impl<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>> DatabaseRef
+    for Backend<N, F>
 {
     type Error = DatabaseError;
 
@@ -1602,9 +1597,8 @@ where
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> DatabaseCommit for Backend<N, F>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
+impl<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>> DatabaseCommit
+    for Backend<N, F>
 {
     fn commit(&mut self, changes: AddressMap<Account>) {
         if let Some(db) = self.active_fork_db_mut() {
@@ -1615,9 +1609,8 @@ where
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> Database for Backend<N, F>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
+impl<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>> Database
+    for Backend<N, F>
 {
     type Error = DatabaseError;
     fn basic(&mut self, address: Address) -> Result<Option<AccountInfo>, Self::Error> {
@@ -2053,7 +2046,7 @@ fn update_env_block<SPEC, BLOCK: FoundryBlock>(
 /// Executes the given transaction and commits state changes to the database _and_ the journaled
 /// state, with an inspector.
 #[allow(clippy::type_complexity)]
-fn commit_transaction<N: Network, F: FoundryEvmFactory>(
+fn commit_transaction<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>>(
     evm_env: EvmEnv<F::Spec, F::BlockEnv>,
     tx_env: F::Tx,
     journaled_state: &mut JournaledState,
@@ -2068,10 +2061,7 @@ fn commit_transaction<N: Network, F: FoundryEvmFactory>(
             &'db mut dyn DatabaseExt<F::BlockEnv, F::Tx, F::Spec>,
         >,
     >,
-) -> eyre::Result<()>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
-{
+) -> eyre::Result<()> {
     let now = Instant::now();
     let res = {
         let fork = fork.clone();

@@ -2,7 +2,7 @@
 
 use super::BackendError;
 use crate::{
-    FoundryInspectorExt, TryAnyToTxEnv,
+    FoundryInspectorExt,
     backend::{
         Backend, DatabaseExt, JournaledState, LocalForkId, RevertStateSnapshotAction,
         diagnostic::RevertDiagnostic,
@@ -10,7 +10,7 @@ use crate::{
     evm::FoundryEvmFactory,
     fork::{CreateFork, ForkId},
 };
-use alloy_evm::{Evm, EvmEnv};
+use alloy_evm::{Evm, EvmEnv, FromRecoveredTx};
 use alloy_genesis::GenesisAccount;
 use alloy_network::Network;
 use alloy_primitives::{Address, B256, TxKind, U256};
@@ -54,9 +54,8 @@ pub struct CowBackend<'a, N: Network, F: FoundryEvmFactory> {
     pending_init: Option<(F::Spec, Address, TxKind)>,
 }
 
-impl<'a, N: Network, F: FoundryEvmFactory> CowBackend<'a, N, F>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
+impl<'a, N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>>
+    CowBackend<'a, N, F>
 {
     /// Creates a new `CowBackend` with the given `Backend`.
     pub fn new_borrowed(backend: &'a Backend<N, F>) -> Self {
@@ -117,10 +116,8 @@ where
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> DatabaseExt<F::BlockEnv, F::Tx, F::Spec>
-    for CowBackend<'_, N, F>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
+impl<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>>
+    DatabaseExt<F::BlockEnv, F::Tx, F::Spec> for CowBackend<'_, N, F>
 {
     fn snapshot_state(
         &mut self,
@@ -298,9 +295,8 @@ where
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> DatabaseRef for CowBackend<'_, N, F>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
+impl<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>> DatabaseRef
+    for CowBackend<'_, N, F>
 {
     type Error = DatabaseError;
 
@@ -321,9 +317,8 @@ where
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> Database for CowBackend<'_, N, F>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
+impl<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>> Database
+    for CowBackend<'_, N, F>
 {
     type Error = DatabaseError;
 
@@ -344,9 +339,8 @@ where
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> DatabaseCommit for CowBackend<'_, N, F>
-where
-    N::TransactionResponse: TryAnyToTxEnv<F::Tx>,
+impl<N: Network, F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>> DatabaseCommit
+    for CowBackend<'_, N, F>
 {
     fn commit(&mut self, changes: AddressMap<Account>) {
         self.backend.to_mut().commit(changes)

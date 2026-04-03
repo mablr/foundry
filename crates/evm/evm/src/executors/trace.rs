@@ -1,7 +1,7 @@
 use crate::executors::{Executor, ExecutorBuilder};
 use alloy_consensus::transaction::SignerRecoverable;
 use alloy_evm::FromRecoveredTx;
-use alloy_network::{AnyRpcTransaction, Network};
+use alloy_network::Network;
 use alloy_primitives::{Address, U256, map::HashMap};
 use alloy_rlp::Decodable;
 use alloy_rpc_types::state::StateOverride;
@@ -9,8 +9,7 @@ use eyre::Context;
 use foundry_compilers::artifacts::EvmVersion;
 use foundry_config::{Chain, Config, evm_spec_id};
 use foundry_evm_core::{
-    EvmEnv, TryAnyToTxEnv, backend::Backend, evm::FoundryEvmFactory, fork::CreateFork,
-    opts::EvmOpts,
+    EvmEnv, backend::Backend, evm::FoundryEvmFactory, fork::CreateFork, opts::EvmOpts,
 };
 use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::TraceMode;
@@ -30,7 +29,6 @@ where
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
     F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
-    AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
 {
     pub fn new(
         env: (EvmEnv<F::Spec, F::BlockEnv>, F::Tx),

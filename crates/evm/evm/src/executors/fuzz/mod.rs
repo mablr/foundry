@@ -6,14 +6,14 @@ use alloy_consensus::transaction::SignerRecoverable;
 use alloy_dyn_abi::JsonAbiExt;
 use alloy_evm::FromRecoveredTx;
 use alloy_json_abi::Function;
-use alloy_network::{AnyRpcTransaction, Network};
+use alloy_network::Network;
 use alloy_primitives::{Address, Bytes, Log, U256, keccak256, map::HashMap};
 use alloy_rlp::Decodable;
 use eyre::Result;
 use foundry_common::sh_println;
 use foundry_config::FuzzConfig;
 use foundry_evm_core::{
-    Breakpoints, TryAnyToTxEnv,
+    Breakpoints,
     constants::{CHEATCODE_ADDRESS, MAGIC_ASSUME},
     decode::{RevertDecoder, SkipReason},
     evm::FoundryEvmFactory,
@@ -200,7 +200,6 @@ where
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
     F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
-    AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
 {
     /// Instantiates a fuzzed executor given a testrunner
     pub fn new(

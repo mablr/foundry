@@ -1,9 +1,9 @@
 use crate::{executors::Executor, inspectors::InspectorStackBuilder};
 use alloy_consensus::transaction::SignerRecoverable;
 use alloy_evm::FromRecoveredTx;
-use alloy_network::{AnyNetwork, AnyRpcTransaction, Network};
+use alloy_network::Network;
 use alloy_rlp::Decodable;
-use foundry_evm_core::{EvmEnv, TryAnyToTxEnv, backend::Backend, evm::FoundryEvmFactory};
+use foundry_evm_core::{EvmEnv, backend::Backend, evm::FoundryEvmFactory};
 use foundry_primitives::FoundryTransactionBuilder;
 use revm::{
     context::{Block, Transaction},
@@ -38,7 +38,6 @@ where
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
     F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-    AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
 {
     #[inline]
     fn default() -> Self {
@@ -59,7 +58,6 @@ where
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
     F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
-    AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
 {
     /// Modify the inspector stack.
     #[inline]
@@ -98,7 +96,7 @@ where
         self,
         mut evm_env: EvmEnv<F::Spec, F::BlockEnv>,
         tx_env: F::Tx,
-        db: Backend<AnyNetwork, F>,
+        db: Backend<N, F>,
     ) -> Executor<N, F> {
         let Self { mut stack, gas_limit, spec, legacy_assertions, .. } = self;
         if stack.block.is_none() {
