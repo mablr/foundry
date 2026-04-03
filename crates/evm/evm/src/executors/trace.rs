@@ -6,6 +6,7 @@ use alloy_primitives::{Address, U256, map::HashMap};
 use alloy_rlp::Decodable;
 use alloy_rpc_types::state::StateOverride;
 use eyre::Context;
+use foundry_common::FoundryTransactionBuilder;
 use foundry_compilers::artifacts::EvmVersion;
 use foundry_config::{Chain, Config, evm_spec_id};
 use foundry_evm_core::{
@@ -13,7 +14,6 @@ use foundry_evm_core::{
 };
 use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::TraceMode;
-use foundry_primitives::FoundryTransactionBuilder;
 use revm::{context::Transaction, state::Bytecode};
 use std::ops::{Deref, DerefMut};
 

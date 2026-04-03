@@ -34,7 +34,7 @@ use foundry_cli::{
     utils::LoadConfig,
 };
 use foundry_common::{
-    CONTRACT_MAX_SIZE, ContractsByArtifact, SELECTOR_LEN,
+    CONTRACT_MAX_SIZE, ContractsByArtifact, FoundryTransactionBuilder, SELECTOR_LEN,
     abi::{encode_function_args, get_func},
     shell,
 };
@@ -57,7 +57,6 @@ use foundry_evm::{
     opts::EvmOpts,
     traces::{TraceMode, Traces},
 };
-use foundry_primitives::FoundryTransactionBuilder;
 use foundry_wallets::MultiWalletOpts;
 use serde::Serialize;
 use std::path::PathBuf;

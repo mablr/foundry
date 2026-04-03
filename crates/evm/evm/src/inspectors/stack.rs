@@ -12,7 +12,7 @@ use alloy_primitives::{
 
 use alloy_rlp::Decodable;
 use foundry_cheatcodes::{CheatcodeAnalysis, CheatcodesExecutor, NestedEvmClosure, Wallets};
-use foundry_common::compile::Analysis;
+use foundry_common::{FoundryTransactionBuilder, compile::Analysis};
 use foundry_evm_core::{
     FoundryBlock, FoundryTransaction, InspectorExt,
     backend::{DatabaseError, JournaledState},
@@ -22,7 +22,6 @@ use foundry_evm_core::{
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::{SparsedTraceArena, TraceMode};
-use foundry_primitives::FoundryTransactionBuilder;
 use revm::{
     Inspector,
     context::{
