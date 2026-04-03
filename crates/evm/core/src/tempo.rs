@@ -37,6 +37,12 @@ pub use tempo_contracts::precompiles::{
     ALPHA_USD_ADDRESS, BETA_USD_ADDRESS, PATH_USD_ADDRESS, THETA_USD_ADDRESS,
 };
 
+// TODO: remove once we can re-export from tempo_precompiles instead.
+pub const SIGNATURE_VERIFIER_ADDRESS: Address =
+    address!("0x5165300000000000000000000000000000000000");
+pub const ADDRESS_REGISTRY_ADDRESS: Address =
+    address!("0xFDC0000000000000000000000000000000000000");
+
 /// All well-known TIP20 fee token addresses on Tempo networks.
 pub const TEMPO_TIP20_TOKENS: &[Address] =
     &[PATH_USD_ADDRESS, ALPHA_USD_ADDRESS, BETA_USD_ADDRESS, THETA_USD_ADDRESS];
@@ -227,6 +233,8 @@ pub fn initialize_tempo_genesis(
             VALIDATOR_CONFIG_ADDRESS,
             VALIDATOR_CONFIG_V2_ADDRESS,
             ACCOUNT_KEYCHAIN_ADDRESS,
+            SIGNATURE_VERIFIER_ADDRESS,
+            ADDRESS_REGISTRY_ADDRESS,
         ] {
             ctx.set_code(precompile, sentinel.clone())?;
         }

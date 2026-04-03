@@ -5,7 +5,10 @@ use alloy_primitives::{Address, Bytes, U256};
 use foundry_evm_core::{
     backend::DatabaseError,
     constants::{CALLER, TEST_CONTRACT_ADDRESS},
-    tempo::{TEMPO_TIP20_TOKENS, TempoStorageProvider, initialize_tempo_genesis},
+    tempo::{
+        ADDRESS_REGISTRY_ADDRESS, SIGNATURE_VERIFIER_ADDRESS, TEMPO_TIP20_TOKENS,
+        TempoStorageProvider, initialize_tempo_genesis,
+    },
 };
 use foundry_evm_hardforks::FoundryHardfork;
 use revm::state::{AccountInfo, Bytecode};
@@ -79,6 +82,8 @@ pub fn warm_tempo_precompile_accounts(
         VALIDATOR_CONFIG_ADDRESS,
         VALIDATOR_CONFIG_V2_ADDRESS,
         ACCOUNT_KEYCHAIN_ADDRESS,
+        SIGNATURE_VERIFIER_ADDRESS,
+        ADDRESS_REGISTRY_ADDRESS,
     ];
 
     for addr in precompile_addresses.iter().chain(TEMPO_TIP20_TOKENS.iter()) {
