@@ -7,7 +7,7 @@ use crate::{
 };
 use alloy_consensus::transaction::SignerRecoverable;
 use alloy_evm::{EthEvmFactory, FromRecoveredTx};
-use alloy_network::{AnyRpcTransaction, Ethereum, Network};
+use alloy_network::{Ethereum, Network};
 use alloy_primitives::{Address, Bytes, FixedBytes, I256, Selector, U256, map::AddressMap};
 use alloy_rlp::Decodable;
 use alloy_sol_types::{SolCall, sol};
@@ -19,7 +19,7 @@ use foundry_common::{
 };
 use foundry_config::InvariantConfig;
 use foundry_evm_core::{
-    FoundryBlock, TryAnyToTxEnv,
+    FoundryBlock,
     constants::{
         CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME,
     },
@@ -1117,7 +1117,6 @@ where
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
     F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
-    AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
 {
     let warp = tx.warp.unwrap_or_default();
     let roll = tx.roll.unwrap_or_default();

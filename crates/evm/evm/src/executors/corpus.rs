@@ -39,12 +39,12 @@ use alloy_consensus::transaction::SignerRecoverable;
 use alloy_dyn_abi::JsonAbiExt;
 use alloy_evm::FromRecoveredTx;
 use alloy_json_abi::Function;
-use alloy_network::{AnyRpcTransaction, Network};
+use alloy_network::Network;
 use alloy_primitives::Bytes;
 use alloy_rlp::Decodable;
 use eyre::{Result, eyre};
 use foundry_config::FuzzCorpusConfig;
-use foundry_evm_core::{TryAnyToTxEnv, evm::FoundryEvmFactory};
+use foundry_evm_core::evm::FoundryEvmFactory;
 use foundry_evm_fuzz::{
     BasicTxDetails,
     invariant::FuzzRunIdentifiedContracts,
@@ -293,7 +293,6 @@ impl WorkerCorpus {
                 TransactionRequest: FoundryTransactionBuilder<N>,
             >,
         F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
-        AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
     {
         let mutation_generator = prop_oneof![
             Just(MutationType::Splice),
@@ -789,7 +788,6 @@ impl WorkerCorpus {
                 TransactionRequest: FoundryTransactionBuilder<N>,
             >,
         F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
-        AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
     {
         let Some(worker_dir) = &self.worker_dir else {
             return Ok(());
@@ -1012,7 +1010,6 @@ impl WorkerCorpus {
                 TransactionRequest: FoundryTransactionBuilder<N>,
             >,
         F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
-        AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
     {
         trace!(target: "corpus", "syncing");
 
