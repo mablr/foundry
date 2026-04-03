@@ -947,6 +947,27 @@ impl<N: Network> Backend<N> {
             block.other.insert("l1BlockNumber".to_string(), number.into());
         }
 
+        // Add Tempo-specific header fields for compatibility with TempoNetwork provider.
+        if self.is_tempo() {
+            let timestamp = block.header.timestamp();
+            let gas_limit = block.header.gas_limit();
+            block.other.insert(
+                "timestampMillis".to_string(),
+                serde_json::Value::String(format!("0x{:x}", timestamp.saturating_mul(1000))),
+            );
+            block.other.insert(
+                "mainBlockGeneralGasLimit".to_string(),
+                serde_json::Value::String(format!("0x{gas_limit:x}")),
+            );
+            block
+                .other
+                .insert("sharedGasLimit".to_string(), serde_json::Value::String("0x0".to_string()));
+            block.other.insert(
+                "timestampMillisPart".to_string(),
+                serde_json::Value::String("0x0".to_string()),
+            );
+        }
+
         AnyRpcBlock::from(block)
     }
 
