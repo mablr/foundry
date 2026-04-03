@@ -162,7 +162,7 @@ impl SendTxArgs {
             tx_request.set_key_authorization(auth);
         }
 
-        let raw_tx = crate::tempo::sign_with_access_key(tx_request, &signer, from).await?;
+        let raw_tx = tx_request.sign_with_access_key(&signer, from).await?;
 
         let timeout = send_tx.timeout.unwrap_or(config.transaction_timeout);
         let tx_hash = *provider.send_raw_transaction(&raw_tx).await?.tx_hash();
