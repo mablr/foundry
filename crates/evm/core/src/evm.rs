@@ -16,6 +16,7 @@ use alloy_evm::{
 use alloy_primitives::{Address, B256, Bytes, U256};
 use foundry_config::FromEvmVersion;
 use foundry_fork_db::{DatabaseError, ForkBlockEnv};
+use op_revm::OpHaltReason;
 use revm::{
     Context,
     context::{
@@ -40,11 +41,41 @@ use tempo_revm::{
     gas_params::tempo_gas_params, handler::TempoEvmHandler,
 };
 
+/// Converts a network-specific halt reason into an [`InstructionResult`].
+pub trait IntoInstructionResult {
+    fn into_instruction_result(self) -> InstructionResult;
+}
+
+impl IntoInstructionResult for HaltReason {
+    fn into_instruction_result(self) -> InstructionResult {
+        self.into()
+    }
+}
+
+impl IntoInstructionResult for OpHaltReason {
+    fn into_instruction_result(self) -> InstructionResult {
+        match self {
+            Self::Base(eth) => eth.into(),
+            Self::FailedDeposit => InstructionResult::Stop,
+        }
+    }
+}
+
+impl IntoInstructionResult for TempoHaltReason {
+    fn into_instruction_result(self) -> InstructionResult {
+        match self {
+            Self::Ethereum(eth) => eth.into(),
+            _ => InstructionResult::PrecompileError,
+        }
+    }
+}
+
 pub trait FoundryEvmFactory:
     EvmFactory<
         Spec: Into<SpecId> + FromEvmVersion + Default + Copy + Unpin + Send + 'static,
         BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
         Tx: Clone + FoundryTransaction + Default,
+        HaltReason: IntoInstructionResult,
         Precompiles = PrecompilesMap,
     > + Clone
     + Debug

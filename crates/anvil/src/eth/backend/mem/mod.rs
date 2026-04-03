@@ -4544,33 +4544,7 @@ pub fn is_arbitrum(chain_id: u64) -> bool {
 ///
 /// Abstracts over network-specific halt reason types (`HaltReason`, `OpHaltReason`)
 /// so that anvil code doesn't need to match on each variant directly.
-pub trait IntoInstructionResult {
-    fn into_instruction_result(self) -> InstructionResult;
-}
-
-impl IntoInstructionResult for HaltReason {
-    fn into_instruction_result(self) -> InstructionResult {
-        self.into()
-    }
-}
-
-impl IntoInstructionResult for OpHaltReason {
-    fn into_instruction_result(self) -> InstructionResult {
-        match self {
-            Self::Base(eth_h) => eth_h.into(),
-            Self::FailedDeposit => InstructionResult::Stop,
-        }
-    }
-}
-
-impl IntoInstructionResult for TempoHaltReason {
-    fn into_instruction_result(self) -> InstructionResult {
-        match self {
-            Self::Ethereum(eth_h) => eth_h.into(),
-            _ => InstructionResult::PrecompileError,
-        }
-    }
-}
+pub use foundry_evm::core::evm::IntoInstructionResult;
 
 #[cfg(test)]
 mod tests {
