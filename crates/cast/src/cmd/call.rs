@@ -21,6 +21,7 @@ use foundry_cli::{
     utils::{LoadConfig, TraceResult, parse_ether_value},
 };
 use foundry_common::{
+    FoundryTransactionBuilder,
     abi::{encode_function_args, get_func},
     provider::{ProviderBuilder, curl_transport::generate_curl_command},
     sh_println, shell,
@@ -38,7 +39,6 @@ use foundry_evm::{
     opts::EvmOpts,
     traces::{InternalTraceMode, TraceMode},
 };
-use foundry_primitives::FoundryTransactionBuilder;
 use foundry_wallets::WalletOpts;
 use itertools::Either;
 use regex::Regex;

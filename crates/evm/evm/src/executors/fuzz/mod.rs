@@ -10,7 +10,7 @@ use alloy_network::Network;
 use alloy_primitives::{Address, Bytes, Log, U256, keccak256, map::HashMap};
 use alloy_rlp::Decodable;
 use eyre::Result;
-use foundry_common::sh_println;
+use foundry_common::{FoundryTransactionBuilder, sh_println};
 use foundry_config::FuzzConfig;
 use foundry_evm_core::{
     Breakpoints,
@@ -25,7 +25,6 @@ use foundry_evm_fuzz::{
     strategies::{EvmFuzzState, fuzz_calldata, fuzz_calldata_from_state},
 };
 use foundry_evm_traces::SparsedTraceArena;
-use foundry_primitives::FoundryTransactionBuilder;
 use indicatif::ProgressBar;
 use proptest::{
     strategy::Strategy,

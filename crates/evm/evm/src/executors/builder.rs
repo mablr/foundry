@@ -3,8 +3,8 @@ use alloy_consensus::transaction::SignerRecoverable;
 use alloy_evm::FromRecoveredTx;
 use alloy_network::Network;
 use alloy_rlp::Decodable;
+use foundry_common::FoundryTransactionBuilder;
 use foundry_evm_core::{EvmEnv, backend::Backend, evm::FoundryEvmFactory};
-use foundry_primitives::FoundryTransactionBuilder;
 use revm::context::{Block, Transaction};
 use std::marker::PhantomData;
 

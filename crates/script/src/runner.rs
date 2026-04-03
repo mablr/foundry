@@ -8,7 +8,7 @@ use alloy_primitives::{Address, Bytes, U256};
 use alloy_rlp::Decodable;
 use eyre::Result;
 use foundry_cheatcodes::BroadcastableTransaction;
-use foundry_common::TransactionMaybeSigned;
+use foundry_common::{FoundryTransactionBuilder, TransactionMaybeSigned};
 use foundry_config::Config;
 use foundry_evm::{
     constants::CALLER,
@@ -18,7 +18,6 @@ use foundry_evm::{
     revm::interpreter::{InstructionResult, return_ok},
     traces::{TraceKind, Traces},
 };
-use foundry_primitives::FoundryTransactionBuilder;
 use std::collections::VecDeque;
 
 /// Drives script execution

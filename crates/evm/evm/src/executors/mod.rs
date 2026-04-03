@@ -20,6 +20,7 @@ use alloy_primitives::{
 };
 use alloy_rlp::Decodable;
 use alloy_sol_types::{SolCall, sol};
+use foundry_common::FoundryTransactionBuilder;
 use foundry_evm_core::{
     EvmEnv, FoundryBlock, FoundryTransaction,
     backend::{Backend, BackendError, BackendResult, CowBackend, DatabaseExt, GLOBAL_FAIL_SLOT},
@@ -33,7 +34,6 @@ use foundry_evm_core::{
 };
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_traces::{SparsedTraceArena, TraceMode};
-use foundry_primitives::FoundryTransactionBuilder;
 use revm::{
     bytecode::Bytecode,
     context::Transaction,

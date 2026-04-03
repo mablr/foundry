@@ -13,7 +13,7 @@ use alloy_rlp::Decodable;
 use alloy_sol_types::{SolCall, sol};
 use eyre::{ContextCompat, Result, eyre};
 use foundry_common::{
-    TestFunctionExt,
+    FoundryTransactionBuilder, TestFunctionExt,
     contracts::{ContractsByAddress, ContractsByArtifact},
     sh_println,
 };
@@ -35,7 +35,6 @@ use foundry_evm_fuzz::{
     strategies::{EvmFuzzState, invariant_strat, override_call_strat},
 };
 use foundry_evm_traces::{CallTraceArena, SparsedTraceArena};
-use foundry_primitives::FoundryTransactionBuilder;
 use indicatif::ProgressBar;
 use parking_lot::RwLock;
 use proptest::{strategy::Strategy, test_runner::TestRunner};

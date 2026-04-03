@@ -43,6 +43,7 @@ use alloy_network::Network;
 use alloy_primitives::Bytes;
 use alloy_rlp::Decodable;
 use eyre::{Result, eyre};
+use foundry_common::FoundryTransactionBuilder;
 use foundry_config::FuzzCorpusConfig;
 use foundry_evm_core::evm::FoundryEvmFactory;
 use foundry_evm_fuzz::{
@@ -50,7 +51,6 @@ use foundry_evm_fuzz::{
     invariant::FuzzRunIdentifiedContracts,
     strategies::{EvmFuzzState, mutate_param_value},
 };
-use foundry_primitives::FoundryTransactionBuilder;
 use proptest::{
     prelude::{Just, Rng, Strategy},
     prop_oneof,
