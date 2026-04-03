@@ -38,7 +38,7 @@ impl ScriptRunner {
         setup: bool,
         script_config: &ScriptConfig,
         is_broadcast: bool,
-    ) -> Result<(Address, ScriptResult)> {
+    ) -> Result<(Address, ScriptResult<Ethereum>)> {
         trace!(target: "script", "executing setUP()");
 
         if !is_broadcast {
@@ -229,7 +229,7 @@ impl ScriptRunner {
     }
 
     /// Executes the method that will collect all broadcastable transactions.
-    pub fn script(&mut self, address: Address, calldata: Bytes) -> Result<ScriptResult> {
+    pub fn script(&mut self, address: Address, calldata: Bytes) -> Result<ScriptResult<Ethereum>> {
         self.call(self.evm_opts.sender, address, calldata, U256::ZERO, None, false)
     }
 
@@ -241,7 +241,7 @@ impl ScriptRunner {
         calldata: Option<Bytes>,
         value: Option<U256>,
         authorization_list: Option<Vec<SignedAuthorization>>,
-    ) -> Result<ScriptResult> {
+    ) -> Result<ScriptResult<Ethereum>> {
         if let Some(to) = to {
             self.call(
                 from,
@@ -297,7 +297,7 @@ impl ScriptRunner {
         value: U256,
         authorization_list: Option<Vec<SignedAuthorization>>,
         commit: bool,
-    ) -> Result<ScriptResult> {
+    ) -> Result<ScriptResult<Ethereum>> {
         let mut res = if let Some(authorization_list) = &authorization_list {
             self.executor.call_raw_with_authorization(
                 from,
