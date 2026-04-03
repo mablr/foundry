@@ -54,7 +54,6 @@ alloy-dyn-abi.workspace = true
 alloy-primitives.workspace = true
 alloy-eips.workspace = true
 alloy-consensus.workspace = true
-alloy-rlp.workspace = true
 thiserror.workspace = true
 tempo-alloy.workspace = true
 

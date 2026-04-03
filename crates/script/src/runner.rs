@@ -1,18 +1,16 @@
 use super::{ScriptConfig, ScriptResult};
 use crate::build::ScriptPredeployLibraries;
-use alloy_consensus::transaction::SignerRecoverable;
 use alloy_eips::eip7702::SignedAuthorization;
-use alloy_evm::{FromRecoveredTx, revm::context::Transaction};
+use alloy_evm::revm::context::Transaction;
 use alloy_network::{Network, TransactionBuilder};
 use alloy_primitives::{Address, Bytes, U256};
-use alloy_rlp::Decodable;
 use eyre::Result;
 use foundry_cheatcodes::BroadcastableTransaction;
-use foundry_common::{FoundryTransactionBuilder, TransactionMaybeSigned};
+use foundry_common::TransactionMaybeSigned;
 use foundry_config::Config;
 use foundry_evm::{
     constants::CALLER,
-    core::{FoundryTransaction, evm::FoundryEvmFactory},
+    core::{FoundryTransaction, evm::FoundryEvmNetwork},
     executors::{DeployResult, EvmError, ExecutionErr, Executor, RawCallResult},
     opts::EvmOpts,
     revm::interpreter::{InstructionResult, return_ok},
@@ -22,18 +20,13 @@ use std::collections::VecDeque;
 
 /// Drives script execution
 #[derive(Debug)]
-pub struct ScriptRunner<N: Network, F: FoundryEvmFactory> {
-    pub executor: Executor<N, F>,
+pub struct ScriptRunner<FEN: FoundryEvmNetwork> {
+    pub executor: Executor<FEN>,
     pub evm_opts: EvmOpts,
 }
 
-impl<N: Network, F: FoundryEvmFactory> ScriptRunner<N, F>
-where
-    N::TxEnvelope: Decodable + SignerRecoverable,
-    N::TransactionRequest: FoundryTransactionBuilder<N>,
-    F::Tx: FromRecoveredTx<N::TxEnvelope>,
-{
-    pub fn new(executor: Executor<N, F>, evm_opts: EvmOpts) -> Self {
+impl<FEN: FoundryEvmNetwork> ScriptRunner<FEN> {
+    pub fn new(executor: Executor<FEN>, evm_opts: EvmOpts) -> Self {
         Self { executor, evm_opts }
     }
 
@@ -43,9 +36,9 @@ where
         libraries: &ScriptPredeployLibraries,
         code: Bytes,
         setup: bool,
-        script_config: &ScriptConfig<N, F>,
+        script_config: &ScriptConfig<FEN>,
         is_broadcast: bool,
-    ) -> Result<(Address, ScriptResult<N>)> {
+    ) -> Result<(Address, ScriptResult<FEN::Network>)> {
         trace!(target: "script", "executing setUP()");
 
         if !is_broadcast {
@@ -81,7 +74,7 @@ where
                     traces.push((TraceKind::Deployment, deploy_traces));
                 }
 
-                let mut tx_req = N::TransactionRequest::default();
+                let mut tx_req = <FEN::Network as Network>::TransactionRequest::default();
                 tx_req.set_from(self.evm_opts.sender);
                 tx_req.set_input(code.clone());
                 tx_req.set_nonce(sender_nonce + library_transactions.len() as u64);
@@ -114,7 +107,7 @@ where
                         traces.push((TraceKind::Deployment, deploy_traces));
                     }
 
-                    let mut tx_req = N::TransactionRequest::default();
+                    let mut tx_req = <FEN::Network as Network>::TransactionRequest::default();
                     tx_req.set_from(self.evm_opts.sender);
                     tx_req.set_input(calldata);
                     tx_req.set_nonce(sender_nonce + library_transactions.len() as u64);
@@ -235,7 +228,11 @@ where
     }
 
     /// Executes the method that will collect all broadcastable transactions.
-    pub fn script(&mut self, address: Address, calldata: Bytes) -> Result<ScriptResult<N>> {
+    pub fn script(
+        &mut self,
+        address: Address,
+        calldata: Bytes,
+    ) -> Result<ScriptResult<FEN::Network>> {
         self.call(self.evm_opts.sender, address, calldata, U256::ZERO, None, false)
     }
 
@@ -247,7 +244,7 @@ where
         calldata: Option<Bytes>,
         value: Option<U256>,
         authorization_list: Option<Vec<SignedAuthorization>>,
-    ) -> Result<ScriptResult<N>> {
+    ) -> Result<ScriptResult<FEN::Network>> {
         if let Some(to) = to {
             self.call(
                 from,
@@ -303,7 +300,7 @@ where
         value: U256,
         authorization_list: Option<Vec<SignedAuthorization>>,
         commit: bool,
-    ) -> Result<ScriptResult<N>> {
+    ) -> Result<ScriptResult<FEN::Network>> {
         let mut res = if let Some(authorization_list) = &authorization_list {
             self.executor.call_raw_with_authorization(
                 from,
@@ -367,7 +364,7 @@ where
     /// it might be problematic when using `ffi`.
     fn search_optimal_gas_usage(
         &mut self,
-        res: &RawCallResult<N, F>,
+        res: &RawCallResult<FEN>,
         from: Address,
         to: Address,
         calldata: &Bytes,

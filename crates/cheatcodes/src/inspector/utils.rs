@@ -1,7 +1,6 @@
 use crate::inspector::Cheatcodes;
-use alloy_network::Network;
 use alloy_primitives::{Address, Bytes, U256};
-use foundry_evm_core::evm::FoundryEvmFactory;
+use foundry_evm_core::evm::{FoundryEvmFactory, FoundryEvmNetwork};
 use revm::{
     context::ContextTr,
     inspector::JournalExt,
@@ -16,15 +15,15 @@ pub(crate) trait CommonCreateInput {
     fn init_code(&self) -> Bytes;
     fn scheme(&self) -> Option<CreateScheme>;
     fn set_caller(&mut self, caller: Address);
-    fn log_debug<N: Network, F: FoundryEvmFactory>(
+    fn log_debug<FEN: FoundryEvmNetwork>(
         &self,
-        cheatcode: &mut Cheatcodes<N, F>,
+        cheatcode: &mut Cheatcodes<FEN>,
         scheme: &CreateScheme,
     );
-    fn allow_cheatcodes<N: Network, F: FoundryEvmFactory>(
+    fn allow_cheatcodes<FEN: FoundryEvmNetwork>(
         &self,
-        cheatcodes: &mut Cheatcodes<N, F>,
-        ecx: &mut F::FoundryContext<'_>,
+        cheatcodes: &mut Cheatcodes<FEN>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
     ) -> Address;
 }
 
@@ -47,9 +46,9 @@ impl CommonCreateInput for &mut CreateInputs {
     fn set_caller(&mut self, caller: Address) {
         CreateInputs::set_call(self, caller);
     }
-    fn log_debug<N: Network, F: FoundryEvmFactory>(
+    fn log_debug<FEN: FoundryEvmNetwork>(
         &self,
-        cheatcode: &mut Cheatcodes<N, F>,
+        cheatcode: &mut Cheatcodes<FEN>,
         scheme: &CreateScheme,
     ) {
         let kind = match scheme {
@@ -59,10 +58,10 @@ impl CommonCreateInput for &mut CreateInputs {
         };
         debug!(target: "cheatcodes", tx=?cheatcode.broadcastable_transactions.back().unwrap(), "broadcastable {kind}");
     }
-    fn allow_cheatcodes<N: Network, F: FoundryEvmFactory>(
+    fn allow_cheatcodes<FEN: FoundryEvmNetwork>(
         &self,
-        cheatcodes: &mut Cheatcodes<N, F>,
-        ecx: &mut F::FoundryContext<'_>,
+        cheatcodes: &mut Cheatcodes<FEN>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
     ) -> Address {
         let caller = CreateInputs::caller(self);
         let old_nonce =

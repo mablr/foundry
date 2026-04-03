@@ -3,8 +3,7 @@ use std::{cmp::Ordering, sync::Arc, time::Duration};
 use alloy_chains::{Chain, NamedChain};
 use alloy_consensus::{SignableTransaction, Signed};
 use alloy_eips::{BlockId, eip2718::Encodable2718};
-use alloy_evm::EthEvmFactory;
-use alloy_network::{Ethereum, EthereumWallet, Network, ReceiptResponse, TransactionBuilder};
+use alloy_network::{EthereumWallet, Network, ReceiptResponse, TransactionBuilder};
 use alloy_primitives::{
     Address, TxHash,
     map::{AddressHashMap, AddressHashSet},
@@ -22,6 +21,7 @@ use foundry_common::{
     shell,
 };
 use foundry_config::Config;
+use foundry_evm::core::evm::EthEvmNetwork;
 use foundry_wallets::{TempoAccessKeyConfig, WalletSigner, wallet_browser::signer::BrowserSigner};
 use futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered};
 use itertools::Itertools;
@@ -288,7 +288,7 @@ where
     N::TransactionRequest: for<'d> Deserialize<'d> + Serialize,
 {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig<Ethereum, EthEvmFactory>,
+    pub script_config: ScriptConfig<EthEvmNetwork>,
     pub script_wallets: Wallets,
     pub browser_wallet: Option<BrowserSigner<N>>,
     pub build_data: LinkedBuildData,

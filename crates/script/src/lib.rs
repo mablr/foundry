@@ -12,15 +12,12 @@ extern crate foundry_common;
 extern crate tracing;
 
 use crate::runner::ScriptRunner;
-use alloy_consensus::transaction::SignerRecoverable;
-use alloy_evm::FromRecoveredTx;
 use alloy_json_abi::{Function, JsonAbi};
 use alloy_network::{Ethereum, Network};
 use alloy_primitives::{
     Address, Bytes, Log, U256, hex,
     map::{AddressHashMap, HashMap},
 };
-use alloy_rlp::Decodable;
 use alloy_signer::Signer;
 use broadcast::next_nonce;
 use build::PreprocessedState;
@@ -34,7 +31,7 @@ use foundry_cli::{
     utils::LoadConfig,
 };
 use foundry_common::{
-    CONTRACT_MAX_SIZE, ContractsByArtifact, FoundryTransactionBuilder, SELECTOR_LEN,
+    CONTRACT_MAX_SIZE, ContractsByArtifact, SELECTOR_LEN,
     abi::{encode_function_args, get_func},
     shell,
 };
@@ -48,7 +45,7 @@ use foundry_config::{
 };
 use foundry_evm::{
     backend::Backend,
-    core::{Breakpoints, evm::FoundryEvmFactory},
+    core::{Breakpoints, evm::FoundryEvmNetwork},
     executors::ExecutorBuilder,
     inspectors::{
         CheatsConfig,
@@ -608,20 +605,15 @@ struct JsonResult<'a, N: Network> {
 }
 
 #[derive(Clone, Debug)]
-pub struct ScriptConfig<N: Network, F: FoundryEvmFactory> {
+pub struct ScriptConfig<FEN: FoundryEvmNetwork> {
     pub config: Config,
     pub evm_opts: EvmOpts,
     pub sender_nonce: u64,
     /// Maps a rpc url to a backend
-    pub backends: HashMap<String, Backend<N, F>>,
+    pub backends: HashMap<String, Backend<FEN>>,
 }
 
-impl<N: Network, F: FoundryEvmFactory> ScriptConfig<N, F>
-where
-    N::TxEnvelope: Decodable + SignerRecoverable,
-    N::TransactionRequest: FoundryTransactionBuilder<N>,
-    F::Tx: FromRecoveredTx<N::TxEnvelope>,
-{
+impl<FEN: FoundryEvmNetwork> ScriptConfig<FEN> {
     pub async fn new(config: Config, evm_opts: EvmOpts) -> Result<Self> {
         let sender_nonce = if let Some(fork_url) = evm_opts.fork_url.as_ref() {
             next_nonce(evm_opts.sender, fork_url, evm_opts.fork_block_number).await?
@@ -644,7 +636,7 @@ where
         Ok(())
     }
 
-    async fn get_runner(&mut self) -> Result<ScriptRunner<N, F>> {
+    async fn get_runner(&mut self) -> Result<ScriptRunner<FEN>> {
         self._get_runner(None, false).await
     }
 
@@ -654,7 +646,7 @@ where
         script_wallets: Wallets,
         debug: bool,
         target: ArtifactId,
-    ) -> Result<ScriptRunner<N, F>> {
+    ) -> Result<ScriptRunner<FEN>> {
         self._get_runner(Some((known_contracts, script_wallets, target)), debug).await
     }
 
@@ -662,7 +654,7 @@ where
         &mut self,
         cheats_data: Option<(ContractsByArtifact, Wallets, ArtifactId)>,
         debug: bool,
-    ) -> Result<ScriptRunner<N, F>> {
+    ) -> Result<ScriptRunner<FEN>> {
         trace!("preparing script runner");
         let (evm_env, tx_env, fork_block) = self.evm_opts.env().await?;
 
@@ -672,7 +664,7 @@ where
                 None => {
                     let fork =
                         self.evm_opts.get_fork(&self.config, evm_env.cfg_env.chain_id, fork_block);
-                    let backend = Backend::<N, F>::spawn(fork)?;
+                    let backend = Backend::<FEN>::spawn(fork)?;
                     self.backends.insert(fork_url.clone(), backend.clone());
                     backend
                 }

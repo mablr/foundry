@@ -1,10 +1,9 @@
 use alloy_chains::NamedChain;
-use alloy_evm::EthEvmFactory;
-use alloy_network::Ethereum;
 use alloy_primitives::{Address, Bytes, U256};
 use foundry_evm_core::{
     backend::DatabaseError,
     constants::{CALLER, TEST_CONTRACT_ADDRESS},
+    evm::EthEvmNetwork,
     tempo::{
         ADDRESS_REGISTRY_ADDRESS, SIGNATURE_VERIFIER_ADDRESS, TEMPO_TIP20_TOKENS,
         TempoStorageProvider, initialize_tempo_genesis,
@@ -27,7 +26,7 @@ use crate::executors::Executor;
 ///
 /// Ref: <https://github.com/tempoxyz/tempo/blob/main/xtask/src/genesis_args.rs>
 pub fn initialize_tempo_precompiles_and_contracts(
-    executor: &mut Executor<Ethereum, EthEvmFactory>,
+    executor: &mut Executor<EthEvmNetwork>,
     hardfork: Option<FoundryHardfork>,
 ) -> Result<(), TempoPrecompileError> {
     let sender = CALLER;
@@ -65,7 +64,7 @@ pub fn initialize_tempo_precompiles_and_contracts(
 ///
 /// Only applies when the fork target is a known Tempo chain (by chain ID).
 pub fn warm_tempo_precompile_accounts(
-    executor: &mut Executor<Ethereum, EthEvmFactory>,
+    executor: &mut Executor<EthEvmNetwork>,
 ) -> Result<(), DatabaseError> {
     let chain_id = executor.evm_env().cfg_env.chain_id;
     if !NamedChain::try_from(chain_id).is_ok_and(|c| c.is_tempo()) {

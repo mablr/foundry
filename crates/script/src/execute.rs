@@ -5,7 +5,6 @@ use crate::{
     simulate::PreSimulationState,
 };
 use alloy_dyn_abi::FunctionExt;
-use alloy_evm::EthEvmFactory;
 use alloy_json_abi::{Function, InternalType, JsonAbi};
 use alloy_network::{AnyNetwork, Ethereum, Network};
 use alloy_primitives::{
@@ -25,6 +24,7 @@ use foundry_common::{
 use foundry_config::NamedChain;
 use foundry_debugger::Debugger;
 use foundry_evm::{
+    core::evm::EthEvmNetwork,
     decode::decode_console_logs,
     inspectors::cheatcodes::BroadcastableTransactions,
     traces::{
@@ -43,7 +43,7 @@ use yansi::Paint;
 /// array of libraries that need to be predeployed.
 pub struct LinkedState {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig<Ethereum, EthEvmFactory>,
+    pub script_config: ScriptConfig<EthEvmNetwork>,
     pub script_wallets: Wallets,
     pub browser_wallet: Option<BrowserSigner<Ethereum>>,
     pub build_data: LinkedBuildData,
@@ -96,7 +96,7 @@ impl LinkedState {
 #[derive(Debug)]
 pub struct PreExecutionState {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig<Ethereum, EthEvmFactory>,
+    pub script_config: ScriptConfig<EthEvmNetwork>,
     pub script_wallets: Wallets,
     pub browser_wallet: Option<BrowserSigner<Ethereum>>,
     pub build_data: LinkedBuildData,
@@ -149,7 +149,7 @@ impl PreExecutionState {
     /// Executes the script using the provided runner and returns the [ScriptResult].
     pub async fn execute_with_runner(
         &self,
-        runner: &mut ScriptRunner<Ethereum, EthEvmFactory>,
+        runner: &mut ScriptRunner<EthEvmNetwork>,
     ) -> Result<ScriptResult<Ethereum>> {
         let (address, mut setup_result) = runner.setup(
             &self.build_data.predeploy_libraries,
@@ -284,7 +284,7 @@ pub struct ExecutionArtifacts {
 /// State after the script has been executed.
 pub struct ExecutedState {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig<Ethereum, EthEvmFactory>,
+    pub script_config: ScriptConfig<EthEvmNetwork>,
     pub script_wallets: Wallets,
     pub browser_wallet: Option<BrowserSigner<Ethereum>>,
     pub build_data: LinkedBuildData,

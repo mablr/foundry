@@ -2,14 +2,13 @@
 
 use crate::{Cheatcode, Cheatcodes, Result, Vm::*};
 use alloy_dyn_abi::{DynSolType, DynSolValue};
-use alloy_network::Network;
 use alloy_primitives::{U256, hex};
 use alloy_sol_types::SolValue;
-use foundry_evm_core::evm::FoundryEvmFactory;
+use foundry_evm_core::evm::FoundryEvmNetwork;
 
 // address
 impl Cheatcode for toString_0Call {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { value } = self;
         Ok(value.to_string().abi_encode())
     }
@@ -17,7 +16,7 @@ impl Cheatcode for toString_0Call {
 
 // bytes
 impl Cheatcode for toString_1Call {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { value } = self;
         Ok(value.to_string().abi_encode())
     }
@@ -25,7 +24,7 @@ impl Cheatcode for toString_1Call {
 
 // bytes32
 impl Cheatcode for toString_2Call {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { value } = self;
         Ok(value.to_string().abi_encode())
     }
@@ -33,7 +32,7 @@ impl Cheatcode for toString_2Call {
 
 // bool
 impl Cheatcode for toString_3Call {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { value } = self;
         Ok(value.to_string().abi_encode())
     }
@@ -41,7 +40,7 @@ impl Cheatcode for toString_3Call {
 
 // uint256
 impl Cheatcode for toString_4Call {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { value } = self;
         Ok(value.to_string().abi_encode())
     }
@@ -49,84 +48,84 @@ impl Cheatcode for toString_4Call {
 
 // int256
 impl Cheatcode for toString_5Call {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { value } = self;
         Ok(value.to_string().abi_encode())
     }
 }
 
 impl Cheatcode for parseBytesCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { stringifiedValue } = self;
         parse(stringifiedValue, &DynSolType::Bytes)
     }
 }
 
 impl Cheatcode for parseAddressCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { stringifiedValue } = self;
         parse(stringifiedValue, &DynSolType::Address)
     }
 }
 
 impl Cheatcode for parseUintCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { stringifiedValue } = self;
         parse(stringifiedValue, &DynSolType::Uint(256))
     }
 }
 
 impl Cheatcode for parseIntCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { stringifiedValue } = self;
         parse(stringifiedValue, &DynSolType::Int(256))
     }
 }
 
 impl Cheatcode for parseBytes32Call {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { stringifiedValue } = self;
         parse(stringifiedValue, &DynSolType::FixedBytes(32))
     }
 }
 
 impl Cheatcode for parseBoolCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { stringifiedValue } = self;
         parse(stringifiedValue, &DynSolType::Bool)
     }
 }
 
 impl Cheatcode for toLowercaseCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { input } = self;
         Ok(input.to_lowercase().abi_encode())
     }
 }
 
 impl Cheatcode for toUppercaseCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { input } = self;
         Ok(input.to_uppercase().abi_encode())
     }
 }
 
 impl Cheatcode for trimCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { input } = self;
         Ok(input.trim().abi_encode())
     }
 }
 
 impl Cheatcode for replaceCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { input, from, to } = self;
         Ok(input.replace(from, to).abi_encode())
     }
 }
 
 impl Cheatcode for splitCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { input, delimiter } = self;
         let parts: Vec<&str> = input.split(delimiter).collect();
         Ok(parts.abi_encode())
@@ -134,14 +133,14 @@ impl Cheatcode for splitCall {
 }
 
 impl Cheatcode for indexOfCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { input, key } = self;
         Ok(input.find(key).map(U256::from).unwrap_or(U256::MAX).abi_encode())
     }
 }
 
 impl Cheatcode for containsCall {
-    fn apply<N: Network, F: FoundryEvmFactory>(&self, _state: &mut Cheatcodes<N, F>) -> Result {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         let Self { subject, search } = self;
         Ok(subject.contains(search).abi_encode())
     }

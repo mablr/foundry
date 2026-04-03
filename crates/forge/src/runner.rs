@@ -9,9 +9,7 @@ use crate::{
     result::{SuiteResult, TestResult, TestSetup},
 };
 use alloy_dyn_abi::{DynSolValue, JsonAbiExt};
-use alloy_evm::EthEvmFactory;
 use alloy_json_abi::Function;
-use alloy_network::Ethereum;
 use alloy_primitives::{Address, Bytes, U256, address, map::HashMap};
 use eyre::Result;
 use foundry_common::{TestFunctionExt, TestFunctionKind, contracts::ContractsByAddress};
@@ -19,6 +17,7 @@ use foundry_compilers::utils::canonicalized;
 use foundry_config::{Config, FuzzCorpusConfig};
 use foundry_evm::{
     constants::CALLER,
+    core::evm::EthEvmNetwork,
     decode::RevertDecoder,
     executors::{
         CallResult, EvmError, Executor, ITest, RawCallResult,
@@ -62,7 +61,7 @@ pub struct ContractRunner<'a> {
     /// The data of the contract.
     contract: &'a TestContract,
     /// The EVM executor.
-    executor: Executor<Ethereum, EthEvmFactory>,
+    executor: Executor<EthEvmNetwork>,
     /// Overall test run progress.
     progress: Option<&'a TestsProgress>,
     /// The handle to the tokio runtime.
@@ -88,7 +87,7 @@ impl<'a> ContractRunner<'a> {
     pub fn new(
         name: &'a str,
         contract: &'a TestContract,
-        executor: Executor<Ethereum, EthEvmFactory>,
+        executor: Executor<EthEvmNetwork>,
         progress: Option<&'a TestsProgress>,
         tokio_handle: &'a tokio::runtime::Handle,
         span: Span,
@@ -463,7 +462,7 @@ struct FunctionRunner<'a> {
     /// The function-level configuration.
     tcfg: Cow<'a, TestRunnerConfig>,
     /// The EVM executor.
-    executor: Cow<'a, Executor<Ethereum, EthEvmFactory>>,
+    executor: Cow<'a, Executor<EthEvmNetwork>>,
     /// The parent runner.
     cr: &'a ContractRunner<'a>,
     /// The address of the test contract.
@@ -1128,7 +1127,7 @@ impl<'a> FunctionRunner<'a> {
         fuzzer_with_cases(self.config.fuzz.seed, config.runs, config.max_assume_rejects)
     }
 
-    fn clone_executor(&self) -> Executor<Ethereum, EthEvmFactory> {
+    fn clone_executor(&self) -> Executor<EthEvmNetwork> {
         self.executor.clone().into_owned()
     }
 

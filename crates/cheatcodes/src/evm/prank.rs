@@ -1,7 +1,6 @@
 use crate::{Cheatcode, CheatsCtxt, Result, Vm::*, evm::journaled_account};
-use alloy_network::Network;
 use alloy_primitives::Address;
-use foundry_evm_core::evm::FoundryEvmFactory;
+use foundry_evm_core::evm::FoundryEvmNetwork;
 use revm::context::{ContextTr, JournalTr, Transaction};
 
 /// Prank information.
@@ -56,98 +55,71 @@ impl Prank {
 }
 
 impl Cheatcode for prank_0Call {
-    fn apply_stateful<N: Network, F: FoundryEvmFactory>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, '_, N, F>,
-    ) -> Result {
+    fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { msgSender } = self;
         prank(ccx, msgSender, None, true, false)
     }
 }
 
 impl Cheatcode for startPrank_0Call {
-    fn apply_stateful<N: Network, F: FoundryEvmFactory>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, '_, N, F>,
-    ) -> Result {
+    fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { msgSender } = self;
         prank(ccx, msgSender, None, false, false)
     }
 }
 
 impl Cheatcode for prank_1Call {
-    fn apply_stateful<N: Network, F: FoundryEvmFactory>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, '_, N, F>,
-    ) -> Result {
+    fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { msgSender, txOrigin } = self;
         prank(ccx, msgSender, Some(txOrigin), true, false)
     }
 }
 
 impl Cheatcode for startPrank_1Call {
-    fn apply_stateful<N: Network, F: FoundryEvmFactory>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, '_, N, F>,
-    ) -> Result {
+    fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { msgSender, txOrigin } = self;
         prank(ccx, msgSender, Some(txOrigin), false, false)
     }
 }
 
 impl Cheatcode for prank_2Call {
-    fn apply_stateful<N: Network, F: FoundryEvmFactory>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, '_, N, F>,
-    ) -> Result {
+    fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { msgSender, delegateCall } = self;
         prank(ccx, msgSender, None, true, *delegateCall)
     }
 }
 
 impl Cheatcode for startPrank_2Call {
-    fn apply_stateful<N: Network, F: FoundryEvmFactory>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, '_, N, F>,
-    ) -> Result {
+    fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { msgSender, delegateCall } = self;
         prank(ccx, msgSender, None, false, *delegateCall)
     }
 }
 
 impl Cheatcode for prank_3Call {
-    fn apply_stateful<N: Network, F: FoundryEvmFactory>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, '_, N, F>,
-    ) -> Result {
+    fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { msgSender, txOrigin, delegateCall } = self;
         prank(ccx, msgSender, Some(txOrigin), true, *delegateCall)
     }
 }
 
 impl Cheatcode for startPrank_3Call {
-    fn apply_stateful<N: Network, F: FoundryEvmFactory>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, '_, N, F>,
-    ) -> Result {
+    fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { msgSender, txOrigin, delegateCall } = self;
         prank(ccx, msgSender, Some(txOrigin), false, *delegateCall)
     }
 }
 
 impl Cheatcode for stopPrankCall {
-    fn apply_stateful<N: Network, F: FoundryEvmFactory>(
-        &self,
-        ccx: &mut CheatsCtxt<'_, '_, N, F>,
-    ) -> Result {
+    fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self {} = self;
         ccx.state.pranks.remove(&ccx.ecx.journal().depth());
         Ok(Default::default())
     }
 }
 
-fn prank<N: Network, F: FoundryEvmFactory>(
-    ccx: &mut CheatsCtxt<'_, '_, N, F>,
+fn prank<FEN: FoundryEvmNetwork>(
+    ccx: &mut CheatsCtxt<'_, '_, FEN>,
     new_caller: &Address,
     new_origin: Option<&Address>,
     single_call: bool,

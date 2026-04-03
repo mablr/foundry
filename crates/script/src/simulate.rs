@@ -10,8 +10,7 @@ use crate::{
     sequence::get_commit_hash,
 };
 use alloy_chains::NamedChain;
-use alloy_evm::EthEvmFactory;
-use alloy_network::{Ethereum, Network, TransactionBuilder};
+use alloy_network::{Network, TransactionBuilder};
 use alloy_primitives::{Address, U256, map::HashMap, utils::format_units};
 use dialoguer::Confirm;
 use eyre::{Context, Result};
@@ -19,7 +18,10 @@ use forge_script_sequence::{ScriptSequence, TransactionWithMetadata};
 use foundry_cheatcodes::Wallets;
 use foundry_cli::utils::{has_different_gas_calc, now};
 use foundry_common::{ContractData, FoundryTransactionBuilder, shell};
-use foundry_evm::traces::{decode_trace_arena, render_trace_arena};
+use foundry_evm::{
+    core::evm::EthEvmNetwork,
+    traces::{decode_trace_arena, render_trace_arena},
+};
 use foundry_wallets::wallet_browser::signer::BrowserSigner;
 use futures::future::{join_all, try_join_all};
 use parking_lot::RwLock;
@@ -37,7 +39,7 @@ use std::{
 /// [FilledTransactionsState].
 pub struct PreSimulationState<N: Network> {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig<Ethereum, EthEvmFactory>,
+    pub script_config: ScriptConfig<EthEvmNetwork>,
     pub script_wallets: Wallets,
     pub browser_wallet: Option<BrowserSigner<N>>,
     pub build_data: LinkedBuildData,
@@ -235,7 +237,7 @@ where
     }
 
     /// Build [ScriptRunner] forking given RPC for each RPC used in the script.
-    async fn build_runners(&self) -> Result<Vec<(String, ScriptRunner<Ethereum, EthEvmFactory>)>> {
+    async fn build_runners(&self) -> Result<Vec<(String, ScriptRunner<EthEvmNetwork>)>> {
         let rpcs = self.execution_artifacts.rpc_data.total_rpcs.clone();
 
         if !shell::is_json() {
@@ -259,7 +261,7 @@ where
 /// verification.
 pub struct FilledTransactionsState<N: Network> {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig<Ethereum, EthEvmFactory>,
+    pub script_config: ScriptConfig<EthEvmNetwork>,
     pub script_wallets: Wallets,
     pub browser_wallet: Option<BrowserSigner<N>>,
     pub build_data: LinkedBuildData,

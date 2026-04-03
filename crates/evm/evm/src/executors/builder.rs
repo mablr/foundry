@@ -1,10 +1,8 @@
 use crate::{executors::Executor, inspectors::InspectorStackBuilder};
-use alloy_consensus::transaction::SignerRecoverable;
-use alloy_evm::FromRecoveredTx;
-use alloy_network::Network;
-use alloy_rlp::Decodable;
-use foundry_common::FoundryTransactionBuilder;
-use foundry_evm_core::{EvmEnv, backend::Backend, evm::FoundryEvmFactory};
+use foundry_evm_core::{
+    backend::Backend,
+    evm::{BlockEnvFor, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
+};
 use revm::context::{Block, Transaction};
 use std::marker::PhantomData;
 
@@ -17,25 +15,18 @@ use std::marker::PhantomData;
 /// [`InspectorStack`]: super::InspectorStack
 #[derive(Debug, Clone)]
 #[must_use = "builders do nothing unless you call `build` on them"]
-pub struct ExecutorBuilder<N: Network, F: FoundryEvmFactory> {
+pub struct ExecutorBuilder<FEN: FoundryEvmNetwork> {
     /// The configuration used to build an `InspectorStack`.
-    stack: InspectorStackBuilder<F::BlockEnv>,
+    stack: InspectorStackBuilder<BlockEnvFor<FEN>>,
     /// The gas limit.
     gas_limit: Option<u64>,
     /// The spec.
-    spec: F::Spec,
+    spec: SpecFor<FEN>,
     legacy_assertions: bool,
-    _network: PhantomData<N>,
+    _network: PhantomData<FEN>,
 }
 
-impl<N, F> Default for ExecutorBuilder<N, F>
-where
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-{
+impl<FEN: FoundryEvmNetwork> Default for ExecutorBuilder<FEN> {
     #[inline]
     fn default() -> Self {
         Self {
@@ -48,19 +39,14 @@ where
     }
 }
 
-impl<N, F> ExecutorBuilder<N, F>
-where
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-{
+impl<FEN: FoundryEvmNetwork> ExecutorBuilder<FEN> {
     /// Modify the inspector stack.
     #[inline]
     pub fn inspectors(
         mut self,
-        f: impl FnOnce(InspectorStackBuilder<F::BlockEnv>) -> InspectorStackBuilder<F::BlockEnv>,
+        f: impl FnOnce(
+            InspectorStackBuilder<BlockEnvFor<FEN>>,
+        ) -> InspectorStackBuilder<BlockEnvFor<FEN>>,
     ) -> Self {
         self.stack = f(self.stack);
         self
@@ -68,7 +54,7 @@ where
 
     /// Sets the EVM spec to use.
     #[inline]
-    pub fn spec_id(mut self, spec: F::Spec) -> Self {
+    pub fn spec_id(mut self, spec: SpecFor<FEN>) -> Self {
         self.spec = spec;
         self
     }
@@ -91,10 +77,10 @@ where
     #[inline]
     pub fn build(
         self,
-        mut evm_env: EvmEnv<F::Spec, F::BlockEnv>,
-        tx_env: F::Tx,
-        db: Backend<N, F>,
-    ) -> Executor<N, F> {
+        mut evm_env: EvmEnvFor<FEN>,
+        tx_env: TxEnvFor<FEN>,
+        db: Backend<FEN>,
+    ) -> Executor<FEN> {
         let Self { mut stack, gas_limit, spec, legacy_assertions, .. } = self;
         if stack.block.is_none() {
             stack.block = Some(evm_env.block_env.clone());
