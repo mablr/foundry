@@ -9,11 +9,15 @@ use crate::{
     backend::{DatabaseExt, JournaledState, LocalForkId},
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
-use alloy_consensus::constants::KECCAK_EMPTY;
+use alloy_consensus::{constants::KECCAK_EMPTY, transaction::SignerRecoverable};
 use alloy_evm::{
-    EthEvmFactory, Evm, EvmEnv, EvmFactory, eth::EthEvmContext, precompiles::PrecompilesMap,
+    EthEvmFactory, Evm, EvmEnv, EvmFactory, FromRecoveredTx, eth::EthEvmContext,
+    precompiles::PrecompilesMap,
 };
+use alloy_network::{Ethereum, Network};
 use alloy_primitives::{Address, B256, Bytes, U256};
+use alloy_rlp::Decodable;
+use foundry_common::FoundryTransactionBuilder;
 use foundry_config::FromEvmVersion;
 use foundry_fork_db::{DatabaseError, ForkBlockEnv};
 use op_revm::OpHaltReason;
@@ -34,6 +38,7 @@ use revm::{
     },
     primitives::hardfork::SpecId,
 };
+use tempo_alloy::TempoNetwork;
 use tempo_chainspec::hardfork::TempoHardfork;
 use tempo_evm::evm::TempoEvmFactory;
 use tempo_revm::{
@@ -68,6 +73,27 @@ impl IntoInstructionResult for TempoHaltReason {
             _ => InstructionResult::PrecompileError,
         }
     }
+}
+
+/// Foundry's supertrait associating [Network] with [FoundryEvmFactory]
+pub trait FoundryEvmNetwork {
+    type Network: Network<
+            TxEnvelope: Decodable + SignerRecoverable,
+            TransactionRequest: FoundryTransactionBuilder<Self::Network>,
+        >;
+    type EvmFactory: FoundryEvmFactory<Tx: FromRecoveredTx<<Self::Network as Network>::TxEnvelope>>;
+}
+
+pub struct EthEvmNetwork;
+impl FoundryEvmNetwork for EthEvmNetwork {
+    type Network = Ethereum;
+    type EvmFactory = EthEvmFactory;
+}
+
+pub struct TempoEvmNetwork;
+impl FoundryEvmNetwork for TempoEvmNetwork {
+    type Network = TempoNetwork;
+    type EvmFactory = TempoEvmFactory;
 }
 
 pub trait FoundryEvmFactory:

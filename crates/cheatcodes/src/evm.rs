@@ -51,7 +51,7 @@ use std::{
 
 mod record_debug_step;
 use foundry_common::fmt::format_token_raw;
-use foundry_config::{FromEvmVersion, evm_spec_id};
+use foundry_config::evm_spec_id;
 use record_debug_step::{convert_call_trace_ctx_to_debug_step, flatten_call_trace};
 use serde::Serialize;
 
@@ -1471,7 +1471,7 @@ impl Cheatcode for stopAndReturnDebugTraceRecordingCall {
 }
 
 impl Cheatcode for setEvmVersionCall {
-    fn apply_stateful<N: Network, F: FoundryEvmFactory<Spec: FromEvmVersion>>(
+    fn apply_stateful<N: Network, F: FoundryEvmFactory>(
         &self,
         ccx: &mut CheatsCtxt<'_, '_, N, F>,
     ) -> Result {
