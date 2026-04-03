@@ -35,24 +35,29 @@
 //!   entries since it doesn't matter as long as the corpus eventually syncs across all workers
 
 use crate::executors::{Executor, RawCallResult, invariant::execute_tx};
+use alloy_consensus::transaction::SignerRecoverable;
 use alloy_dyn_abi::JsonAbiExt;
-use alloy_evm::EthEvmFactory;
+use alloy_evm::FromRecoveredTx;
 use alloy_json_abi::Function;
-use alloy_network::Ethereum;
+use alloy_network::{AnyRpcTransaction, Network};
 use alloy_primitives::Bytes;
+use alloy_rlp::Decodable;
 use eyre::{Result, eyre};
 use foundry_config::FuzzCorpusConfig;
+use foundry_evm_core::{TryAnyToTxEnv, evm::FoundryEvmFactory};
 use foundry_evm_fuzz::{
     BasicTxDetails,
     invariant::FuzzRunIdentifiedContracts,
     strategies::{EvmFuzzState, mutate_param_value},
 };
+use foundry_primitives::FoundryTransactionBuilder;
 use proptest::{
     prelude::{Just, Rng, Strategy},
     prop_oneof,
     strategy::{BoxedStrategy, ValueTree},
     test_runner::TestRunner,
 };
+use revm::primitives::hardfork::SpecId;
 use serde::Serialize;
 use std::{
     fmt,
@@ -273,15 +278,23 @@ pub struct WorkerCorpus {
 }
 
 impl WorkerCorpus {
-    pub fn new(
+    pub fn new<N, F>(
         id: usize,
         config: FuzzCorpusConfig,
         tx_generator: BoxedStrategy<BasicTxDetails>,
         // Only required by master worker (id = 0) to replay existing corpus.
-        executor: Option<&Executor<Ethereum, EthEvmFactory>>,
+        executor: Option<&Executor<N, F>>,
         fuzzed_function: Option<&Function>,
         fuzzed_contracts: Option<&FuzzRunIdentifiedContracts>,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        N: Network<
+                TxEnvelope: Decodable + SignerRecoverable,
+                TransactionRequest: FoundryTransactionBuilder<N>,
+            >,
+        F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+        AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
+    {
         let mutation_generator = prop_oneof![
             Just(MutationType::Splice),
             Just(MutationType::Repeat),
@@ -443,7 +456,10 @@ impl WorkerCorpus {
     }
 
     /// Collects coverage from call result and updates metrics.
-    pub fn merge_edge_coverage(&mut self, call_result: &mut RawCallResult) -> bool {
+    pub fn merge_edge_coverage<N: Network, F: FoundryEvmFactory>(
+        &mut self,
+        call_result: &mut RawCallResult<N, F>,
+    ) -> bool {
         if !self.config.collect_edge_coverage() {
             return false;
         }
@@ -761,12 +777,20 @@ impl WorkerCorpus {
     /// Syncs and calibrates the in memory corpus and updates the history_map if new coverage is
     /// found from the corpus findings of other workers.
     #[instrument(skip_all)]
-    fn calibrate(
+    fn calibrate<N, F>(
         &mut self,
-        executor: &Executor<Ethereum, EthEvmFactory>,
+        executor: &Executor<N, F>,
         fuzzed_function: Option<&Function>,
         fuzzed_contracts: Option<&FuzzRunIdentifiedContracts>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        N: Network<
+                TxEnvelope: Decodable + SignerRecoverable,
+                TransactionRequest: FoundryTransactionBuilder<N>,
+            >,
+        F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+        AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
+    {
         let Some(worker_dir) = &self.worker_dir else {
             return Ok(());
         };
@@ -974,14 +998,22 @@ impl WorkerCorpus {
 
     /// Syncs the workers in_memory_corpus and history_map with the findings from other workers.
     #[instrument(skip_all)]
-    pub fn sync(
+    pub fn sync<N, F>(
         &mut self,
         num_workers: usize,
-        executor: &Executor<Ethereum, EthEvmFactory>,
+        executor: &Executor<N, F>,
         fuzzed_function: Option<&Function>,
         fuzzed_contracts: Option<&FuzzRunIdentifiedContracts>,
         global_corpus_metrics: &GlobalCorpusMetrics,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        N: Network<
+                TxEnvelope: Decodable + SignerRecoverable,
+                TransactionRequest: FoundryTransactionBuilder<N>,
+            >,
+        F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+        AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
+    {
         trace!(target: "corpus", "syncing");
 
         self.sync_metrics(global_corpus_metrics);

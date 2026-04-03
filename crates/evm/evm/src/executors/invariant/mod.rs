@@ -5,9 +5,11 @@ use crate::{
     },
     inspectors::Fuzzer,
 };
-use alloy_evm::EthEvmFactory;
-use alloy_network::Ethereum;
+use alloy_consensus::transaction::SignerRecoverable;
+use alloy_evm::{EthEvmFactory, FromRecoveredTx};
+use alloy_network::{AnyRpcTransaction, Ethereum, Network};
 use alloy_primitives::{Address, Bytes, FixedBytes, I256, Selector, U256, map::AddressMap};
+use alloy_rlp::Decodable;
 use alloy_sol_types::{SolCall, sol};
 use eyre::{ContextCompat, Result, eyre};
 use foundry_common::{
@@ -17,9 +19,11 @@ use foundry_common::{
 };
 use foundry_config::InvariantConfig;
 use foundry_evm_core::{
+    FoundryBlock, TryAnyToTxEnv,
     constants::{
         CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME,
     },
+    evm::FoundryEvmFactory,
     precompiles::PRECOMPILES,
 };
 use foundry_evm_fuzz::{
@@ -31,11 +35,12 @@ use foundry_evm_fuzz::{
     strategies::{EvmFuzzState, invariant_strat, override_call_strat},
 };
 use foundry_evm_traces::{CallTraceArena, SparsedTraceArena};
+use foundry_primitives::FoundryTransactionBuilder;
 use indicatif::ProgressBar;
 use parking_lot::RwLock;
 use proptest::{strategy::Strategy, test_runner::TestRunner};
 use result::{assert_after_invariant, assert_invariants, can_continue};
-use revm::state::Account;
+use revm::{context::Block, primitives::hardfork::SpecId, state::Account};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
@@ -1102,17 +1107,27 @@ pub(crate) fn call_invariant_function(
 
 /// Executes a fuzz call and returns the result.
 /// Applies any block timestamp (warp) and block number (roll) adjustments before the call.
-pub(crate) fn execute_tx(
-    executor: &mut Executor<Ethereum, EthEvmFactory>,
+pub(crate) fn execute_tx<N, F>(
+    executor: &mut Executor<N, F>,
     tx: &BasicTxDetails,
-) -> Result<RawCallResult> {
+) -> Result<RawCallResult<N, F>>
+where
+    N: Network<
+            TxEnvelope: Decodable + SignerRecoverable,
+            TransactionRequest: FoundryTransactionBuilder<N>,
+        >,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+    AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
+{
     let warp = tx.warp.unwrap_or_default();
     let roll = tx.roll.unwrap_or_default();
 
     if warp > 0 || roll > 0 {
         // Apply pre-call block adjustments to the executor's env.
-        executor.evm_env_mut().block_env.timestamp += warp;
-        executor.evm_env_mut().block_env.number += roll;
+        let ts = executor.evm_env().block_env.timestamp();
+        let num = executor.evm_env().block_env.number();
+        executor.evm_env_mut().block_env.set_timestamp(ts + warp);
+        executor.evm_env_mut().block_env.set_number(num + roll);
 
         // Also update the inspector's cheatcodes.block if set.
         // The inspector's block may override the env during interpreter initialization,
@@ -1120,8 +1135,10 @@ pub(crate) fn execute_tx(
         let block_env = executor.evm_env().block_env.clone();
         if let Some(cheatcodes) = executor.inspector_mut().cheatcodes.as_mut() {
             if let Some(block) = cheatcodes.block.as_mut() {
-                block.timestamp += warp;
-                block.number += roll;
+                let bts = block.timestamp();
+                let bnum = block.number();
+                block.set_timestamp(bts + warp);
+                block.set_number(bnum + roll);
             } else {
                 cheatcodes.block = Some(block_env);
             }
