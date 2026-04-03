@@ -48,7 +48,7 @@ use foundry_evm::{
     backend::Backend,
     core::{
         Breakpoints,
-        evm::{EthEvmNetwork, FoundryEvmNetwork},
+        evm::{EthEvmNetwork, FoundryEvmNetwork, TempoEvmNetwork},
     },
     executors::ExecutorBuilder,
     inspectors::{
@@ -261,7 +261,15 @@ impl ScriptArgs {
     pub async fn run_script(self) -> Result<()> {
         trace!(target: "script", "executing script command");
 
-        let state = self.preprocess::<EthEvmNetwork>().await?;
+        if self.load_config_and_evm_opts()?.1.networks.is_tempo() {
+            self.run_generic_script::<TempoEvmNetwork>().await
+        } else {
+            self.run_generic_script::<EthEvmNetwork>().await
+        }
+    }
+
+    async fn run_generic_script<FEN: FoundryEvmNetwork>(self) -> Result<()> {
+        let state = self.preprocess::<FEN>().await?;
         let create2_deployer = state.script_config.evm_opts.create2_deployer;
         let compiled = state.compile()?;
 
