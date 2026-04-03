@@ -13,7 +13,7 @@ use alloy_consensus::transaction::SignerRecoverable;
 use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
 use alloy_evm::{EthEvmFactory, FromRecoveredTx};
 use alloy_json_abi::Function;
-use alloy_network::{AnyNetwork, AnyRpcTransaction, Ethereum, Network};
+use alloy_network::{Ethereum, Network};
 use alloy_primitives::{
     Address, Bytes, Log, TxKind, U256, keccak256,
     map::{AddressHashMap, HashMap},
@@ -21,7 +21,7 @@ use alloy_primitives::{
 use alloy_rlp::Decodable;
 use alloy_sol_types::{SolCall, sol};
 use foundry_evm_core::{
-    EvmEnv, FoundryBlock, FoundryTransaction, TryAnyToTxEnv,
+    EvmEnv, FoundryBlock, FoundryTransaction,
     backend::{Backend, BackendError, BackendResult, CowBackend, DatabaseExt, GLOBAL_FAIL_SLOT},
     constants::{
         CALLER, CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, DEFAULT_CREATE2_DEPLOYER,
@@ -101,7 +101,7 @@ pub struct Executor<N: Network, F: FoundryEvmFactory> {
     // only interested in the database. REVM's `EVM` is a thin
     // wrapper around spawning a new EVM on every call anyway,
     // so the performance difference should be negligible.
-    backend: Arc<Backend<AnyNetwork, F>>,
+    backend: Arc<Backend<N, F>>,
     /// The EVM environment (block and cfg).
     evm_env: EvmEnv<F::Spec, F::BlockEnv>,
     /// The transaction environment.
@@ -121,12 +121,11 @@ where
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
     F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
-    AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
 {
     /// Creates a new `Executor` with the given arguments.
     #[inline]
     pub fn new(
-        mut backend: Backend<AnyNetwork, F>,
+        mut backend: Backend<N, F>,
         evm_env: EvmEnv<F::Spec, F::BlockEnv>,
         tx_env: F::Tx,
         inspector: InspectorStack<N, F>,
@@ -156,7 +155,7 @@ where
         }
     }
 
-    fn clone_with_backend(&self, backend: Backend<AnyNetwork, F>) -> Self {
+    fn clone_with_backend(&self, backend: Backend<N, F>) -> Self {
         let evm_env = self.evm_env.clone();
         Self {
             backend: Arc::new(backend),
@@ -169,7 +168,7 @@ where
     }
 
     /// Returns a reference to the EVM backend.
-    pub fn backend(&self) -> &Backend<AnyNetwork, F> {
+    pub fn backend(&self) -> &Backend<N, F> {
         &self.backend
     }
 
@@ -177,7 +176,7 @@ where
     ///
     /// Uses copy-on-write semantics: if other clones of this executor share the backend,
     /// this will clone the backend first.
-    pub fn backend_mut(&mut self) -> &mut Backend<AnyNetwork, F> {
+    pub fn backend_mut(&mut self) -> &mut Backend<N, F> {
         Arc::make_mut(&mut self.backend)
     }
 
@@ -1093,7 +1092,6 @@ where
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
     F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-    AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
 {
     let (exit_reason, gas_refunded, gas_used, out, exec_logs) = match result {
         ExecutionResult::Success { reason, gas, output, logs } => {
