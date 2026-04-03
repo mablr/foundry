@@ -789,7 +789,9 @@ impl<N: Network> Backend<N> {
         let mut traces = vec![];
         let storage = self.blockchain.storage.read();
         for tx in block.body.transactions {
-            traces.extend(storage.transactions.get(&tx.hash())?.parity_traces());
+            if let Some(mined_tx) = storage.transactions.get(&tx.hash()) {
+                traces.extend(mined_tx.parity_traces());
+            }
         }
         Some(traces)
     }
