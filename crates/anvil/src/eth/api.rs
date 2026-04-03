@@ -390,13 +390,13 @@ impl<N: Network> EthApi<N> {
         let evm_env = self.backend.evm_env().read();
         let fork_config = self.backend.get_fork();
         let tx_order = self.transaction_order.read();
-        let hard_fork: &str = (*evm_env.spec_id()).into();
+        let hard_fork = self.backend.hardfork().name();
 
         Ok(NodeInfo {
             current_block_number: self.backend.best_number(),
             current_block_timestamp: evm_env.block_env.timestamp.saturating_to(),
             current_block_hash: self.backend.best_hash(),
-            hard_fork: hard_fork.to_string(),
+            hard_fork,
             transaction_order: match *tx_order {
                 TransactionOrder::Fifo => "fifo".to_string(),
                 TransactionOrder::Fees => "fees".to_string(),

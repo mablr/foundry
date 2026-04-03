@@ -88,7 +88,7 @@ impl TracingExecutor {
 
         let (evm_env, tx_env, fork_block) = evm_opts.env::<_, _, TxEnv>().await?;
 
-        let fork = evm_opts.get_fork(config, &evm_env, fork_block).unwrap();
+        let fork = evm_opts.get_fork(config, evm_env.cfg_env.chain_id, fork_block).unwrap();
         let networks = evm_opts.networks.with_chain_id(evm_env.cfg_env.chain_id);
         config.labels.extend(networks.precompiles_label());
 

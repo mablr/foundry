@@ -309,11 +309,11 @@ impl EvmOpts {
     pub fn get_fork(
         &self,
         config: &Config,
-        evm_env: &EvmEnv,
+        chain_id: u64,
         fork_block_number: Option<BlockNumber>,
     ) -> Option<CreateFork> {
         let url = self.fork_url.clone()?;
-        let enable_caching = config.enable_caching(&url, evm_env.cfg_env.chain_id);
+        let enable_caching = config.enable_caching(&url, chain_id);
 
         // Pin fork_block_number to the block that was already fetched in env, so subsequent
         // fork operations use the same block. This prevents inconsistencies when forking at
@@ -450,7 +450,8 @@ mod tests {
         assert!(resolved_block > 0, "should have resolved to a real block number");
 
         // Create the fork - this should pin the block number
-        let fork = evm_opts.get_fork(&Config::default(), &evm_env, fork_block).unwrap();
+        let fork =
+            evm_opts.get_fork(&Config::default(), evm_env.cfg_env.chain_id, fork_block).unwrap();
 
         // The fork's evm_opts should now have fork_block_number set to the resolved block
         assert_eq!(
@@ -487,7 +488,9 @@ mod tests {
         );
 
         // Verify get_fork pins to the correct L2 block number
-        let fork = evm_opts.get_fork(&Config::default(), &evm_env, Some(fork_block)).unwrap();
+        let fork = evm_opts
+            .get_fork(&Config::default(), evm_env.cfg_env.chain_id, Some(fork_block))
+            .unwrap();
         assert_eq!(
             fork.evm_opts.fork_block_number,
             Some(fork_block),
@@ -505,9 +508,10 @@ mod tests {
         // Set an explicit block number
         evm_opts.fork_block_number = Some(12345678);
 
-        let (evm_env, _, fork_block) = evm_opts.env::<SpecId, _, TxEnv>().await.unwrap();
+        let (evm_env, _, fork_block) = evm_opts.env::<SpecId, BlockEnv, TxEnv>().await.unwrap();
 
-        let fork = evm_opts.get_fork(&Config::default(), &evm_env, fork_block).unwrap();
+        let fork =
+            evm_opts.get_fork(&Config::default(), evm_env.cfg_env.chain_id, fork_block).unwrap();
 
         // Should preserve the explicit block number, not override it
         assert_eq!(

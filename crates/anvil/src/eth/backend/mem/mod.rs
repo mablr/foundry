@@ -94,6 +94,7 @@ use foundry_evm::{
     constants::DEFAULT_CREATE2_DEPLOYER_RUNTIME_CODE,
     core::precompiles::EC_RECOVER,
     decode::RevertDecoder,
+    hardfork::FoundryHardfork,
     inspectors::AccessListInspector,
     traces::{
         CallTraceDecoder, FourByteInspector, GethTraceBuilder, TracingInspector,
@@ -219,6 +220,8 @@ pub struct Backend<N: Network> {
     evm_env: Arc<RwLock<EvmEnv>>,
     /// Network configuration (optimism, custom precompiles, etc.)
     networks: NetworkConfigs,
+    /// The active hardfork.
+    hardfork: FoundryHardfork,
     /// This is set if this is currently forked off another client.
     fork: Arc<RwLock<Option<ClientFork>>>,
     /// Provides time related info, like timestamp.
@@ -261,6 +264,7 @@ impl<N: Network> Clone for Backend<N> {
             states: self.states.clone(),
             evm_env: self.evm_env.clone(),
             networks: self.networks,
+            hardfork: self.hardfork,
             fork: self.fork.clone(),
             time: self.time.clone(),
             cheats: self.cheats.clone(),
@@ -485,6 +489,11 @@ impl<N: Network> Backend<N> {
     /// Returns true if Tempo network mode is active
     pub fn is_tempo(&self) -> bool {
         self.networks.is_tempo()
+    }
+
+    /// Returns the active hardfork.
+    pub fn hardfork(&self) -> FoundryHardfork {
+        self.hardfork
     }
 
     /// Returns the precompiles for the current spec.
@@ -936,6 +945,27 @@ impl<N: Network> Backend<N> {
         if is_arbitrum(self.chain_id().to::<u64>()) {
             // Set `l1BlockNumber` field.
             block.other.insert("l1BlockNumber".to_string(), number.into());
+        }
+
+        // Add Tempo-specific header fields for compatibility with TempoNetwork provider.
+        if self.is_tempo() {
+            let timestamp = block.header.timestamp();
+            let gas_limit = block.header.gas_limit();
+            block.other.insert(
+                "timestampMillis".to_string(),
+                serde_json::Value::String(format!("0x{:x}", timestamp.saturating_mul(1000))),
+            );
+            block.other.insert(
+                "mainBlockGeneralGasLimit".to_string(),
+                serde_json::Value::String(format!("0x{gas_limit:x}")),
+            );
+            block
+                .other
+                .insert("sharedGasLimit".to_string(), serde_json::Value::String("0x0".to_string()));
+            block.other.insert(
+                "timestampMillisPart".to_string(),
+                serde_json::Value::String("0x0".to_string()),
+            );
         }
 
         AnyRpcBlock::from(block)
@@ -1868,9 +1898,14 @@ impl<N: Network> Backend<N> {
             states = states.disk_path(cache_path);
         }
 
-        let (slots_in_an_epoch, precompile_factory, disable_pool_balance_checks) = {
+        let (slots_in_an_epoch, precompile_factory, disable_pool_balance_checks, hardfork) = {
             let cfg = node_config.read().await;
-            (cfg.slots_in_an_epoch, cfg.precompile_factory.clone(), cfg.disable_pool_balance_checks)
+            (
+                cfg.slots_in_an_epoch,
+                cfg.precompile_factory.clone(),
+                cfg.disable_pool_balance_checks,
+                cfg.get_hardfork(),
+            )
         };
 
         let backend = Self {
@@ -1879,6 +1914,7 @@ impl<N: Network> Backend<N> {
             states: Arc::new(RwLock::new(states)),
             evm_env: env,
             networks,
+            hardfork,
             fork,
             time: TimeManager::new(start_timestamp),
             cheats: Default::default(),
@@ -4026,7 +4062,10 @@ impl Backend<FoundryNetwork> {
         };
 
         // Include timestamp in receipt to avoid extra block lookups (e.g., in Otterscan API)
-        let inner = FoundryTxReceipt::with_timestamp(receipt, block.header.timestamp());
+        let mut inner = FoundryTxReceipt::with_timestamp(receipt, block.header.timestamp());
+        if self.is_tempo() {
+            inner = inner.with_fee_payer(info.from);
+        }
         Some(MinedTransactionReceipt { inner, out: info.out })
     }
 
@@ -4544,33 +4583,7 @@ pub fn is_arbitrum(chain_id: u64) -> bool {
 ///
 /// Abstracts over network-specific halt reason types (`HaltReason`, `OpHaltReason`)
 /// so that anvil code doesn't need to match on each variant directly.
-pub trait IntoInstructionResult {
-    fn into_instruction_result(self) -> InstructionResult;
-}
-
-impl IntoInstructionResult for HaltReason {
-    fn into_instruction_result(self) -> InstructionResult {
-        self.into()
-    }
-}
-
-impl IntoInstructionResult for OpHaltReason {
-    fn into_instruction_result(self) -> InstructionResult {
-        match self {
-            Self::Base(eth_h) => eth_h.into(),
-            Self::FailedDeposit => InstructionResult::Stop,
-        }
-    }
-}
-
-impl IntoInstructionResult for TempoHaltReason {
-    fn into_instruction_result(self) -> InstructionResult {
-        match self {
-            Self::Ethereum(eth_h) => eth_h.into(),
-            _ => InstructionResult::PrecompileError,
-        }
-    }
-}
+pub use foundry_evm::core::evm::IntoInstructionResult;
 
 #[cfg(test)]
 mod tests {

@@ -16,6 +16,7 @@ use alloy_evm::{
 use alloy_primitives::{Address, B256, Bytes, U256};
 use foundry_config::FromEvmVersion;
 use foundry_fork_db::{DatabaseError, ForkBlockEnv};
+use op_revm::OpHaltReason;
 use revm::{
     Context,
     context::{
@@ -40,11 +41,41 @@ use tempo_revm::{
     gas_params::tempo_gas_params, handler::TempoEvmHandler,
 };
 
+/// Converts a network-specific halt reason into an [`InstructionResult`].
+pub trait IntoInstructionResult {
+    fn into_instruction_result(self) -> InstructionResult;
+}
+
+impl IntoInstructionResult for HaltReason {
+    fn into_instruction_result(self) -> InstructionResult {
+        self.into()
+    }
+}
+
+impl IntoInstructionResult for OpHaltReason {
+    fn into_instruction_result(self) -> InstructionResult {
+        match self {
+            Self::Base(eth) => eth.into(),
+            Self::FailedDeposit => InstructionResult::Stop,
+        }
+    }
+}
+
+impl IntoInstructionResult for TempoHaltReason {
+    fn into_instruction_result(self) -> InstructionResult {
+        match self {
+            Self::Ethereum(eth) => eth.into(),
+            _ => InstructionResult::PrecompileError,
+        }
+    }
+}
+
 pub trait FoundryEvmFactory:
     EvmFactory<
         Spec: Into<SpecId> + FromEvmVersion + Default + Copy + Unpin + Send + 'static,
         BlockEnv: FoundryBlock + ForkBlockEnv + Default + Unpin,
-        Tx: Clone + FoundryTransaction + Default,
+        Tx: Clone + Debug + FoundryTransaction + Default + Send + Sync,
+        HaltReason: IntoInstructionResult,
         Precompiles = PrecompilesMap,
     > + Clone
     + Debug
@@ -146,7 +177,13 @@ impl FoundryEvmFactory for EthEvmFactory {
         evm_env: EvmEnv,
         inspector: I,
     ) -> Self::FoundryEvm<'db, I> {
-        new_eth_evm_with_inspector(db, evm_env, inspector)
+        let eth_evm = Self::default().create_evm_with_inspector(db, evm_env, inspector);
+        let mut inner = eth_evm.into_inner();
+        inner.ctx.cfg.tx_chain_id_check = true;
+
+        let mut evm = EthFoundryEvm { inner };
+        evm.inspector().get_networks().inject_precompiles(evm.precompiles_mut());
+        evm
     }
 
     fn transact_with_dyn_inspector(
@@ -157,7 +194,7 @@ impl FoundryEvmFactory for EthEvmFactory {
         depth: usize,
         tx_env: TxEnv,
     ) -> eyre::Result<ResultAndState<Self::HaltReason>> {
-        let mut evm = new_eth_evm_with_inspector(db, evm_env, inspector);
+        let mut evm = self.create_foundry_evm_with_inspector(db, evm_env, inspector);
         evm.journaled_state.depth = depth;
         Ok(evm.transact_raw(tx_env)?)
     }
@@ -184,25 +221,6 @@ impl FoundryEvmFactory for EthEvmFactory {
     ) -> eyre::Result<()> {
         db.transact_from_tx(tx_env, evm_env, journaled_state, inspector)
     }
-}
-
-/// Creates a new Eth EVM instance with an inspector, applying Foundry-specific setup
-/// (chain ID check, network precompile injection).
-pub fn new_eth_evm_with_inspector<
-    'db,
-    I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<BlockEnv, TxEnv, SpecId>>>,
->(
-    db: &'db mut dyn DatabaseExt<BlockEnv, TxEnv, SpecId>,
-    evm_env: EvmEnv,
-    inspector: I,
-) -> EthFoundryEvm<'db, I> {
-    let eth_evm = EthEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
-    let mut inner = eth_evm.into_inner();
-    inner.ctx.cfg.tx_chain_id_check = true;
-
-    let mut evm = EthFoundryEvm { inner };
-    evm.inspector().get_networks().inject_precompiles(evm.precompiles_mut());
-    evm
 }
 
 /// Get the call inputs for the CREATE2 factory.
@@ -650,30 +668,6 @@ pub struct TempoFoundryEvm<
     pub inner: TempoRevmEvm<'db, I>,
 }
 
-/// Creates a new Tempo EVM instance with an inspector, applying Foundry-specific setup
-/// (gas params, chain ID check, network precompile injection).
-pub fn new_tempo_evm_with_inspector<
-    'db,
-    I: FoundryInspectorExt<
-        TempoContext<&'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>>,
-    >,
->(
-    db: &'db mut dyn DatabaseExt<TempoBlockEnv, TempoTxEnv, TempoHardfork>,
-    mut evm_env: EvmEnv<TempoHardfork, TempoBlockEnv>,
-    inspector: I,
-) -> TempoFoundryEvm<'db, I> {
-    evm_env.cfg_env.gas_params = tempo_gas_params(evm_env.cfg_env.spec);
-    evm_env.cfg_env.tx_chain_id_check = true;
-
-    let tempo_evm = TempoEvmFactory::default().create_evm_with_inspector(db, evm_env, inspector);
-    let inner = tempo_evm.into_inner();
-
-    let mut evm = TempoFoundryEvm { inner };
-    let networks = Evm::inspector(&evm).get_networks();
-    networks.inject_precompiles(evm.precompiles_mut());
-    evm
-}
-
 impl FoundryEvmFactory for TempoEvmFactory {
     type FoundryContext<'db> =
         TempoContext<&'db mut dyn DatabaseExt<Self::BlockEnv, Self::Tx, Self::Spec>>;
@@ -687,7 +681,16 @@ impl FoundryEvmFactory for TempoEvmFactory {
         evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
         inspector: I,
     ) -> Self::FoundryEvm<'db, I> {
-        new_tempo_evm_with_inspector(db, evm_env, inspector)
+        let spec = *evm_env.spec_id();
+        let tempo_evm = Self::default().create_evm_with_inspector(db, evm_env, inspector);
+        let mut inner = tempo_evm.into_inner();
+        inner.ctx.cfg.gas_params = tempo_gas_params(spec);
+        inner.ctx.cfg.tx_chain_id_check = true;
+
+        let mut evm = TempoFoundryEvm { inner };
+        let networks = Evm::inspector(&evm).get_networks();
+        networks.inject_precompiles(evm.precompiles_mut());
+        evm
     }
 
     fn transact_with_dyn_inspector(
@@ -698,7 +701,7 @@ impl FoundryEvmFactory for TempoEvmFactory {
         depth: usize,
         tx_env: TempoTxEnv,
     ) -> eyre::Result<ResultAndState<Self::HaltReason>> {
-        let mut evm = new_tempo_evm_with_inspector(db, evm_env, inspector);
+        let mut evm = self.create_foundry_evm_with_inspector(db, evm_env, inspector);
         evm.journaled_state.depth = depth;
         Ok(evm.transact_raw(tx_env)?)
     }
