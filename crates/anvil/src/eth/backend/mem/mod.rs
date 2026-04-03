@@ -94,6 +94,7 @@ use foundry_evm::{
     constants::DEFAULT_CREATE2_DEPLOYER_RUNTIME_CODE,
     core::precompiles::EC_RECOVER,
     decode::RevertDecoder,
+    hardfork::FoundryHardfork,
     inspectors::AccessListInspector,
     traces::{
         CallTraceDecoder, FourByteInspector, GethTraceBuilder, TracingInspector,
@@ -219,6 +220,8 @@ pub struct Backend<N: Network> {
     evm_env: Arc<RwLock<EvmEnv>>,
     /// Network configuration (optimism, custom precompiles, etc.)
     networks: NetworkConfigs,
+    /// The active hardfork.
+    hardfork: FoundryHardfork,
     /// This is set if this is currently forked off another client.
     fork: Arc<RwLock<Option<ClientFork>>>,
     /// Provides time related info, like timestamp.
@@ -261,6 +264,7 @@ impl<N: Network> Clone for Backend<N> {
             states: self.states.clone(),
             evm_env: self.evm_env.clone(),
             networks: self.networks,
+            hardfork: self.hardfork,
             fork: self.fork.clone(),
             time: self.time.clone(),
             cheats: self.cheats.clone(),
@@ -485,6 +489,11 @@ impl<N: Network> Backend<N> {
     /// Returns true if Tempo network mode is active
     pub fn is_tempo(&self) -> bool {
         self.networks.is_tempo()
+    }
+
+    /// Returns the active hardfork.
+    pub fn hardfork(&self) -> FoundryHardfork {
+        self.hardfork
     }
 
     /// Returns the precompiles for the current spec.
@@ -1868,9 +1877,14 @@ impl<N: Network> Backend<N> {
             states = states.disk_path(cache_path);
         }
 
-        let (slots_in_an_epoch, precompile_factory, disable_pool_balance_checks) = {
+        let (slots_in_an_epoch, precompile_factory, disable_pool_balance_checks, hardfork) = {
             let cfg = node_config.read().await;
-            (cfg.slots_in_an_epoch, cfg.precompile_factory.clone(), cfg.disable_pool_balance_checks)
+            (
+                cfg.slots_in_an_epoch,
+                cfg.precompile_factory.clone(),
+                cfg.disable_pool_balance_checks,
+                cfg.get_hardfork(),
+            )
         };
 
         let backend = Self {
@@ -1879,6 +1893,7 @@ impl<N: Network> Backend<N> {
             states: Arc::new(RwLock::new(states)),
             evm_env: env,
             networks,
+            hardfork,
             fork,
             time: TimeManager::new(start_timestamp),
             cheats: Default::default(),
