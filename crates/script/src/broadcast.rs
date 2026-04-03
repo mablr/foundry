@@ -25,11 +25,10 @@ use foundry_common::{
     shell,
 };
 use foundry_config::Config;
-use foundry_evm::core::evm::EthEvmNetwork;
+use foundry_evm::core::evm::FoundryEvmNetwork;
 use foundry_wallets::{TempoAccessKeyConfig, WalletSigner, wallet_browser::signer::BrowserSigner};
 use futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered};
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 
 pub async fn estimate_gas<N: Network, P: Provider<N>>(
     tx: &mut N::TransactionRequest,
@@ -265,24 +264,16 @@ impl<N: Network> SendTransactionsKind<N> {
 /// State after we have bundled all
 /// [`TransactionWithMetadata`](forge_script_sequence::TransactionWithMetadata) objects into a
 /// single [`ScriptSequenceKind`] object containing one or more script sequences.
-pub struct BundledState<N: Network>
-where
-    N::TxEnvelope: for<'d> Deserialize<'d> + Serialize,
-    N::TransactionRequest: for<'d> Deserialize<'d> + Serialize,
-{
+pub struct BundledState<FEN: FoundryEvmNetwork> {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig<EthEvmNetwork>,
+    pub script_config: ScriptConfig<FEN>,
     pub script_wallets: Wallets,
-    pub browser_wallet: Option<BrowserSigner<N>>,
+    pub browser_wallet: Option<BrowserSigner<FEN::Network>>,
     pub build_data: LinkedBuildData,
-    pub sequence: ScriptSequenceKind<N>,
+    pub sequence: ScriptSequenceKind<FEN::Network>,
 }
 
-impl<N: Network> BundledState<N>
-where
-    N::TxEnvelope: for<'d> Deserialize<'d> + Serialize,
-    N::TransactionRequest: for<'d> Deserialize<'d> + Serialize,
-{
+impl<FEN: FoundryEvmNetwork> BundledState<FEN> {
     pub async fn wait_for_pending(mut self) -> Result<Self> {
         let progress = ScriptProgress::default();
         let progress_ref = &progress;
@@ -317,12 +308,7 @@ where
     }
 
     /// Broadcasts transactions from all sequences.
-    pub async fn broadcast(mut self) -> Result<BroadcastedState<N>>
-    where
-        N::TxEnvelope: From<Signed<N::UnsignedTx>>,
-        N::UnsignedTx: SignableTransaction<Signature>,
-        N::TransactionRequest: FoundryTransactionBuilder<N>,
-    {
+    pub async fn broadcast(mut self) -> Result<BroadcastedState<FEN>> {
         let required_addresses = self
             .sequence
             .sequences()

@@ -9,15 +9,17 @@ use crate::{
     backend::{DatabaseExt, JournaledState, LocalForkId},
     constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
 };
-use alloy_consensus::{constants::KECCAK_EMPTY, transaction::SignerRecoverable};
+use alloy_consensus::{
+    SignableTransaction, Signed, constants::KECCAK_EMPTY, transaction::SignerRecoverable,
+};
 use alloy_evm::{
     EthEvmFactory, Evm, EvmEnv, EvmFactory, FromRecoveredTx, eth::EthEvmContext,
     precompiles::PrecompilesMap,
 };
 use alloy_network::{Ethereum, Network};
-use alloy_primitives::{Address, B256, Bytes, U256};
+use alloy_primitives::{Address, B256, Bytes, Signature, U256};
 use alloy_rlp::Decodable;
-use foundry_common::FoundryTransactionBuilder;
+use foundry_common::{FoundryReceiptResponse, FoundryTransactionBuilder, fmt::UIfmt};
 use foundry_config::FromEvmVersion;
 use foundry_fork_db::{DatabaseError, ForkBlockEnv};
 use op_revm::OpHaltReason;
@@ -38,6 +40,7 @@ use revm::{
     },
     primitives::hardfork::SpecId,
 };
+use serde::{Deserialize, Serialize};
 use tempo_alloy::TempoNetwork;
 use tempo_chainspec::hardfork::TempoHardfork;
 use tempo_evm::evm::TempoEvmFactory;
@@ -78,8 +81,17 @@ impl IntoInstructionResult for TempoHaltReason {
 /// Foundry's supertrait associating [Network] with [FoundryEvmFactory]
 pub trait FoundryEvmNetwork: Copy + Debug + Default + 'static {
     type Network: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<Self::Network>,
+            TxEnvelope: Decodable
+                            + SignerRecoverable
+                            + From<Signed<<Self::Network as Network>::UnsignedTx>>
+                            + for<'d> Deserialize<'d>
+                            + Serialize
+                            + UIfmt,
+            UnsignedTx: SignableTransaction<Signature>,
+            TransactionRequest: FoundryTransactionBuilder<Self::Network>
+                                    + for<'d> Deserialize<'d>
+                                    + Serialize,
+            ReceiptResponse: FoundryReceiptResponse,
         >;
     type EvmFactory: FoundryEvmFactory<Tx: FromRecoveredTx<<Self::Network as Network>::TxEnvelope>>;
 }
