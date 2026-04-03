@@ -2,18 +2,21 @@ use crate::executors::{
     DURATION_BETWEEN_METRICS_REPORT, EarlyExit, Executor, FuzzTestTimer, RawCallResult,
     corpus::{GlobalCorpusMetrics, WorkerCorpus},
 };
+use alloy_consensus::transaction::SignerRecoverable;
 use alloy_dyn_abi::JsonAbiExt;
-use alloy_evm::EthEvmFactory;
+use alloy_evm::FromRecoveredTx;
 use alloy_json_abi::Function;
-use alloy_network::Ethereum;
+use alloy_network::{AnyRpcTransaction, Network};
 use alloy_primitives::{Address, Bytes, Log, U256, keccak256, map::HashMap};
+use alloy_rlp::Decodable;
 use eyre::Result;
 use foundry_common::sh_println;
 use foundry_config::FuzzConfig;
 use foundry_evm_core::{
-    Breakpoints,
+    Breakpoints, TryAnyToTxEnv,
     constants::{CHEATCODE_ADDRESS, MAGIC_ASSUME},
     decode::{RevertDecoder, SkipReason},
+    evm::FoundryEvmFactory,
 };
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_fuzz::{
@@ -22,12 +25,14 @@ use foundry_evm_fuzz::{
     strategies::{EvmFuzzState, fuzz_calldata, fuzz_calldata_from_state},
 };
 use foundry_evm_traces::SparsedTraceArena;
+use foundry_primitives::FoundryTransactionBuilder;
 use indicatif::ProgressBar;
 use proptest::{
     strategy::Strategy,
     test_runner::{RngAlgorithm, TestCaseError, TestRng, TestRunner},
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use revm::primitives::hardfork::SpecId;
 use serde_json::json;
 use std::{
     sync::{
@@ -47,8 +52,7 @@ const SYNC_INTERVAL: u32 = 1000;
 /// This is mainly to reduce the overall number of rayon jobs.
 const MIN_RUNS_PER_WORKER: u32 = 64;
 
-#[derive(Default)]
-struct WorkerState {
+struct WorkerState<N: Network, F: FoundryEvmFactory> {
     /// Worker identifier
     id: usize,
     /// First fuzz case this worker encountered (with global run number)
@@ -56,7 +60,7 @@ struct WorkerState {
     /// Gas usage for all cases this worker ran
     gas_by_case: Vec<(u64, u64)>,
     /// Counterexample if this worker found one
-    counterexample: (Bytes, RawCallResult),
+    counterexample: (Bytes, RawCallResult<N, F>),
     /// Traces collected by this worker
     ///
     /// Stores up to `max_traces_to_collect` which is `config.gas_report_samples / num_workers`
@@ -81,9 +85,23 @@ struct WorkerState {
     failed_corpus_replays: usize,
 }
 
-impl WorkerState {
+impl<N: Network, F: FoundryEvmFactory> WorkerState<N, F> {
     fn new(worker_id: usize) -> Self {
-        Self { id: worker_id, ..Default::default() }
+        Self {
+            id: worker_id,
+            first_case: None,
+            gas_by_case: Vec::new(),
+            counterexample: (Bytes::new(), RawCallResult::default()),
+            traces: Vec::new(),
+            breakpoints: None,
+            coverage: None,
+            logs: Vec::new(),
+            deprecated_cheatcodes: HashMap::default(),
+            runs: 0,
+            failure: None,
+            last_run_timestamp: 0,
+            failed_corpus_replays: 0,
+        }
     }
 }
 
@@ -160,9 +178,9 @@ impl SharedFuzzState {
 /// After instantiation, calling `fuzz` will proceed to hammer the deployed smart contract with
 /// inputs, until it finds a counterexample. The provided [`TestRunner`] contains all the
 /// configuration which can be overridden via [environment variables](proptest::test_runner::Config)
-pub struct FuzzedExecutor {
+pub struct FuzzedExecutor<N: Network, F: FoundryEvmFactory> {
     /// The EVM executor.
-    executor_f: Executor<Ethereum, EthEvmFactory>,
+    executor_f: Executor<N, F>,
     /// The fuzzer
     runner: TestRunner,
     /// The account that calls tests.
@@ -175,10 +193,18 @@ pub struct FuzzedExecutor {
     num_workers: usize,
 }
 
-impl FuzzedExecutor {
+impl<N, F> FuzzedExecutor<N, F>
+where
+    N: Network<
+            TxEnvelope: Decodable + SignerRecoverable,
+            TransactionRequest: FoundryTransactionBuilder<N>,
+        >,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+    AnyRpcTransaction: TryAnyToTxEnv<F::Tx>,
+{
     /// Instantiates a fuzzed executor given a testrunner
     pub fn new(
-        executor: Executor<Ethereum, EthEvmFactory>,
+        executor: Executor<N, F>,
         runner: TestRunner,
         sender: Address,
         config: FuzzConfig,
@@ -239,11 +265,11 @@ impl FuzzedExecutor {
     /// or a `CounterExampleOutcome`
     fn single_fuzz(
         &self,
-        executor: &Executor<Ethereum, EthEvmFactory>,
+        executor: &Executor<N, F>,
         address: Address,
         calldata: Bytes,
         coverage_metrics: &mut WorkerCorpus,
-    ) -> Result<FuzzOutcome, TestCaseError> {
+    ) -> Result<FuzzOutcome<N, F>, TestCaseError> {
         let mut call = executor
             .call_raw(self.sender, address, calldata.clone(), U256::ZERO)
             .map_err(|e| TestCaseError::fail(e.to_string()))?;
@@ -301,7 +327,7 @@ impl FuzzedExecutor {
     /// Aggregates the results from all workers
     fn aggregate_results(
         &self,
-        mut workers: Vec<WorkerState>,
+        mut workers: Vec<WorkerState<N, F>>,
         func: &Function,
         shared_state: &SharedFuzzState,
     ) -> FuzzTestResult {
@@ -405,7 +431,7 @@ impl FuzzedExecutor {
         rd: &RevertDecoder,
         shared_state: &SharedFuzzState,
         progress: Option<&ProgressBar>,
-    ) -> Result<WorkerState> {
+    ) -> Result<WorkerState<N, F>> {
         // Prepare
         let dictionary_weight = self.config.dictionary.dictionary_weight.min(100);
         let strategy = proptest::prop_oneof![

@@ -13,7 +13,7 @@ extern crate tracing;
 
 use crate::runner::ScriptRunner;
 use alloy_json_abi::{Function, JsonAbi};
-use alloy_network::Ethereum;
+use alloy_network::{Ethereum, Network};
 use alloy_primitives::{
     Address, Bytes, Log, U256, hex,
     map::{AddressHashMap, HashMap},
@@ -417,7 +417,7 @@ impl ScriptArgs {
     /// the user.
     fn check_contract_sizes(
         &self,
-        result: &ScriptResult,
+        result: &ScriptResult<Ethereum>,
         known_contracts: &ContractsByArtifact,
         create2_deployer: Address,
     ) -> Result<()> {
@@ -534,8 +534,9 @@ impl Provider for ScriptArgs {
     }
 }
 
-#[derive(Default, Serialize, Clone)]
-pub struct ScriptResult {
+#[derive(Serialize, Clone)]
+#[serde(bound = "")]
+pub struct ScriptResult<N: Network> {
     pub success: bool,
     #[serde(rename = "raw_logs")]
     pub logs: Vec<Log>,
@@ -543,14 +544,30 @@ pub struct ScriptResult {
     pub gas_used: u64,
     pub labeled_addresses: AddressHashMap<String>,
     #[serde(skip)]
-    pub transactions: Option<BroadcastableTransactions<Ethereum>>,
+    pub transactions: Option<BroadcastableTransactions<N>>,
     pub returned: Bytes,
     pub address: Option<Address>,
     #[serde(skip)]
     pub breakpoints: Breakpoints,
 }
 
-impl ScriptResult {
+impl<N: Network> Default for ScriptResult<N> {
+    fn default() -> Self {
+        Self {
+            success: Default::default(),
+            logs: Default::default(),
+            traces: Default::default(),
+            gas_used: Default::default(),
+            labeled_addresses: Default::default(),
+            transactions: Default::default(),
+            returned: Default::default(),
+            address: Default::default(),
+            breakpoints: Default::default(),
+        }
+    }
+}
+
+impl<N: Network> ScriptResult<N> {
     pub fn get_created_contracts(
         &self,
         known_contracts: &ContractsByArtifact,
@@ -579,11 +596,12 @@ impl ScriptResult {
 }
 
 #[derive(Serialize)]
-struct JsonResult<'a> {
+#[serde(bound = "")]
+struct JsonResult<'a, N: Network> {
     logs: Vec<String>,
     returns: &'a HashMap<String, NestedValue>,
     #[serde(flatten)]
-    result: &'a ScriptResult,
+    result: &'a ScriptResult<N>,
 }
 
 #[derive(Clone, Debug)]
