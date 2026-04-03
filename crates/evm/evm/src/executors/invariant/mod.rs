@@ -5,15 +5,11 @@ use crate::{
     },
     inspectors::Fuzzer,
 };
-use alloy_consensus::transaction::SignerRecoverable;
-use alloy_evm::{EthEvmFactory, FromRecoveredTx};
-use alloy_network::{Ethereum, Network};
 use alloy_primitives::{Address, Bytes, FixedBytes, I256, Selector, U256, map::AddressMap};
-use alloy_rlp::Decodable;
 use alloy_sol_types::{SolCall, sol};
 use eyre::{ContextCompat, Result, eyre};
 use foundry_common::{
-    FoundryTransactionBuilder, TestFunctionExt,
+    TestFunctionExt,
     contracts::{ContractsByAddress, ContractsByArtifact},
     sh_println,
 };
@@ -23,7 +19,7 @@ use foundry_evm_core::{
     constants::{
         CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME,
     },
-    evm::FoundryEvmFactory,
+    evm::{EthEvmNetwork, FoundryEvmNetwork},
     precompiles::PRECOMPILES,
 };
 use foundry_evm_fuzz::{
@@ -272,7 +268,7 @@ struct InvariantTestRun {
     // Invariant run call sequence.
     inputs: Vec<BasicTxDetails>,
     // Current invariant run executor.
-    executor: Executor<Ethereum, EthEvmFactory>,
+    executor: Executor<EthEvmNetwork>,
     // Invariant run stat reports (eg. gas usage).
     fuzz_runs: Vec<FuzzCase>,
     // Contracts created during current invariant run.
@@ -289,11 +285,7 @@ struct InvariantTestRun {
 
 impl InvariantTestRun {
     /// Instantiates an invariant test run.
-    fn new(
-        first_input: BasicTxDetails,
-        executor: Executor<Ethereum, EthEvmFactory>,
-        depth: usize,
-    ) -> Self {
+    fn new(first_input: BasicTxDetails, executor: Executor<EthEvmNetwork>, depth: usize) -> Self {
         Self {
             inputs: vec![first_input],
             executor,
@@ -314,7 +306,7 @@ impl InvariantTestRun {
 /// contains all the configuration which can be overridden via [environment
 /// variables](proptest::test_runner::Config)
 pub struct InvariantExecutor<'a> {
-    pub executor: Executor<Ethereum, EthEvmFactory>,
+    pub executor: Executor<EthEvmNetwork>,
     /// Proptest runner.
     runner: TestRunner,
     /// The invariant configuration
@@ -331,7 +323,7 @@ pub struct InvariantExecutor<'a> {
 impl<'a> InvariantExecutor<'a> {
     /// Instantiates a fuzzed executor EVM given a testrunner
     pub fn new(
-        executor: Executor<Ethereum, EthEvmFactory>,
+        executor: Executor<EthEvmNetwork>,
         runner: TestRunner,
         config: InvariantConfig,
         setup_contracts: &'a ContractsByAddress,
@@ -1084,7 +1076,7 @@ fn collect_data(
 /// Returns call result and if call succeeded.
 /// The state after the call is not persisted.
 pub(crate) fn call_after_invariant_function(
-    executor: &Executor<Ethereum, EthEvmFactory>,
+    executor: &Executor<EthEvmNetwork>,
     to: Address,
 ) -> Result<(RawCallResult, bool), EvmError> {
     let calldata = Bytes::from_static(&IInvariantTest::afterInvariantCall::SELECTOR);
@@ -1095,7 +1087,7 @@ pub(crate) fn call_after_invariant_function(
 
 /// Calls the invariant function and returns call result and if succeeded.
 pub(crate) fn call_invariant_function(
-    executor: &Executor<Ethereum, EthEvmFactory>,
+    executor: &Executor<EthEvmNetwork>,
     address: Address,
     calldata: Bytes,
 ) -> Result<(RawCallResult, bool)> {
@@ -1106,17 +1098,10 @@ pub(crate) fn call_invariant_function(
 
 /// Executes a fuzz call and returns the result.
 /// Applies any block timestamp (warp) and block number (roll) adjustments before the call.
-pub(crate) fn execute_tx<N, F>(
-    executor: &mut Executor<N, F>,
+pub(crate) fn execute_tx<FEN: FoundryEvmNetwork>(
+    executor: &mut Executor<FEN>,
     tx: &BasicTxDetails,
-) -> Result<RawCallResult<N, F>>
-where
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-{
+) -> Result<RawCallResult<FEN>> {
     let warp = tx.warp.unwrap_or_default();
     let roll = tx.roll.unwrap_or_default();
 

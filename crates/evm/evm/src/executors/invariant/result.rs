@@ -4,12 +4,10 @@ use super::{
 };
 use crate::executors::{Executor, RawCallResult};
 use alloy_dyn_abi::JsonAbiExt;
-use alloy_evm::EthEvmFactory;
-use alloy_network::Ethereum;
 use alloy_primitives::I256;
 use eyre::Result;
 use foundry_config::InvariantConfig;
-use foundry_evm_core::utils::StateChangeset;
+use foundry_evm_core::{evm::EthEvmNetwork, utils::StateChangeset};
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_fuzz::{
     BasicTxDetails, FuzzedCases,
@@ -65,7 +63,7 @@ pub(crate) fn assert_invariants(
     invariant_contract: &InvariantContract<'_>,
     invariant_config: &InvariantConfig,
     targeted_contracts: &FuzzRunIdentifiedContracts,
-    executor: &Executor<Ethereum, EthEvmFactory>,
+    executor: &Executor<EthEvmNetwork>,
     calldata: &[BasicTxDetails],
     invariant_failures: &mut InvariantFailures,
 ) -> Result<Option<RawCallResult>> {

@@ -4,8 +4,7 @@ use crate::{
     receipts::FoundryReceiptResponse,
     sequence::{ScriptSequenceKind, get_commit_hash},
 };
-use alloy_evm::EthEvmFactory;
-use alloy_network::{Ethereum, Network, ReceiptResponse};
+use alloy_network::{Network, ReceiptResponse};
 use alloy_primitives::{Address, hex};
 use eyre::{Result, eyre};
 use forge_script_sequence::{AdditionalContract, ScriptSequence};
@@ -14,6 +13,7 @@ use foundry_cli::opts::{EtherscanOpts, ProjectPathOpts};
 use foundry_common::ContractsByArtifact;
 use foundry_compilers::{Project, artifacts::EvmVersion, info::ContractInfo};
 use foundry_config::{Chain, Config};
+use foundry_evm::core::evm::EthEvmNetwork;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ where
     N::TransactionRequest: for<'d> Deserialize<'d> + Serialize,
 {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig<Ethereum, EthEvmFactory>,
+    pub script_config: ScriptConfig<EthEvmNetwork>,
     pub build_data: LinkedBuildData,
     pub sequence: ScriptSequenceKind<N>,
 }

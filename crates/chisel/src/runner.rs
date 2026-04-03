@@ -3,11 +3,10 @@
 //! This module contains the `ChiselRunner` struct, which assists with deploying
 //! and calling the REPL contract on a in-memory REVM instance.
 
-use alloy_evm::EthEvmFactory;
-use alloy_network::Ethereum;
 use alloy_primitives::{Address, Bytes, Log, U256, map::AddressHashMap};
 use eyre::Result;
 use foundry_evm::{
+    core::evm::EthEvmNetwork,
     executors::{DeployResult, Executor, RawCallResult},
     traces::{TraceKind, Traces},
 };
@@ -22,7 +21,7 @@ static RUN_SELECTOR: [u8; 4] = [0xc0, 0x40, 0x62, 0x26];
 #[derive(Debug)]
 pub struct ChiselRunner {
     /// The Executor
-    pub executor: Executor<Ethereum, EthEvmFactory>,
+    pub executor: Executor<EthEvmNetwork>,
     /// An initial balance
     pub initial_balance: U256,
     /// The sender
@@ -64,7 +63,7 @@ impl ChiselRunner {
     ///
     /// A new [ChiselRunner]
     pub fn new(
-        executor: Executor<Ethereum, EthEvmFactory>,
+        executor: Executor<EthEvmNetwork>,
         initial_balance: U256,
         sender: Address,
         input: Option<Vec<u8>>,

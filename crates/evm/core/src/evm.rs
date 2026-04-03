@@ -76,7 +76,7 @@ impl IntoInstructionResult for TempoHaltReason {
 }
 
 /// Foundry's supertrait associating [Network] with [FoundryEvmFactory]
-pub trait FoundryEvmNetwork {
+pub trait FoundryEvmNetwork: Copy + Debug + Default + 'static {
     type Network: Network<
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<Self::Network>,
@@ -84,17 +84,25 @@ pub trait FoundryEvmNetwork {
     type EvmFactory: FoundryEvmFactory<Tx: FromRecoveredTx<<Self::Network as Network>::TxEnvelope>>;
 }
 
+#[derive(Clone, Copy, Debug, Default)]
 pub struct EthEvmNetwork;
 impl FoundryEvmNetwork for EthEvmNetwork {
     type Network = Ethereum;
     type EvmFactory = EthEvmFactory;
 }
 
+#[derive(Clone, Copy, Debug, Default)]
 pub struct TempoEvmNetwork;
 impl FoundryEvmNetwork for TempoEvmNetwork {
     type Network = TempoNetwork;
     type EvmFactory = TempoEvmFactory;
 }
+
+/// Convenience type aliases for accessing associated types through [`FoundryEvmNetwork`].
+pub type SpecFor<FEN> = <<FEN as FoundryEvmNetwork>::EvmFactory as EvmFactory>::Spec;
+pub type TxEnvFor<FEN> = <<FEN as FoundryEvmNetwork>::EvmFactory as EvmFactory>::Tx;
+pub type BlockEnvFor<FEN> = <<FEN as FoundryEvmNetwork>::EvmFactory as EvmFactory>::BlockEnv;
+pub type EvmEnvFor<FEN> = EvmEnv<SpecFor<FEN>, BlockEnvFor<FEN>>;
 
 pub trait FoundryEvmFactory:
     EvmFactory<

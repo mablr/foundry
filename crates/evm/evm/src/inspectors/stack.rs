@@ -2,22 +2,21 @@ use super::{
     Cheatcodes, CheatsConfig, ChiselState, CustomPrintTracer, Fuzzer, LineCoverageCollector,
     LogCollector, RevertDiagnostic, ScriptExecutionInspector, TempoLabels, TracingInspector,
 };
-use alloy_consensus::transaction::SignerRecoverable;
-use alloy_evm::{EthEvmFactory, EvmEnv, FromRecoveredTx};
-use alloy_network::{Ethereum, Network};
 use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256,
     map::{AddressHashMap, AddressMap},
 };
 
-use alloy_rlp::Decodable;
 use foundry_cheatcodes::{CheatcodeAnalysis, CheatcodesExecutor, NestedEvmClosure, Wallets};
-use foundry_common::{FoundryTransactionBuilder, compile::Analysis};
+use foundry_common::compile::Analysis;
 use foundry_evm_core::{
     FoundryBlock, FoundryTransaction, InspectorExt,
     backend::{DatabaseError, JournaledState},
     env::FoundryContextExt,
-    evm::{FoundryEvmFactory, IntoNestedEvm, NestedEvm, with_cloned_context},
+    evm::{
+        BlockEnvFor, EthEvmNetwork, EvmEnvFor, FoundryEvmFactory, FoundryEvmNetwork, IntoNestedEvm,
+        NestedEvm, SpecFor, TxEnvFor, with_cloned_context,
+    },
 };
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_networks::NetworkConfigs;
@@ -216,15 +215,9 @@ impl<BLOCK: Clone> InspectorStackBuilder<BLOCK> {
     }
 
     /// Builds the stack of inspectors to use when transacting/committing on the EVM.
-    pub fn build<
-        N: Network<
-                TxEnvelope: Decodable + SignerRecoverable,
-                TransactionRequest: FoundryTransactionBuilder<N>,
-            >,
-        F: FoundryEvmFactory<BlockEnv = BLOCK, Tx: FromRecoveredTx<N::TxEnvelope>>,
-    >(
+    pub fn build<FEN: FoundryEvmNetwork<EvmFactory: FoundryEvmFactory<BlockEnv = BLOCK>>>(
         self,
-    ) -> InspectorStack<N, F> {
+    ) -> InspectorStack<FEN> {
         let Self {
             analysis,
             block,
@@ -314,13 +307,13 @@ macro_rules! call_inspectors {
 }
 
 /// The collected results of [`InspectorStack`].
-pub struct InspectorData<N: Network, F: FoundryEvmFactory> {
+pub struct InspectorData<FEN: FoundryEvmNetwork> {
     pub logs: Vec<Log>,
     pub labels: AddressHashMap<String>,
     pub traces: Option<SparsedTraceArena>,
     pub line_coverage: Option<HitMaps>,
     pub edge_coverage: Option<Vec<u8>>,
-    pub cheatcodes: Option<Box<Cheatcodes<N, F>>>,
+    pub cheatcodes: Option<Box<Cheatcodes<FEN>>>,
     pub chisel_state: Option<(Vec<U256>, Vec<u8>)>,
     pub reverter: Option<Address>,
 }
@@ -347,9 +340,9 @@ pub struct InnerContextData {
 /// access to entire stack of inspectors and correctly handling traces, logs, debugging info
 /// collection, etc.
 #[derive(Clone, Debug)]
-pub struct InspectorStack<N: Network = Ethereum, F: FoundryEvmFactory = EthEvmFactory> {
+pub struct InspectorStack<FEN: FoundryEvmNetwork = EthEvmNetwork> {
     #[allow(clippy::type_complexity)]
-    pub cheatcodes: Option<Box<Cheatcodes<N, F>>>,
+    pub cheatcodes: Option<Box<Cheatcodes<FEN>>>,
     pub inner: InspectorStackInner,
 }
 
@@ -389,28 +382,21 @@ pub struct InspectorStackInner {
 
 /// Struct keeping mutable references to both parts of [InspectorStack] and implementing
 /// [revm::Inspector]. This struct can be obtained via [InspectorStack::as_mut].
-pub struct InspectorStackRefMut<'a, N: Network = Ethereum, F: FoundryEvmFactory = EthEvmFactory> {
-    pub cheatcodes: Option<&'a mut Cheatcodes<N, F>>,
+pub struct InspectorStackRefMut<'a, FEN: FoundryEvmNetwork = EthEvmNetwork> {
+    pub cheatcodes: Option<&'a mut Cheatcodes<FEN>>,
     pub inner: &'a mut InspectorStackInner,
 }
 
-impl<
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-> CheatcodesExecutor<N, F> for InspectorStackInner
-{
+impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for InspectorStackInner {
     fn with_nested_evm(
         &mut self,
-        cheats: &mut Cheatcodes<N, F>,
-        ecx: &mut F::FoundryContext<'_>,
-        f: NestedEvmClosure<'_, F::Spec, F::BlockEnv, F::Tx>,
+        cheats: &mut Cheatcodes<FEN>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        f: NestedEvmClosure<'_, SpecFor<FEN>, BlockEnvFor<FEN>, TxEnvFor<FEN>>,
     ) -> Result<(), EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
-            let mut evm = F::default()
+            let mut evm = FEN::EvmFactory::default()
                 .create_foundry_evm_with_inspector(db, evm_env, &mut inspector)
                 .into_nested_evm();
             *evm.journal_inner_mut() = journal_inner;
@@ -423,13 +409,13 @@ impl<
 
     fn with_fresh_nested_evm(
         &mut self,
-        cheats: &mut Cheatcodes<N, F>,
-        db: &mut <F::FoundryContext<'_> as ContextTr>::Db,
-        evm_env: EvmEnv<F::Spec, F::BlockEnv>,
-        f: NestedEvmClosure<'_, F::Spec, F::BlockEnv, F::Tx>,
-    ) -> Result<EvmEnv<F::Spec, F::BlockEnv>, EVMError<DatabaseError>> {
+        cheats: &mut Cheatcodes<FEN>,
+        db: &mut <<FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_> as ContextTr>::Db,
+        evm_env: EvmEnvFor<FEN>,
+        f: NestedEvmClosure<'_, SpecFor<FEN>, BlockEnvFor<FEN>, TxEnvFor<FEN>>,
+    ) -> Result<EvmEnvFor<FEN>, EVMError<DatabaseError>> {
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
-        let mut evm = F::default()
+        let mut evm = FEN::EvmFactory::default()
             .create_foundry_evm_with_inspector(db, evm_env, &mut inspector)
             .into_nested_evm();
         f(&mut evm)?;
@@ -438,27 +424,34 @@ impl<
 
     fn transact_on_db(
         &mut self,
-        cheats: &mut Cheatcodes<N, F>,
-        ecx: &mut F::FoundryContext<'_>,
+        cheats: &mut Cheatcodes<FEN>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         fork_id: Option<U256>,
         transaction: B256,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
-        F::default().db_transact(db, fork_id, transaction, evm_env, inner, &mut inspector)
+        FEN::EvmFactory::default().db_transact(
+            db,
+            fork_id,
+            transaction,
+            evm_env,
+            inner,
+            &mut inspector,
+        )
     }
 
     fn transact_from_tx_on_db(
         &mut self,
-        cheats: &mut Cheatcodes<N, F>,
-        ecx: &mut F::FoundryContext<'_>,
-        tx_env: F::Tx,
+        cheats: &mut Cheatcodes<FEN>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        tx_env: TxEnvFor<FEN>,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
-        F::default().db_transact_from_tx(db, tx_env, evm_env, inner, &mut inspector)
+        FEN::EvmFactory::default().db_transact_from_tx(db, tx_env, evm_env, inner, &mut inspector)
     }
 
     fn console_log(&mut self, msg: &str) {
@@ -483,27 +476,13 @@ impl<
     }
 }
 
-impl<
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-> Default for InspectorStack<N, F>
-{
+impl<FEN: FoundryEvmNetwork> Default for InspectorStack<FEN> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-> InspectorStack<N, F>
-{
+impl<FEN: FoundryEvmNetwork> InspectorStack<FEN> {
     /// Creates a new inspector stack.
     ///
     /// Note that the stack is empty by default, and you must add inspectors to it.
@@ -522,7 +501,7 @@ impl<
 
     /// Sets the block for the relevant inspectors.
     #[inline]
-    pub fn set_block(&mut self, block: F::BlockEnv) {
+    pub fn set_block(&mut self, block: BlockEnvFor<FEN>) {
         if let Some(cheatcodes) = &mut self.cheatcodes {
             cheatcodes.block = Some(block);
         }
@@ -538,7 +517,7 @@ impl<
 
     /// Set the cheatcodes inspector.
     #[inline]
-    pub fn set_cheatcodes(&mut self, cheatcodes: Cheatcodes<N, F>) {
+    pub fn set_cheatcodes(&mut self, cheatcodes: Cheatcodes<FEN>) {
         self.cheatcodes = Some(cheatcodes.into());
     }
 
@@ -627,12 +606,12 @@ impl<
     }
 
     #[inline(always)]
-    fn as_mut(&mut self) -> InspectorStackRefMut<'_, N, F> {
+    fn as_mut(&mut self) -> InspectorStackRefMut<'_, FEN> {
         InspectorStackRefMut { cheatcodes: self.cheatcodes.as_deref_mut(), inner: &mut self.inner }
     }
 
     /// Collects all the data gathered during inspection into a single struct.
-    pub fn collect(self) -> InspectorData<N, F> {
+    pub fn collect(self) -> InspectorData<FEN> {
         let Self {
             mut cheatcodes,
             inner:
@@ -685,14 +664,7 @@ impl<
     }
 }
 
-impl<
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-> InspectorStackRefMut<'_, N, F>
-{
+impl<FEN: FoundryEvmNetwork> InspectorStackRefMut<'_, FEN> {
     /// Adjusts the EVM data for the inner EVM context.
     /// Should be called on the top-level call of inner context (depth == 0 &&
     /// self.in_inner_context) Decreases sender nonce for CALLs to keep backwards compatibility
@@ -705,7 +677,7 @@ impl<
 
     fn do_call_end(
         &mut self,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         inputs: &CallInputs,
         outcome: &mut CallOutcome,
     ) {
@@ -740,7 +712,7 @@ impl<
 
     fn do_create_end(
         &mut self,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         call: &CreateInputs,
         outcome: &mut CreateOutcome,
     ) {
@@ -764,7 +736,7 @@ impl<
 
     fn transact_inner(
         &mut self,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         kind: TxKind,
         caller: Address,
         input: Bytes,
@@ -803,7 +775,7 @@ impl<
         let res = self.with_inspector(|mut inspector| {
             let (res, nested_env) = {
                 let (db, journal) = ecx.db_journal_inner_mut();
-                let mut evm = F::default()
+                let mut evm = FEN::EvmFactory::default()
                     .create_foundry_evm_with_inspector(db, evm_env, &mut inspector)
                     .into_nested_evm();
 
@@ -905,7 +877,7 @@ impl<
 
     /// Moves out of references, constructs a new [`InspectorStackRefMut`] and runs the given
     /// closure with it.
-    fn with_inspector<O>(&mut self, f: impl FnOnce(InspectorStackRefMut<'_, N, F>) -> O) -> O {
+    fn with_inspector<O>(&mut self, f: impl FnOnce(InspectorStackRefMut<'_, FEN>) -> O) -> O {
         let mut cheatcodes = self
             .cheatcodes
             .as_deref_mut()
@@ -924,7 +896,10 @@ impl<
     }
 
     /// Invoked at the beginning of a new top-level (0 depth) frame.
-    fn top_level_frame_start(&mut self, ecx: &mut F::FoundryContext<'_>) {
+    fn top_level_frame_start(
+        &mut self,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+    ) {
         if self.enable_isolation {
             // If we're in isolation mode, we need to keep track of the state at the beginning of
             // the frame to be able to roll back on revert
@@ -933,7 +908,11 @@ impl<
     }
 
     /// Invoked at the end of root frame.
-    fn top_level_frame_end(&mut self, ecx: &mut F::FoundryContext<'_>, result: InstructionResult) {
+    fn top_level_frame_end(
+        &mut self,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        result: InstructionResult,
+    ) {
         if !result.is_revert() {
             return;
         }
@@ -958,7 +937,11 @@ impl<
     // delegate to `InspectorStackRefMut` in this case.
 
     #[inline(always)]
-    fn step_inlined(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
+    fn step_inlined(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+    ) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -977,7 +960,11 @@ impl<
     }
 
     #[inline(always)]
-    fn step_end_inlined(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
+    fn step_end_inlined(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+    ) {
         call_inspectors!(
             [
                 // These are sorted in definition order.
@@ -993,18 +980,13 @@ impl<
     }
 }
 
-impl<
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-> Inspector<F::FoundryContext<'_>> for InspectorStackRefMut<'_, N, F>
+impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>>
+    for InspectorStackRefMut<'_, FEN>
 {
     fn initialize_interp(
         &mut self,
         interpreter: &mut Interpreter,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
     ) {
         call_inspectors!(
             [
@@ -1018,16 +1000,28 @@ impl<
         );
     }
 
-    fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
+    fn step(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+    ) {
         self.step_inlined(interpreter, ecx);
     }
 
-    fn step_end(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
+    fn step_end(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+    ) {
         self.step_end_inlined(interpreter, ecx);
     }
 
     #[allow(clippy::redundant_clone)]
-    fn log(&mut self, ecx: &mut F::FoundryContext<'_>, log: Log) {
+    fn log(
+        &mut self,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        log: Log,
+    ) {
         call_inspectors!(
             [&mut self.tracer, &mut self.log_collector, &mut self.cheatcodes, &mut self.printer],
             |inspector| inspector.log(ecx, log.clone()),
@@ -1038,7 +1032,7 @@ impl<
     fn log_full(
         &mut self,
         interpreter: &mut Interpreter,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         log: Log,
     ) {
         call_inspectors!(
@@ -1049,7 +1043,7 @@ impl<
 
     fn call(
         &mut self,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         call: &mut CallInputs,
     ) -> Option<CallOutcome> {
         if self.in_inner_context && ecx.journal().depth() == 1 {
@@ -1151,7 +1145,7 @@ impl<
 
     fn call_end(
         &mut self,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         inputs: &CallInputs,
         outcome: &mut CallOutcome,
     ) {
@@ -1170,7 +1164,7 @@ impl<
 
     fn create(
         &mut self,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         create: &mut CreateInputs,
     ) -> Option<CreateOutcome> {
         if self.in_inner_context && ecx.journal().depth() == 1 {
@@ -1209,7 +1203,7 @@ impl<
 
     fn create_end(
         &mut self,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         call: &CreateInputs,
         outcome: &mut CreateOutcome,
     ) {
@@ -1228,12 +1222,14 @@ impl<
 
     fn selfdestruct(&mut self, contract: Address, target: Address, value: U256) {
         call_inspectors!([&mut self.printer], |inspector| {
-            Inspector::<F::FoundryContext<'_>>::selfdestruct(inspector, contract, target, value)
+            Inspector::<<FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>>::selfdestruct(
+                inspector, contract, target, value,
+            )
         });
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> InspectorExt for InspectorStackRefMut<'_, N, F> {
+impl<FEN: FoundryEvmNetwork> InspectorExt for InspectorStackRefMut<'_, FEN> {
     fn should_use_create2_factory(&mut self, depth: usize, inputs: &CreateInputs) -> bool {
         call_inspectors!(
             #[ret]
@@ -1259,25 +1255,28 @@ impl<N: Network, F: FoundryEvmFactory> InspectorExt for InspectorStackRefMut<'_,
     }
 }
 
-impl<
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-> Inspector<F::FoundryContext<'_>> for InspectorStack<N, F>
+impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>>
+    for InspectorStack<FEN>
 {
-    fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
+    fn step(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+    ) {
         self.as_mut().step_inlined(interpreter, ecx)
     }
 
-    fn step_end(&mut self, interpreter: &mut Interpreter, ecx: &mut F::FoundryContext<'_>) {
+    fn step_end(
+        &mut self,
+        interpreter: &mut Interpreter,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+    ) {
         self.as_mut().step_end_inlined(interpreter, ecx)
     }
 
     fn call(
         &mut self,
-        context: &mut F::FoundryContext<'_>,
+        context: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         inputs: &mut CallInputs,
     ) -> Option<CallOutcome> {
         self.as_mut().call(context, inputs)
@@ -1285,7 +1284,7 @@ impl<
 
     fn call_end(
         &mut self,
-        context: &mut F::FoundryContext<'_>,
+        context: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         inputs: &CallInputs,
         outcome: &mut CallOutcome,
     ) {
@@ -1294,7 +1293,7 @@ impl<
 
     fn create(
         &mut self,
-        context: &mut F::FoundryContext<'_>,
+        context: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         create: &mut CreateInputs,
     ) -> Option<CreateOutcome> {
         self.as_mut().create(context, create)
@@ -1302,7 +1301,7 @@ impl<
 
     fn create_end(
         &mut self,
-        context: &mut F::FoundryContext<'_>,
+        context: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         call: &CreateInputs,
         outcome: &mut CreateOutcome,
     ) {
@@ -1312,19 +1311,23 @@ impl<
     fn initialize_interp(
         &mut self,
         interpreter: &mut Interpreter,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
     ) {
         self.as_mut().initialize_interp(interpreter, ecx)
     }
 
-    fn log(&mut self, ecx: &mut F::FoundryContext<'_>, log: Log) {
+    fn log(
+        &mut self,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        log: Log,
+    ) {
         self.as_mut().log(ecx, log)
     }
 
     fn log_full(
         &mut self,
         interpreter: &mut Interpreter,
-        ecx: &mut F::FoundryContext<'_>,
+        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
         log: Log,
     ) {
         self.as_mut().log_full(interpreter, ecx, log)
@@ -1332,19 +1335,14 @@ impl<
 
     fn selfdestruct(&mut self, contract: Address, target: Address, value: U256) {
         call_inspectors!([&mut self.inner.printer], |inspector| {
-            Inspector::<F::FoundryContext<'_>>::selfdestruct(inspector, contract, target, value)
+            Inspector::<<FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>>::selfdestruct(
+                inspector, contract, target, value,
+            )
         });
     }
 }
 
-impl<
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-> InspectorExt for InspectorStack<N, F>
-{
+impl<FEN: FoundryEvmNetwork> InspectorExt for InspectorStack<FEN> {
     fn should_use_create2_factory(&mut self, depth: usize, inputs: &CreateInputs) -> bool {
         self.as_mut().should_use_create2_factory(depth, inputs)
     }
@@ -1358,7 +1356,7 @@ impl<
     }
 }
 
-impl<'a, N: Network, F: FoundryEvmFactory> Deref for InspectorStackRefMut<'a, N, F> {
+impl<'a, FEN: FoundryEvmNetwork> Deref for InspectorStackRefMut<'a, FEN> {
     type Target = &'a mut InspectorStackInner;
 
     fn deref(&self) -> &Self::Target {
@@ -1366,13 +1364,13 @@ impl<'a, N: Network, F: FoundryEvmFactory> Deref for InspectorStackRefMut<'a, N,
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> DerefMut for InspectorStackRefMut<'_, N, F> {
+impl<FEN: FoundryEvmNetwork> DerefMut for InspectorStackRefMut<'_, FEN> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> Deref for InspectorStack<N, F> {
+impl<FEN: FoundryEvmNetwork> Deref for InspectorStack<FEN> {
     type Target = InspectorStackInner;
 
     fn deref(&self) -> &Self::Target {
@@ -1380,7 +1378,7 @@ impl<N: Network, F: FoundryEvmFactory> Deref for InspectorStack<N, F> {
     }
 }
 
-impl<N: Network, F: FoundryEvmFactory> DerefMut for InspectorStack<N, F> {
+impl<FEN: FoundryEvmNetwork> DerefMut for InspectorStack<FEN> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }

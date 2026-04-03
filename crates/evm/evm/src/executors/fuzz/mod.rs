@@ -2,21 +2,17 @@ use crate::executors::{
     DURATION_BETWEEN_METRICS_REPORT, EarlyExit, Executor, FuzzTestTimer, RawCallResult,
     corpus::{GlobalCorpusMetrics, WorkerCorpus},
 };
-use alloy_consensus::transaction::SignerRecoverable;
 use alloy_dyn_abi::JsonAbiExt;
-use alloy_evm::FromRecoveredTx;
 use alloy_json_abi::Function;
-use alloy_network::Network;
 use alloy_primitives::{Address, Bytes, Log, U256, keccak256, map::HashMap};
-use alloy_rlp::Decodable;
 use eyre::Result;
-use foundry_common::{FoundryTransactionBuilder, sh_println};
+use foundry_common::sh_println;
 use foundry_config::FuzzConfig;
 use foundry_evm_core::{
     Breakpoints,
     constants::{CHEATCODE_ADDRESS, MAGIC_ASSUME},
     decode::{RevertDecoder, SkipReason},
-    evm::FoundryEvmFactory,
+    evm::FoundryEvmNetwork,
 };
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_fuzz::{
@@ -50,7 +46,7 @@ const SYNC_INTERVAL: u32 = 1000;
 /// This is mainly to reduce the overall number of rayon jobs.
 const MIN_RUNS_PER_WORKER: u32 = 64;
 
-struct WorkerState<N: Network, F: FoundryEvmFactory> {
+struct WorkerState<FEN: FoundryEvmNetwork> {
     /// Worker identifier
     id: usize,
     /// First fuzz case this worker encountered (with global run number)
@@ -58,7 +54,7 @@ struct WorkerState<N: Network, F: FoundryEvmFactory> {
     /// Gas usage for all cases this worker ran
     gas_by_case: Vec<(u64, u64)>,
     /// Counterexample if this worker found one
-    counterexample: (Bytes, RawCallResult<N, F>),
+    counterexample: (Bytes, RawCallResult<FEN>),
     /// Traces collected by this worker
     ///
     /// Stores up to `max_traces_to_collect` which is `config.gas_report_samples / num_workers`
@@ -83,7 +79,7 @@ struct WorkerState<N: Network, F: FoundryEvmFactory> {
     failed_corpus_replays: usize,
 }
 
-impl<N: Network, F: FoundryEvmFactory> WorkerState<N, F> {
+impl<FEN: FoundryEvmNetwork> WorkerState<FEN> {
     fn new(worker_id: usize) -> Self {
         Self {
             id: worker_id,
@@ -176,9 +172,9 @@ impl SharedFuzzState {
 /// After instantiation, calling `fuzz` will proceed to hammer the deployed smart contract with
 /// inputs, until it finds a counterexample. The provided [`TestRunner`] contains all the
 /// configuration which can be overridden via [environment variables](proptest::test_runner::Config)
-pub struct FuzzedExecutor<N: Network, F: FoundryEvmFactory> {
+pub struct FuzzedExecutor<FEN: FoundryEvmNetwork> {
     /// The EVM executor.
-    executor_f: Executor<N, F>,
+    executor_f: Executor<FEN>,
     /// The fuzzer
     runner: TestRunner,
     /// The account that calls tests.
@@ -191,17 +187,10 @@ pub struct FuzzedExecutor<N: Network, F: FoundryEvmFactory> {
     num_workers: usize,
 }
 
-impl<N, F> FuzzedExecutor<N, F>
-where
-    N: Network<
-            TxEnvelope: Decodable + SignerRecoverable,
-            TransactionRequest: FoundryTransactionBuilder<N>,
-        >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
-{
+impl<FEN: FoundryEvmNetwork> FuzzedExecutor<FEN> {
     /// Instantiates a fuzzed executor given a testrunner
     pub fn new(
-        executor: Executor<N, F>,
+        executor: Executor<FEN>,
         runner: TestRunner,
         sender: Address,
         config: FuzzConfig,
@@ -262,11 +251,11 @@ where
     /// or a `CounterExampleOutcome`
     fn single_fuzz(
         &self,
-        executor: &Executor<N, F>,
+        executor: &Executor<FEN>,
         address: Address,
         calldata: Bytes,
         coverage_metrics: &mut WorkerCorpus,
-    ) -> Result<FuzzOutcome<N, F>, TestCaseError> {
+    ) -> Result<FuzzOutcome<FEN>, TestCaseError> {
         let mut call = executor
             .call_raw(self.sender, address, calldata.clone(), U256::ZERO)
             .map_err(|e| TestCaseError::fail(e.to_string()))?;
@@ -324,7 +313,7 @@ where
     /// Aggregates the results from all workers
     fn aggregate_results(
         &self,
-        mut workers: Vec<WorkerState<N, F>>,
+        mut workers: Vec<WorkerState<FEN>>,
         func: &Function,
         shared_state: &SharedFuzzState,
     ) -> FuzzTestResult {
@@ -428,7 +417,7 @@ where
         rd: &RevertDecoder,
         shared_state: &SharedFuzzState,
         progress: Option<&ProgressBar>,
-    ) -> Result<WorkerState<N, F>> {
+    ) -> Result<WorkerState<FEN>> {
         // Prepare
         let dictionary_weight = self.config.dictionary.dictionary_weight.min(100);
         let strategy = proptest::prop_oneof![

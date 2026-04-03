@@ -4,8 +4,8 @@ use crate::{
 };
 use alloy_consensus::{BlockHeader, Transaction};
 
-use alloy_evm::{EthEvmFactory, FromRecoveredTx};
-use alloy_network::{AnyNetwork, Ethereum, TransactionResponse};
+use alloy_evm::FromRecoveredTx;
+use alloy_network::{AnyNetwork, TransactionResponse};
 use alloy_primitives::{
     Address, Bytes, U256,
     map::{AddressSet, HashMap},
@@ -28,6 +28,7 @@ use foundry_config::{
     },
 };
 use foundry_evm::{
+    core::evm::EthEvmNetwork,
     executors::{EvmError, Executor, TracingExecutor},
     opts::EvmOpts,
     traces::{InternalTraceMode, TraceMode, Traces},
@@ -169,7 +170,7 @@ impl RunArgs {
         let (block, (mut evm_env, tx_env, fork, chain, networks)) = tokio::try_join!(
             // fetch the block the transaction was mined in
             provider.get_block(tx_block_number.into()).full().into_future().map_err(Into::into),
-            TracingExecutor::<Ethereum, EthEvmFactory>::get_fork_material(&mut config, evm_opts)
+            TracingExecutor::<EthEvmNetwork>::get_fork_material(&mut config, evm_opts)
         )?;
 
         let mut evm_version = self.evm_version;
@@ -211,7 +212,7 @@ impl RunArgs {
                 InternalTraceMode::None
             })
             .with_state_changes(shell::verbosity() > 4);
-        let mut executor = TracingExecutor::<Ethereum, EthEvmFactory>::new(
+        let mut executor = TracingExecutor::<EthEvmNetwork>::new(
             (evm_env.clone(), tx_env),
             fork,
             evm_version,
@@ -336,7 +337,7 @@ impl RunArgs {
 }
 
 pub fn fetch_contracts_bytecode_from_trace(
-    executor: &Executor<Ethereum, EthEvmFactory>,
+    executor: &Executor<EthEvmNetwork>,
     result: &TraceResult,
 ) -> Result<HashMap<Address, Bytes>> {
     let mut contracts_bytecode = HashMap::default();

@@ -2,11 +2,9 @@ use crate::executors::{
     EarlyExit, Executor,
     invariant::{call_after_invariant_function, call_invariant_function, execute_tx},
 };
-use alloy_evm::EthEvmFactory;
-use alloy_network::Ethereum;
 use alloy_primitives::{Address, Bytes, I256, U256};
 use foundry_config::InvariantConfig;
-use foundry_evm_core::constants::MAGIC_ASSUME;
+use foundry_evm_core::{constants::MAGIC_ASSUME, evm::EthEvmNetwork};
 use foundry_evm_fuzz::{BasicTxDetails, invariant::InvariantContract};
 use indicatif::ProgressBar;
 use proptest::bits::{BitSetLike, VarBitSet};
@@ -61,11 +59,7 @@ fn apply_warp_roll(call: &BasicTxDetails, warp: U256, roll: U256) -> BasicTxDeta
 }
 
 /// Applies warp/roll adjustments directly to the executor's environment.
-fn apply_warp_roll_to_env(
-    executor: &mut Executor<Ethereum, EthEvmFactory>,
-    warp: U256,
-    roll: U256,
-) {
+fn apply_warp_roll_to_env(executor: &mut Executor<EthEvmNetwork>, warp: U256, roll: U256) {
     if warp > U256::ZERO || roll > U256::ZERO {
         executor.evm_env_mut().block_env.timestamp += warp;
         executor.evm_env_mut().block_env.number += roll;
@@ -86,7 +80,7 @@ pub(crate) fn shrink_sequence(
     config: &InvariantConfig,
     invariant_contract: &InvariantContract<'_>,
     calls: &[BasicTxDetails],
-    executor: &Executor<Ethereum, EthEvmFactory>,
+    executor: &Executor<EthEvmNetwork>,
     progress: Option<&ProgressBar>,
     early_exit: &EarlyExit,
 ) -> eyre::Result<Vec<BasicTxDetails>> {
@@ -146,7 +140,7 @@ pub(crate) fn shrink_sequence(
 /// Returns the result of invariant check (and afterInvariant call if needed) and if sequence was
 /// entirely applied.
 pub fn check_sequence(
-    mut executor: Executor<Ethereum, EthEvmFactory>,
+    mut executor: Executor<EthEvmNetwork>,
     calls: &[BasicTxDetails],
     sequence: Vec<usize>,
     test_address: Address,
@@ -191,7 +185,7 @@ pub(crate) fn shrink_sequence_value(
     config: &InvariantConfig,
     invariant_contract: &InvariantContract<'_>,
     calls: &[BasicTxDetails],
-    executor: &Executor<Ethereum, EthEvmFactory>,
+    executor: &Executor<EthEvmNetwork>,
     target_value: I256,
     progress: Option<&ProgressBar>,
     early_exit: &EarlyExit,
@@ -268,7 +262,7 @@ pub(crate) fn shrink_sequence_value(
 /// Returns `None` if the invariant call fails or doesn't return a valid int256.
 /// Unlike `check_sequence`, this applies warp/roll from ALL calls (including removed ones).
 pub fn check_sequence_value(
-    mut executor: Executor<Ethereum, EthEvmFactory>,
+    mut executor: Executor<EthEvmNetwork>,
     calls: &[BasicTxDetails],
     sequence: Vec<usize>,
     test_address: Address,
