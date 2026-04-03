@@ -644,7 +644,8 @@ impl ScriptConfig {
             match self.backends.get(fork_url) {
                 Some(db) => db.clone(),
                 None => {
-                    let fork = self.evm_opts.get_fork(&self.config, &evm_env, fork_block);
+                    let fork =
+                        self.evm_opts.get_fork(&self.config, evm_env.cfg_env.chain_id, fork_block);
                     let backend = Backend::spawn(fork)?;
                     self.backends.insert(fork_url.clone(), backend.clone());
                     backend
