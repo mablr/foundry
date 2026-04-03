@@ -2,8 +2,6 @@ use alloy_primitives::Address;
 use alloy_provider::Provider;
 use tempo_alloy::{TempoNetwork, provider::TempoProviderExt};
 
-pub use foundry_wallets::tempo::sign_with_access_key;
-
 /// Checks whether an access key is already provisioned on-chain.
 ///
 /// Queries the AccountKeychain precompile's `getKey` function. A key is considered
