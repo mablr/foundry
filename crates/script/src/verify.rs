@@ -4,7 +4,8 @@ use crate::{
     receipts::FoundryReceiptResponse,
     sequence::{ScriptSequenceKind, get_commit_hash},
 };
-use alloy_network::{Network, ReceiptResponse};
+use alloy_evm::EthEvmFactory;
+use alloy_network::{Ethereum, Network, ReceiptResponse};
 use alloy_primitives::{Address, hex};
 use eyre::{Result, eyre};
 use forge_script_sequence::{AdditionalContract, ScriptSequence};
@@ -25,7 +26,7 @@ where
     N::TransactionRequest: for<'d> Deserialize<'d> + Serialize,
 {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig,
+    pub script_config: ScriptConfig<Ethereum, EthEvmFactory>,
     pub build_data: LinkedBuildData,
     pub sequence: ScriptSequenceKind<N>,
 }

@@ -2,6 +2,7 @@ use crate::{
     ScriptArgs, ScriptConfig, broadcast::BundledState, execute::LinkedState,
     multi_sequence::MultiChainSequence, sequence::ScriptSequenceKind,
 };
+use alloy_evm::EthEvmFactory;
 use alloy_network::{AnyNetwork, Ethereum};
 use alloy_primitives::{B256, Bytes};
 use alloy_provider::Provider;
@@ -41,7 +42,10 @@ impl BuildData {
 
     /// Links contracts. Uses CREATE2 linking when possible, otherwise falls back to
     /// default linking with sender nonce and address.
-    pub async fn link(self, script_config: &ScriptConfig) -> Result<LinkedBuildData> {
+    pub async fn link(
+        self,
+        script_config: &ScriptConfig<Ethereum, EthEvmFactory>,
+    ) -> Result<LinkedBuildData> {
         let create2_deployer = script_config.evm_opts.create2_deployer;
         let can_use_create2 = if let Some(fork_url) = &script_config.evm_opts.fork_url {
             let provider = ProviderBuilder::<AnyNetwork>::new(fork_url).build()?;
@@ -156,7 +160,7 @@ impl LinkedBuildData {
 /// First state basically containing only inputs of the user.
 pub struct PreprocessedState {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig,
+    pub script_config: ScriptConfig<Ethereum, EthEvmFactory>,
     pub script_wallets: Wallets,
     pub browser_wallet: Option<BrowserSigner<Ethereum>>,
 }
@@ -242,7 +246,7 @@ impl PreprocessedState {
 /// State after we have determined and compiled target contract to be executed.
 pub struct CompiledState {
     pub args: ScriptArgs,
-    pub script_config: ScriptConfig,
+    pub script_config: ScriptConfig<Ethereum, EthEvmFactory>,
     pub script_wallets: Wallets,
     pub browser_wallet: Option<BrowserSigner<Ethereum>>,
     pub build_data: BuildData,
