@@ -4062,7 +4062,10 @@ impl Backend<FoundryNetwork> {
         };
 
         // Include timestamp in receipt to avoid extra block lookups (e.g., in Otterscan API)
-        let inner = FoundryTxReceipt::with_timestamp(receipt, block.header.timestamp());
+        let mut inner = FoundryTxReceipt::with_timestamp(receipt, block.header.timestamp());
+        if self.is_tempo() {
+            inner = inner.with_fee_payer(info.from);
+        }
         Some(MinedTransactionReceipt { inner, out: info.out })
     }
 
