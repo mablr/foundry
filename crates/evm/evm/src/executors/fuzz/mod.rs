@@ -32,7 +32,6 @@ use proptest::{
     test_runner::{RngAlgorithm, TestCaseError, TestRng, TestRunner},
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use revm::primitives::hardfork::SpecId;
 use serde_json::json;
 use std::{
     sync::{
@@ -199,7 +198,7 @@ where
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 {
     /// Instantiates a fuzzed executor given a testrunner
     pub fn new(
