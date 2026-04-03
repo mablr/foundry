@@ -1326,7 +1326,7 @@ impl Config {
         Ok(None)
     }
 
-    /// Returns the [SpecId] derived from the configured [EvmVersion]
+    /// Returns the Spec derived from the configured [EvmVersion]
     pub fn evm_spec_id<SPEC: FromEvmVersion>(&self) -> SPEC {
         evm_spec_id(self.evm_version)
     }
