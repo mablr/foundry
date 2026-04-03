@@ -57,7 +57,6 @@ use proptest::{
     strategy::{BoxedStrategy, ValueTree},
     test_runner::TestRunner,
 };
-use revm::primitives::hardfork::SpecId;
 use serde::Serialize;
 use std::{
     fmt,
@@ -292,7 +291,7 @@ impl WorkerCorpus {
                 TxEnvelope: Decodable + SignerRecoverable,
                 TransactionRequest: FoundryTransactionBuilder<N>,
             >,
-        F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+        F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
     {
         let mutation_generator = prop_oneof![
             Just(MutationType::Splice),
@@ -787,7 +786,7 @@ impl WorkerCorpus {
                 TxEnvelope: Decodable + SignerRecoverable,
                 TransactionRequest: FoundryTransactionBuilder<N>,
             >,
-        F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+        F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
     {
         let Some(worker_dir) = &self.worker_dir else {
             return Ok(());
@@ -1009,7 +1008,7 @@ impl WorkerCorpus {
                 TxEnvelope: Decodable + SignerRecoverable,
                 TransactionRequest: FoundryTransactionBuilder<N>,
             >,
-        F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+        F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
     {
         trace!(target: "corpus", "syncing");
 

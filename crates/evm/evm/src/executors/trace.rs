@@ -14,7 +14,7 @@ use foundry_evm_core::{
 use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::TraceMode;
 use foundry_primitives::FoundryTransactionBuilder;
-use revm::{context::Transaction, primitives::hardfork::SpecId, state::Bytecode};
+use revm::{context::Transaction, state::Bytecode};
 use std::ops::{Deref, DerefMut};
 
 /// A default executor with tracing enabled
@@ -28,7 +28,7 @@ where
             TxEnvelope: Decodable + SignerRecoverable,
             TransactionRequest: FoundryTransactionBuilder<N>,
         >,
-    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>, Spec: From<SpecId>>,
+    F: FoundryEvmFactory<Tx: FromRecoveredTx<N::TxEnvelope>>,
 {
     pub fn new(
         env: (EvmEnv<F::Spec, F::BlockEnv>, F::Tx),
