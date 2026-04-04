@@ -13,9 +13,9 @@ extern crate tracing;
 
 use crate::runner::ScriptRunner;
 use alloy_json_abi::{Function, JsonAbi};
-use alloy_network::Ethereum;
+use alloy_network::{Ethereum, Network};
 use alloy_primitives::{
-    Address, Bytes, Log, TxKind, U256, hex,
+    Address, Bytes, Log, U256, hex,
     map::{AddressHashMap, HashMap},
 };
 use alloy_signer::Signer;
@@ -45,7 +45,7 @@ use foundry_config::{
 };
 use foundry_evm::{
     backend::Backend,
-    core::Breakpoints,
+    core::{Breakpoints, evm::FoundryEvmNetwork},
     executors::ExecutorBuilder,
     inspectors::{
         CheatsConfig,
@@ -417,7 +417,7 @@ impl ScriptArgs {
     /// the user.
     fn check_contract_sizes(
         &self,
-        result: &ScriptResult,
+        result: &ScriptResult<Ethereum>,
         known_contracts: &ContractsByArtifact,
         create2_deployer: Address,
     ) -> Result<()> {
@@ -458,20 +458,23 @@ impl ScriptArgs {
         };
 
         for (data, to) in result.transactions.iter().flat_map(|txes| {
-            txes.iter().filter_map(|tx| (tx.input.len() > max_size).then_some((&tx.input, tx.to)))
+            txes.iter().filter_map(|tx| {
+                tx.transaction
+                    .input()
+                    .filter(|data| data.len() > max_size)
+                    .map(|data| (data, tx.transaction.to()))
+            })
         }) {
             let mut offset = 0;
 
             // Find if it's a CREATE or CREATE2. Otherwise, skip transaction.
-            if let Some(TxKind::Call(to)) = to {
+            if let Some(to) = to {
                 if to == create2_deployer {
                     // Size of the salt prefix.
                     offset = 32;
                 } else {
                     continue;
                 }
-            } else if let Some(TxKind::Create) = to {
-                // Pass
             }
 
             // Find artifact with a deployment code same as the data.
@@ -514,12 +517,12 @@ impl Provider for ScriptArgs {
     fn data(&self) -> Result<Map<Profile, Dict>, figment::Error> {
         let mut dict = Dict::default();
 
-        if let Some(ref etherscan_api_key) =
+        if let Some(etherscan_api_key) =
             self.etherscan_api_key.as_ref().filter(|s| !s.trim().is_empty())
         {
             dict.insert(
                 "etherscan_api_key".to_string(),
-                figment::value::Value::from(etherscan_api_key.to_string()),
+                figment::value::Value::from(etherscan_api_key.clone()),
             );
         }
 
@@ -531,8 +534,9 @@ impl Provider for ScriptArgs {
     }
 }
 
-#[derive(Default, Serialize, Clone)]
-pub struct ScriptResult {
+#[derive(Serialize, Clone)]
+#[serde(bound = "")]
+pub struct ScriptResult<N: Network> {
     pub success: bool,
     #[serde(rename = "raw_logs")]
     pub logs: Vec<Log>,
@@ -540,14 +544,30 @@ pub struct ScriptResult {
     pub gas_used: u64,
     pub labeled_addresses: AddressHashMap<String>,
     #[serde(skip)]
-    pub transactions: Option<BroadcastableTransactions>,
+    pub transactions: Option<BroadcastableTransactions<N>>,
     pub returned: Bytes,
     pub address: Option<Address>,
     #[serde(skip)]
     pub breakpoints: Breakpoints,
 }
 
-impl ScriptResult {
+impl<N: Network> Default for ScriptResult<N> {
+    fn default() -> Self {
+        Self {
+            success: Default::default(),
+            logs: Default::default(),
+            traces: Default::default(),
+            gas_used: Default::default(),
+            labeled_addresses: Default::default(),
+            transactions: Default::default(),
+            returned: Default::default(),
+            address: Default::default(),
+            breakpoints: Default::default(),
+        }
+    }
+}
+
+impl<N: Network> ScriptResult<N> {
     pub fn get_created_contracts(
         &self,
         known_contracts: &ContractsByArtifact,
@@ -562,7 +582,7 @@ impl ScriptResult {
                             .find_by_creation_code(init_code.as_ref())
                             .map(|artifact| artifact.0.name.clone());
                         return Some(AdditionalContract {
-                            opcode: node.trace.kind,
+                            call_kind: node.trace.kind,
                             address: node.trace.address,
                             contract_name,
                             init_code,
@@ -576,23 +596,24 @@ impl ScriptResult {
 }
 
 #[derive(Serialize)]
-struct JsonResult<'a> {
+#[serde(bound = "")]
+struct JsonResult<'a, N: Network> {
     logs: Vec<String>,
     returns: &'a HashMap<String, NestedValue>,
     #[serde(flatten)]
-    result: &'a ScriptResult,
+    result: &'a ScriptResult<N>,
 }
 
 #[derive(Clone, Debug)]
-pub struct ScriptConfig {
+pub struct ScriptConfig<FEN: FoundryEvmNetwork> {
     pub config: Config,
     pub evm_opts: EvmOpts,
     pub sender_nonce: u64,
     /// Maps a rpc url to a backend
-    pub backends: HashMap<String, Backend>,
+    pub backends: HashMap<String, Backend<FEN>>,
 }
 
-impl ScriptConfig {
+impl<FEN: FoundryEvmNetwork> ScriptConfig<FEN> {
     pub async fn new(config: Config, evm_opts: EvmOpts) -> Result<Self> {
         let sender_nonce = if let Some(fork_url) = evm_opts.fork_url.as_ref() {
             next_nonce(evm_opts.sender, fork_url, evm_opts.fork_block_number).await?
@@ -615,7 +636,7 @@ impl ScriptConfig {
         Ok(())
     }
 
-    async fn get_runner(&mut self) -> Result<ScriptRunner> {
+    async fn get_runner(&mut self) -> Result<ScriptRunner<FEN>> {
         self._get_runner(None, false).await
     }
 
@@ -625,7 +646,7 @@ impl ScriptConfig {
         script_wallets: Wallets,
         debug: bool,
         target: ArtifactId,
-    ) -> Result<ScriptRunner> {
+    ) -> Result<ScriptRunner<FEN>> {
         self._get_runner(Some((known_contracts, script_wallets, target)), debug).await
     }
 
@@ -633,16 +654,17 @@ impl ScriptConfig {
         &mut self,
         cheats_data: Option<(ContractsByArtifact, Wallets, ArtifactId)>,
         debug: bool,
-    ) -> Result<ScriptRunner> {
+    ) -> Result<ScriptRunner<FEN>> {
         trace!("preparing script runner");
-        let (evm_env, tx_env) = self.evm_opts.env().await?;
+        let (evm_env, tx_env, fork_block) = self.evm_opts.env().await?;
 
         let db = if let Some(fork_url) = self.evm_opts.fork_url.as_ref() {
             match self.backends.get(fork_url) {
                 Some(db) => db.clone(),
                 None => {
-                    let fork = self.evm_opts.get_fork(&self.config, evm_env.clone());
-                    let backend = Backend::spawn(fork)?;
+                    let fork =
+                        self.evm_opts.get_fork(&self.config, evm_env.cfg_env.chain_id, fork_block);
+                    let backend = Backend::<FEN>::spawn(fork)?;
                     self.backends.insert(fork_url.clone(), backend.clone());
                     backend
                 }
@@ -655,7 +677,7 @@ impl ScriptConfig {
         };
 
         // We need to enable tracing to decode contract names: local or external.
-        let mut builder = ExecutorBuilder::new()
+        let mut builder = ExecutorBuilder::default()
             .inspectors(|stack| {
                 stack
                     .logs(self.config.live_logs)
@@ -968,5 +990,20 @@ mod tests {
             "SolveTutorial",
         ]);
         assert!(args.with_gas_price.unwrap().is_zero());
+    }
+
+    #[test]
+    fn test_priority_gas_price_cannot_exceed_gas_price() {
+        let args = ScriptArgs::parse_from([
+            "foundry-cli",
+            "--broadcast",
+            "--with-gas-price",
+            "100",
+            "--priority-gas-price",
+            "200",
+            "Script",
+        ]);
+        // priority (200) > max_fee (100) — broadcast should reject this at runtime
+        assert!(args.priority_gas_price.unwrap() > args.with_gas_price.unwrap());
     }
 }
