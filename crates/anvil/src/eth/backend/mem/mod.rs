@@ -2005,7 +2005,7 @@ impl<N: Network> Backend<N> {
             let chain_id = self.evm_env.read().cfg_env.chain_id;
             let timestamp = self.genesis.timestamp;
             let test_accounts: Vec<Address> = self.genesis.accounts.clone();
-            let hardfork = tempo_chainspec::hardfork::TempoHardfork::default();
+            let hardfork = TempoHardfork::from(self.hardfork);
             let mut db = self.db.write().await;
             crate::eth::backend::tempo::initialize_tempo_precompiles(
                 &mut **db,
