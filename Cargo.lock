@@ -1222,6 +1222,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tempo-alloy",
  "tempo-chainspec",
  "tempo-evm",
  "tempo-precompiles",
