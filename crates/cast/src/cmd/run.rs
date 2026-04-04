@@ -28,13 +28,16 @@ use foundry_config::{
     },
 };
 use foundry_evm::{
-    core::evm::EthEvmNetwork,
+    core::{FoundryBlock, evm::EthEvmNetwork},
     executors::{EvmError, Executor, TracingExecutor},
     opts::EvmOpts,
     traces::{InternalTraceMode, TraceMode, Traces},
 };
 use futures::TryFutureExt;
-use revm::{DatabaseRef, context::TxEnv};
+use revm::{
+    DatabaseRef,
+    context::{Block, TxEnv},
+};
 
 /// CLI arguments for `cast run`.
 #[derive(Clone, Debug, Parser)]
@@ -184,7 +187,7 @@ impl RunArgs {
         }
 
         evm_env.cfg_env.limit_contract_code_size = None;
-        evm_env.block_env.number = U256::from(tx_block_number);
+        evm_env.block_env.set_number(U256::from(tx_block_number));
 
         if let Some(block) = &block {
             evm_env.block_env = block_env_from_header(&block.header);
@@ -266,7 +269,7 @@ impl RunArgs {
                                 format!(
                                     "Failed to execute transaction: {:?} in block {}",
                                     tx.tx_hash(),
-                                    evm_env.block_env.number
+                                    evm_env.block_env.number()
                                 )
                             },
                         )?;
@@ -283,7 +286,7 @@ impl RunArgs {
                                         format!(
                                             "Failed to deploy transaction: {:?} in block {}",
                                             tx.tx_hash(),
-                                            evm_env.block_env.number
+                                            evm_env.block_env.number()
                                         )
                                     });
                                 }
