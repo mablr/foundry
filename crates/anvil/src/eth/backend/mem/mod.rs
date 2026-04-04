@@ -2005,7 +2005,7 @@ impl<N: Network> Backend<N> {
             let chain_id = self.evm_env.read().cfg_env.chain_id;
             let timestamp = self.genesis.timestamp;
             let test_accounts: Vec<Address> = self.genesis.accounts.clone();
-            let hardfork = tempo_chainspec::hardfork::TempoHardfork::default();
+            let hardfork = TempoHardfork::from(self.hardfork);
             let mut db = self.db.write().await;
             crate::eth::backend::tempo::initialize_tempo_precompiles(
                 &mut **db,
@@ -3488,6 +3488,259 @@ where
 
         Ok(())
     }
+
+    /// Returns the traces for the given transaction
+    pub async fn debug_trace_transaction(
+        &self,
+        hash: B256,
+        opts: GethDebugTracingOptions,
+    ) -> Result<GethTrace, BlockchainError> {
+        #[cfg(feature = "js-tracer")]
+        if let Some(tracer_type) = opts.tracer.as_ref()
+            && tracer_type.is_js()
+        {
+            return self
+                .trace_tx_with_js_tracer(hash, tracer_type.as_str().to_string(), opts.clone())
+                .await;
+        }
+
+        if let Some(trace) = self.mined_geth_trace_transaction(hash, opts.clone()).await {
+            return trace;
+        }
+
+        if let Some(fork) = self.get_fork() {
+            return Ok(fork.debug_trace_transaction(hash, opts).await?);
+        }
+
+        Ok(GethTrace::Default(Default::default()))
+    }
+
+    fn geth_trace(
+        &self,
+        tx: &MinedTransaction<N>,
+        opts: GethDebugTracingOptions,
+    ) -> Result<GethTrace, BlockchainError> {
+        let GethDebugTracingOptions { config, tracer, tracer_config, .. } = opts;
+
+        if let Some(tracer) = tracer {
+            match tracer {
+                GethDebugTracerType::BuiltInTracer(tracer) => match tracer {
+                    GethDebugBuiltInTracerType::FourByteTracer => {
+                        let inspector = FourByteInspector::default();
+                        let res = self.replay_tx_with_inspector(
+                            tx.info.transaction_hash,
+                            inspector,
+                            |_, _, inspector, _, _| FourByteFrame::from(inspector).into(),
+                        )?;
+                        return Ok(res);
+                    }
+                    GethDebugBuiltInTracerType::CallTracer => {
+                        return match tracer_config.into_call_config() {
+                            Ok(call_config) => {
+                                let inspector = TracingInspector::new(
+                                    TracingInspectorConfig::from_geth_call_config(&call_config),
+                                );
+                                let frame = self.replay_tx_with_inspector(
+                                    tx.info.transaction_hash,
+                                    inspector,
+                                    |_, _, inspector, _, _| {
+                                        inspector
+                                            .geth_builder()
+                                            .geth_call_traces(
+                                                call_config,
+                                                tx.receipt.cumulative_gas_used(),
+                                            )
+                                            .into()
+                                    },
+                                )?;
+                                Ok(frame)
+                            }
+                            Err(e) => Err(RpcError::invalid_params(e.to_string()).into()),
+                        };
+                    }
+                    GethDebugBuiltInTracerType::PreStateTracer => {
+                        return match tracer_config.into_pre_state_config() {
+                            Ok(pre_state_config) => {
+                                let inspector = TracingInspector::new(
+                                    TracingInspectorConfig::from_geth_prestate_config(
+                                        &pre_state_config,
+                                    ),
+                                );
+                                let frame = self.replay_tx_with_inspector(
+                                    tx.info.transaction_hash,
+                                    inspector,
+                                    |state, db, inspector, _, _| {
+                                        inspector.geth_builder().geth_prestate_traces(
+                                            &state,
+                                            &pre_state_config,
+                                            db,
+                                        )
+                                    },
+                                )??;
+                                Ok(frame.into())
+                            }
+                            Err(e) => Err(RpcError::invalid_params(e.to_string()).into()),
+                        };
+                    }
+                    GethDebugBuiltInTracerType::NoopTracer
+                    | GethDebugBuiltInTracerType::MuxTracer
+                    | GethDebugBuiltInTracerType::Erc7562Tracer
+                    | GethDebugBuiltInTracerType::FlatCallTracer => {}
+                },
+                GethDebugTracerType::JsTracer(_code) => {}
+            }
+
+            return Ok(NoopFrame::default().into());
+        }
+
+        // default structlog tracer
+        Ok(GethTraceBuilder::new(tx.info.traces.clone())
+            .geth_traces(
+                tx.receipt.cumulative_gas_used(),
+                tx.info.out.clone().unwrap_or_default(),
+                config,
+            )
+            .into())
+    }
+
+    async fn mined_geth_trace_transaction(
+        &self,
+        hash: B256,
+        opts: GethDebugTracingOptions,
+    ) -> Option<Result<GethTrace, BlockchainError>> {
+        self.blockchain.storage.read().transactions.get(&hash).map(|tx| self.geth_trace(tx, opts))
+    }
+
+    /// returns all receipts for the given transactions
+    fn get_receipts(
+        &self,
+        tx_hashes: impl IntoIterator<Item = TxHash>,
+    ) -> Vec<FoundryReceiptEnvelope> {
+        let storage = self.blockchain.storage.read();
+        let mut receipts = vec![];
+
+        for hash in tx_hashes {
+            if let Some(tx) = storage.transactions.get(&hash) {
+                receipts.push(tx.receipt.clone());
+            }
+        }
+
+        receipts
+    }
+
+    pub async fn transaction_receipt(
+        &self,
+        hash: B256,
+    ) -> Result<Option<FoundryTxReceipt>, BlockchainError> {
+        if let Some(receipt) = self.mined_transaction_receipt(hash) {
+            return Ok(Some(receipt.inner));
+        }
+
+        if let Some(fork) = self.get_fork() {
+            let receipt = fork.transaction_receipt(hash).await?;
+            let number = self.convert_block_number(
+                receipt.clone().and_then(|r| r.block_number()).map(BlockNumber::from),
+            );
+
+            if fork.predates_fork_inclusive(number) {
+                return Ok(receipt);
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Returns all transaction receipts of the block
+    pub fn mined_block_receipts(&self, id: impl Into<BlockId>) -> Option<Vec<FoundryTxReceipt>> {
+        let mut receipts = Vec::new();
+        let block = self.get_block(id)?;
+
+        for transaction in block.body.transactions {
+            let receipt = self.mined_transaction_receipt(transaction.hash())?;
+            receipts.push(receipt.inner);
+        }
+
+        Some(receipts)
+    }
+
+    /// Returns the transaction receipt for the given hash
+    pub(crate) fn mined_transaction_receipt(
+        &self,
+        hash: B256,
+    ) -> Option<MinedTransactionReceipt<FoundryNetwork>> {
+        let MinedTransaction { info, receipt: tx_receipt, block_hash, .. } =
+            self.blockchain.get_transaction_by_hash(&hash)?;
+
+        let index = info.transaction_index as usize;
+        let block = self.blockchain.get_block_by_hash(&block_hash)?;
+        let transaction = block.body.transactions[index].clone();
+
+        // Cancun specific
+        let excess_blob_gas = block.header.excess_blob_gas();
+        let blob_gas_price =
+            alloy_eips::eip4844::calc_blob_gasprice(excess_blob_gas.unwrap_or_default());
+        let blob_gas_used = transaction.blob_gas_used();
+
+        let effective_gas_price = transaction.effective_gas_price(block.header.base_fee_per_gas());
+
+        let receipts = self.get_receipts(block.body.transactions.iter().map(|tx| tx.hash()));
+        let next_log_index = receipts[..index].iter().map(|r| r.logs().len()).sum::<usize>();
+
+        let tx_receipt = tx_receipt.convert_logs_rpc(
+            BlockNumHash::new(block.header.number(), block_hash),
+            block.header.timestamp(),
+            info.transaction_hash,
+            info.transaction_index,
+            next_log_index,
+        );
+
+        let receipt = TransactionReceipt {
+            inner: tx_receipt,
+            transaction_hash: info.transaction_hash,
+            transaction_index: Some(info.transaction_index),
+            block_number: Some(block.header.number()),
+            gas_used: info.gas_used,
+            contract_address: info.contract_address,
+            effective_gas_price,
+            block_hash: Some(block_hash),
+            from: info.from,
+            to: info.to,
+            blob_gas_price: Some(blob_gas_price),
+            blob_gas_used,
+        };
+
+        // Include timestamp in receipt to avoid extra block lookups (e.g., in Otterscan API)
+        let mut inner = FoundryTxReceipt::with_timestamp(receipt, block.header.timestamp());
+        if self.is_tempo() {
+            inner = inner.with_fee_payer(info.from);
+        }
+        Some(MinedTransactionReceipt { inner, out: info.out })
+    }
+
+    /// Returns the blocks receipts for the given number
+    pub async fn block_receipts(
+        &self,
+        number: BlockId,
+    ) -> Result<Option<Vec<FoundryTxReceipt>>, BlockchainError> {
+        if let Some(receipts) = self.mined_block_receipts(number) {
+            return Ok(Some(receipts));
+        }
+
+        if let Some(fork) = self.get_fork() {
+            let number = match self.ensure_block_number(Some(number)).await {
+                Err(_) => return Ok(None),
+                Ok(n) => n,
+            };
+
+            if fork.predates_fork_inclusive(number) {
+                let receipts = fork.block_receipts(number).await?;
+
+                return Ok(receipts);
+            }
+        }
+
+        Ok(None)
+    }
 }
 
 impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> Backend<N> {
@@ -3841,259 +4094,6 @@ impl Backend<FoundryNetwork> {
             Ok(block_res)
         })
         .await?
-    }
-
-    /// returns all receipts for the given transactions
-    fn get_receipts(
-        &self,
-        tx_hashes: impl IntoIterator<Item = TxHash>,
-    ) -> Vec<FoundryReceiptEnvelope> {
-        let storage = self.blockchain.storage.read();
-        let mut receipts = vec![];
-
-        for hash in tx_hashes {
-            if let Some(tx) = storage.transactions.get(&hash) {
-                receipts.push(tx.receipt.clone());
-            }
-        }
-
-        receipts
-    }
-
-    /// Returns the traces for the given transaction
-    pub async fn debug_trace_transaction(
-        &self,
-        hash: B256,
-        opts: GethDebugTracingOptions,
-    ) -> Result<GethTrace, BlockchainError> {
-        #[cfg(feature = "js-tracer")]
-        if let Some(tracer_type) = opts.tracer.as_ref()
-            && tracer_type.is_js()
-        {
-            return self
-                .trace_tx_with_js_tracer(hash, tracer_type.as_str().to_string(), opts.clone())
-                .await;
-        }
-
-        if let Some(trace) = self.mined_geth_trace_transaction(hash, opts.clone()).await {
-            return trace;
-        }
-
-        if let Some(fork) = self.get_fork() {
-            return Ok(fork.debug_trace_transaction(hash, opts).await?);
-        }
-
-        Ok(GethTrace::Default(Default::default()))
-    }
-
-    fn geth_trace(
-        &self,
-        tx: &MinedTransaction<FoundryNetwork>,
-        opts: GethDebugTracingOptions,
-    ) -> Result<GethTrace, BlockchainError> {
-        let GethDebugTracingOptions { config, tracer, tracer_config, .. } = opts;
-
-        if let Some(tracer) = tracer {
-            match tracer {
-                GethDebugTracerType::BuiltInTracer(tracer) => match tracer {
-                    GethDebugBuiltInTracerType::FourByteTracer => {
-                        let inspector = FourByteInspector::default();
-                        let res = self.replay_tx_with_inspector(
-                            tx.info.transaction_hash,
-                            inspector,
-                            |_, _, inspector, _, _| FourByteFrame::from(inspector).into(),
-                        )?;
-                        return Ok(res);
-                    }
-                    GethDebugBuiltInTracerType::CallTracer => {
-                        return match tracer_config.into_call_config() {
-                            Ok(call_config) => {
-                                let inspector = TracingInspector::new(
-                                    TracingInspectorConfig::from_geth_call_config(&call_config),
-                                );
-                                let frame = self.replay_tx_with_inspector(
-                                    tx.info.transaction_hash,
-                                    inspector,
-                                    |_, _, inspector, _, _| {
-                                        inspector
-                                            .geth_builder()
-                                            .geth_call_traces(
-                                                call_config,
-                                                tx.receipt.cumulative_gas_used(),
-                                            )
-                                            .into()
-                                    },
-                                )?;
-                                Ok(frame)
-                            }
-                            Err(e) => Err(RpcError::invalid_params(e.to_string()).into()),
-                        };
-                    }
-                    GethDebugBuiltInTracerType::PreStateTracer => {
-                        return match tracer_config.into_pre_state_config() {
-                            Ok(pre_state_config) => {
-                                let inspector = TracingInspector::new(
-                                    TracingInspectorConfig::from_geth_prestate_config(
-                                        &pre_state_config,
-                                    ),
-                                );
-                                let frame = self.replay_tx_with_inspector(
-                                    tx.info.transaction_hash,
-                                    inspector,
-                                    |state, db, inspector, _, _| {
-                                        inspector.geth_builder().geth_prestate_traces(
-                                            &state,
-                                            &pre_state_config,
-                                            db,
-                                        )
-                                    },
-                                )??;
-                                Ok(frame.into())
-                            }
-                            Err(e) => Err(RpcError::invalid_params(e.to_string()).into()),
-                        };
-                    }
-                    GethDebugBuiltInTracerType::NoopTracer
-                    | GethDebugBuiltInTracerType::MuxTracer
-                    | GethDebugBuiltInTracerType::Erc7562Tracer
-                    | GethDebugBuiltInTracerType::FlatCallTracer => {}
-                },
-                GethDebugTracerType::JsTracer(_code) => {}
-            }
-
-            return Ok(NoopFrame::default().into());
-        }
-
-        // default structlog tracer
-        Ok(GethTraceBuilder::new(tx.info.traces.clone())
-            .geth_traces(
-                tx.receipt.cumulative_gas_used(),
-                tx.info.out.clone().unwrap_or_default(),
-                config,
-            )
-            .into())
-    }
-
-    async fn mined_geth_trace_transaction(
-        &self,
-        hash: B256,
-        opts: GethDebugTracingOptions,
-    ) -> Option<Result<GethTrace, BlockchainError>> {
-        self.blockchain.storage.read().transactions.get(&hash).map(|tx| self.geth_trace(tx, opts))
-    }
-
-    pub async fn transaction_receipt(
-        &self,
-        hash: B256,
-    ) -> Result<Option<FoundryTxReceipt>, BlockchainError> {
-        if let Some(receipt) = self.mined_transaction_receipt(hash) {
-            return Ok(Some(receipt.inner));
-        }
-
-        if let Some(fork) = self.get_fork() {
-            let receipt = fork.transaction_receipt(hash).await?;
-            let number = self.convert_block_number(
-                receipt.clone().and_then(|r| r.block_number()).map(BlockNumber::from),
-            );
-
-            if fork.predates_fork_inclusive(number) {
-                return Ok(receipt);
-            }
-        }
-
-        Ok(None)
-    }
-
-    /// Returns all transaction receipts of the block
-    pub fn mined_block_receipts(&self, id: impl Into<BlockId>) -> Option<Vec<FoundryTxReceipt>> {
-        let mut receipts = Vec::new();
-        let block = self.get_block(id)?;
-
-        for transaction in block.body.transactions {
-            let receipt = self.mined_transaction_receipt(transaction.hash())?;
-            receipts.push(receipt.inner);
-        }
-
-        Some(receipts)
-    }
-
-    /// Returns the transaction receipt for the given hash
-    pub(crate) fn mined_transaction_receipt(
-        &self,
-        hash: B256,
-    ) -> Option<MinedTransactionReceipt<FoundryNetwork>> {
-        let MinedTransaction { info, receipt: tx_receipt, block_hash, .. } =
-            self.blockchain.get_transaction_by_hash(&hash)?;
-
-        let index = info.transaction_index as usize;
-        let block = self.blockchain.get_block_by_hash(&block_hash)?;
-        let transaction = block.body.transactions[index].clone();
-
-        // Cancun specific
-        let excess_blob_gas = block.header.excess_blob_gas();
-        let blob_gas_price =
-            alloy_eips::eip4844::calc_blob_gasprice(excess_blob_gas.unwrap_or_default());
-        let blob_gas_used = transaction.blob_gas_used();
-
-        let effective_gas_price = transaction.effective_gas_price(block.header.base_fee_per_gas());
-
-        let receipts = self.get_receipts(block.body.transactions.iter().map(|tx| tx.hash()));
-        let next_log_index = receipts[..index].iter().map(|r| r.logs().len()).sum::<usize>();
-
-        let tx_receipt = tx_receipt.convert_logs_rpc(
-            BlockNumHash::new(block.header.number(), block_hash),
-            block.header.timestamp(),
-            info.transaction_hash,
-            info.transaction_index,
-            next_log_index,
-        );
-
-        let receipt = TransactionReceipt {
-            inner: tx_receipt,
-            transaction_hash: info.transaction_hash,
-            transaction_index: Some(info.transaction_index),
-            block_number: Some(block.header.number()),
-            gas_used: info.gas_used,
-            contract_address: info.contract_address,
-            effective_gas_price,
-            block_hash: Some(block_hash),
-            from: info.from,
-            to: info.to,
-            blob_gas_price: Some(blob_gas_price),
-            blob_gas_used,
-        };
-
-        // Include timestamp in receipt to avoid extra block lookups (e.g., in Otterscan API)
-        let mut inner = FoundryTxReceipt::with_timestamp(receipt, block.header.timestamp());
-        if self.is_tempo() {
-            inner = inner.with_fee_payer(info.from);
-        }
-        Some(MinedTransactionReceipt { inner, out: info.out })
-    }
-
-    /// Returns the blocks receipts for the given number
-    pub async fn block_receipts(
-        &self,
-        number: BlockId,
-    ) -> Result<Option<Vec<FoundryTxReceipt>>, BlockchainError> {
-        if let Some(receipts) = self.mined_block_receipts(number) {
-            return Ok(Some(receipts));
-        }
-
-        if let Some(fork) = self.get_fork() {
-            let number = match self.ensure_block_number(Some(number)).await {
-                Err(_) => return Ok(None),
-                Ok(n) => n,
-            };
-
-            if fork.predates_fork_inclusive(number) {
-                let receipts = fork.block_receipts(number).await?;
-
-                return Ok(receipts);
-            }
-        }
-
-        Ok(None)
     }
 
     pub fn get_blob_by_tx_hash(&self, hash: B256) -> Result<Option<Vec<alloy_consensus::Blob>>> {
