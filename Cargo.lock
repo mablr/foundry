@@ -5182,7 +5182,6 @@ version = "1.6.0"
 dependencies = [
  "alloy-chains",
  "alloy-dyn-abi",
- "alloy-evm",
  "alloy-json-abi",
  "alloy-primitives",
  "alloy-rpc-types",

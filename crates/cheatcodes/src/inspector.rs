@@ -39,8 +39,9 @@ use foundry_evm_core::{
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME},
     env::FoundryContextExt,
     evm::{
-        BlockEnvFor, EthEvmNetwork, FoundryEvmFactory, FoundryEvmNetwork, IntoNestedEvm, NestedEvm,
-        NestedEvmClosure, SpecFor, TxEnvFor, with_cloned_context,
+        BlockEnvFor, EthEvmNetwork, FoundryContextFor, FoundryEvmFactory, FoundryEvmNetwork,
+        IntoNestedEvm, NestedEvm, NestedEvmClosure, SpecFor, TransactionRequestFor, TxEnvFor,
+        with_cloned_context,
     },
 };
 use foundry_evm_traces::{
@@ -87,7 +88,7 @@ pub trait CheatcodesExecutor<FEN: FoundryEvmNetwork> {
     fn with_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes<FEN>,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         f: NestedEvmClosure<'_, SpecFor<FEN>, BlockEnvFor<FEN>, TxEnvFor<FEN>>,
     ) -> Result<(), EVMError<DatabaseError>>;
 
@@ -95,7 +96,7 @@ pub trait CheatcodesExecutor<FEN: FoundryEvmNetwork> {
     fn transact_on_db(
         &mut self,
         cheats: &mut Cheatcodes<FEN>,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         fork_id: Option<U256>,
         transaction: B256,
     ) -> eyre::Result<()>;
@@ -104,7 +105,7 @@ pub trait CheatcodesExecutor<FEN: FoundryEvmNetwork> {
     fn transact_from_tx_on_db(
         &mut self,
         cheats: &mut Cheatcodes<FEN>,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         tx: TxEnvFor<FEN>,
     ) -> eyre::Result<()>;
 
@@ -116,7 +117,7 @@ pub trait CheatcodesExecutor<FEN: FoundryEvmNetwork> {
     fn with_fresh_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes<FEN>,
-        db: &mut <<FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_> as ContextTr>::Db,
+        db: &mut <FoundryContextFor<'_, FEN> as ContextTr>::Db,
         evm_env: EvmEnv<SpecFor<FEN>, BlockEnvFor<FEN>>,
         f: NestedEvmClosure<'_, SpecFor<FEN>, BlockEnvFor<FEN>, TxEnvFor<FEN>>,
     ) -> Result<EvmEnv<SpecFor<FEN>, BlockEnvFor<FEN>>, EVMError<DatabaseError>>;
@@ -171,7 +172,7 @@ impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for TransparentCheatcodesEx
     fn with_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes<FEN>,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         f: NestedEvmClosure<'_, SpecFor<FEN>, BlockEnvFor<FEN>, TxEnvFor<FEN>>,
     ) -> Result<(), EVMError<DatabaseError>> {
         with_cloned_context(ecx, |db, evm_env, journal_inner| {
@@ -189,7 +190,7 @@ impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for TransparentCheatcodesEx
     fn with_fresh_nested_evm(
         &mut self,
         cheats: &mut Cheatcodes<FEN>,
-        db: &mut <<FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_> as ContextTr>::Db,
+        db: &mut <FoundryContextFor<'_, FEN> as ContextTr>::Db,
         evm_env: EvmEnv<SpecFor<FEN>, BlockEnvFor<FEN>>,
         f: NestedEvmClosure<'_, SpecFor<FEN>, BlockEnvFor<FEN>, TxEnvFor<FEN>>,
     ) -> Result<EvmEnv<SpecFor<FEN>, BlockEnvFor<FEN>>, EVMError<DatabaseError>> {
@@ -203,7 +204,7 @@ impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for TransparentCheatcodesEx
     fn transact_on_db(
         &mut self,
         cheats: &mut Cheatcodes<FEN>,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         fork_id: Option<U256>,
         transaction: B256,
     ) -> eyre::Result<()> {
@@ -215,7 +216,7 @@ impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for TransparentCheatcodesEx
     fn transact_from_tx_on_db(
         &mut self,
         cheats: &mut Cheatcodes<FEN>,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         tx: TxEnvFor<FEN>,
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
@@ -671,7 +672,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
     /// Decodes the input data and applies the cheatcode.
     fn apply_cheatcode(
         &mut self,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         call: &CallInputs,
         executor: &mut dyn CheatcodesExecutor<FEN>,
     ) -> Result {
@@ -763,7 +764,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
 
     pub fn call_with_executor(
         &mut self,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         call: &mut CallInputs,
         executor: &mut dyn CheatcodesExecutor<FEN>,
     ) -> Option<CallOutcome> {
@@ -981,7 +982,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
                     let account =
                         ecx.journal_mut().evm_state_mut().get_mut(&broadcast.new_origin).unwrap();
 
-                    let mut tx_req = <FEN::Network as Network>::TransactionRequest::default()
+                    let mut tx_req = TransactionRequestFor::<FEN>::default()
                         .with_from(broadcast.new_origin)
                         .with_to(call.target_address)
                         .with_value(call.transfer_value().unwrap_or_default())
@@ -1180,13 +1181,11 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
     }
 }
 
-impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>>
-    for Cheatcodes<FEN>
-{
+impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcodes<FEN> {
     fn initialize_interp(
         &mut self,
         interpreter: &mut Interpreter,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
     ) {
         // When the first interpreter is initialized we've circumvented the balance and gas checks,
         // so we apply our actual block data with the correct fees and all.
@@ -1208,11 +1207,7 @@ impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::F
         }
     }
 
-    fn step(
-        &mut self,
-        interpreter: &mut Interpreter,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
-    ) {
+    fn step(&mut self, interpreter: &mut Interpreter, ecx: &mut FoundryContextFor<'_, FEN>) {
         self.pc = interpreter.bytecode.pc();
 
         if self.broadcast.is_some() {
@@ -1258,11 +1253,7 @@ impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::F
         }
     }
 
-    fn step_end(
-        &mut self,
-        interpreter: &mut Interpreter,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
-    ) {
+    fn step_end(&mut self, interpreter: &mut Interpreter, ecx: &mut FoundryContextFor<'_, FEN>) {
         if self.gas_metering.paused {
             self.meter_gas_end(interpreter);
         }
@@ -1277,11 +1268,7 @@ impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::F
         }
     }
 
-    fn log(
-        &mut self,
-        _ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
-        log: Log,
-    ) {
+    fn log(&mut self, _ecx: &mut FoundryContextFor<'_, FEN>, log: Log) {
         if !self.expected_emits.is_empty()
             && let Some(err) = expect::handle_expect_emit(self, &log, None)
         {
@@ -1298,7 +1285,7 @@ impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::F
     fn log_full(
         &mut self,
         interpreter: &mut Interpreter,
-        _ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        _ecx: &mut FoundryContextFor<'_, FEN>,
         log: Log,
     ) {
         if !self.expected_emits.is_empty() {
@@ -1311,7 +1298,7 @@ impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::F
 
     fn call(
         &mut self,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         inputs: &mut CallInputs,
     ) -> Option<CallOutcome> {
         Self::call_with_executor(self, ecx, inputs, &mut TransparentCheatcodesExecutor)
@@ -1319,7 +1306,7 @@ impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::F
 
     fn call_end(
         &mut self,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         call: &CallInputs,
         outcome: &mut CallOutcome,
     ) {
@@ -1725,7 +1712,7 @@ impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::F
 
     fn create(
         &mut self,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         mut input: &mut CreateInputs,
     ) -> Option<CreateOutcome> {
         // Apply custom execution evm version.
@@ -1810,7 +1797,7 @@ impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::F
                 self.broadcastable_transactions.push_back(BroadcastableTransaction {
                     rpc,
                     transaction: TransactionMaybeSigned::new(
-                        <FEN::Network as Network>::TransactionRequest::default()
+                        TransactionRequestFor::<FEN>::default()
                             .with_from(broadcast.new_origin)
                             .with_kind(TxKind::Create)
                             .with_value(input.value())
@@ -1855,7 +1842,7 @@ impl<FEN: FoundryEvmNetwork> Inspector<<FEN::EvmFactory as FoundryEvmFactory>::F
 
     fn create_end(
         &mut self,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
         call: &CreateInputs,
         outcome: &mut CreateOutcome,
     ) {
@@ -2037,7 +2024,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
     fn meter_gas_record(
         &mut self,
         interpreter: &mut Interpreter,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
     ) {
         if interpreter.bytecode.action.as_ref().and_then(|i| i.instruction_result()).is_none() {
             self.gas_metering.gas_records.iter_mut().for_each(|record| {
@@ -2105,7 +2092,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
     fn arbitrary_storage_end(
         &mut self,
         interpreter: &mut Interpreter,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
     ) {
         let (key, target_address) = if interpreter.bytecode.opcode() == op::SLOAD {
             (try_or_return!(interpreter.stack.peek(0)), interpreter.input.target_address)
@@ -2161,7 +2148,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
     fn record_state_diffs(
         &mut self,
         interpreter: &mut Interpreter,
-        ecx: &mut <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'_>,
+        ecx: &mut FoundryContextFor<'_, FEN>,
     ) {
         let Some(account_accesses) = &mut self.recorded_account_diffs_stack else { return };
         match interpreter.bytecode.opcode() {

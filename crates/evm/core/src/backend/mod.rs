@@ -4,8 +4,9 @@ use crate::{
     FoundryBlock, FoundryInspectorExt, FoundryTransaction,
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, TEST_CONTRACT_ADDRESS},
     evm::{
-        BlockEnvFor, EthEvmNetwork, EvmEnvFor, FoundryEvmFactory, FoundryEvmNetwork, SpecFor,
-        TxEnvFor,
+        BlockEnvFor, BlockResponseFor, EthEvmNetwork, EvmEnvFor, FoundryContextFor,
+        FoundryEvmFactory, FoundryEvmNetwork, HaltReasonFor, PrecompilesFor, SpecFor,
+        TransactionResponseFor, TxEnvFor,
     },
     fork::{CreateFork, ForkId, MultiFork},
     state_snapshot::StateSnapshots,
@@ -816,14 +817,12 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
     /// Note: in case there are any cheatcodes executed that modify the environment, this will
     /// update the given `env` with the new values.
     #[instrument(name = "inspect", level = "debug", skip_all)]
-    pub fn inspect<
-        I: for<'db> FoundryInspectorExt<<FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'db>>,
-    >(
+    pub fn inspect<I: for<'db> FoundryInspectorExt<FoundryContextFor<'db, FEN>>>(
         &mut self,
         evm_env: &mut EvmEnvFor<FEN>,
         tx_env: &mut TxEnvFor<FEN>,
         inspector: I,
-    ) -> eyre::Result<ResultAndState<<FEN::EvmFactory as EvmFactory>::HaltReason>>
+    ) -> eyre::Result<ResultAndState<HaltReasonFor<FEN>>>
     where
         Self: DatabaseExt<BlockEnvFor<FEN>, TxEnvFor<FEN>, SpecFor<FEN>>,
     {
@@ -906,7 +905,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         &self,
         id: LocalForkId,
         transaction: B256,
-    ) -> eyre::Result<(u64, <FEN::Network as Network>::BlockResponse)> {
+    ) -> eyre::Result<(u64, BlockResponseFor<FEN>)> {
         let fork = self.inner.get_fork_by_id(id)?;
         let tx = fork.backend().get_transaction(transaction)?;
 
@@ -936,7 +935,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         evm_env: EvmEnvFor<FEN>,
         tx_hash: B256,
         journaled_state: &mut JournaledState,
-    ) -> eyre::Result<Option<<FEN::Network as Network>::TransactionResponse>> {
+    ) -> eyre::Result<Option<TransactionResponseFor<FEN>>> {
         trace!(?id, ?tx_hash, "replay until transaction");
 
         let persistent_accounts = self.inner.persistent_accounts.clone();
@@ -971,9 +970,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
             let mut evm = FEN::EvmFactory::default().create_evm(replay_db, evm_env);
 
             for tx in &txs_to_replay {
-                let tx_env = <TxEnvFor<FEN> as FromRecoveredTx<
-                    <FEN::Network as Network>::TxEnvelope,
-                >>::from_recovered_tx(tx.as_ref(), tx.from());
+                let tx_env = TxEnvFor::<FEN>::from_recovered_tx(tx.as_ref(), tx.from());
                 trace!(tx=?tx.tx_hash(), "committing transaction");
                 evm.transact_commit(tx_env).wrap_err("backend: failed committing transaction")?;
             }
@@ -1373,7 +1370,7 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<BlockEnvFor<FEN>, TxEnvFor<FEN>, SpecFo
             let fork = self.inner.get_fork_by_id_mut(id)?;
             fork.backend().get_transaction(transaction)?
         };
-        let tx_env = <TxEnvFor<FEN> as FromRecoveredTx<<FEN::Network as Network>::TxEnvelope>>::from_recovered_tx(tx.as_ref(), tx.from());
+        let tx_env = TxEnvFor::<FEN>::from_recovered_tx(tx.as_ref(), tx.from());
 
         // This is a bit ambiguous because the user wants to transact an arbitrary transaction in
         // the current context, but we're assuming the user wants to transact the transaction as it
@@ -1982,7 +1979,7 @@ impl<FEN: FoundryEvmNetwork> BackendInner<FEN> {
         self.issued_local_fork_ids.is_empty()
     }
 
-    pub fn precompiles(&self) -> <FEN::EvmFactory as EvmFactory>::Precompiles {
+    pub fn precompiles(&self) -> PrecompilesFor<FEN> {
         let evm = FEN::EvmFactory::default().create_evm(
             EmptyDB::default(),
             EvmEnv::new(CfgEnv::new_with_spec(self.spec_id), Default::default()),
