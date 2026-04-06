@@ -11,7 +11,7 @@ use foundry_cheatcodes::{CheatcodeAnalysis, CheatcodesExecutor, NestedEvmClosure
 use foundry_common::compile::Analysis;
 use foundry_evm_core::{
     FoundryBlock, FoundryTransaction, InspectorExt,
-    backend::{DatabaseError, JournaledState},
+    backend::{DatabaseError, DatabaseExt, JournaledState},
     env::FoundryContextExt,
     evm::{
         BlockEnvFor, EthEvmNetwork, EvmEnvFor, FoundryEvmFactory, FoundryEvmNetwork, IntoNestedEvm,
@@ -432,14 +432,7 @@ impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for InspectorStackInner {
         let evm_env = ecx.evm_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
-        FEN::EvmFactory::default().db_transact(
-            db,
-            fork_id,
-            transaction,
-            evm_env,
-            inner,
-            &mut inspector,
-        )
+        db.transact(fork_id, transaction, evm_env, inner, &mut inspector)
     }
 
     fn transact_from_tx_on_db(
@@ -451,7 +444,7 @@ impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for InspectorStackInner {
         let evm_env = ecx.evm_clone();
         let mut inspector = InspectorStackRefMut { cheatcodes: Some(cheats), inner: self };
         let (db, inner) = ecx.db_journal_inner_mut();
-        FEN::EvmFactory::default().db_transact_from_tx(db, tx_env, evm_env, inner, &mut inspector)
+        db.transact_from_tx(tx_env, evm_env, inner, &mut inspector)
     }
 
     fn console_log(&mut self, msg: &str) {

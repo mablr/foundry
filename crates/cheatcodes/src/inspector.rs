@@ -209,7 +209,7 @@ impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for TransparentCheatcodesEx
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let (db, inner) = ecx.db_journal_inner_mut();
-        FEN::EvmFactory::default().db_transact(db, fork_id, transaction, evm_env, inner, cheats)
+        db.transact(fork_id, transaction, evm_env, inner, cheats)
     }
 
     fn transact_from_tx_on_db(
@@ -220,7 +220,7 @@ impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for TransparentCheatcodesEx
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let (db, inner) = ecx.db_journal_inner_mut();
-        FEN::EvmFactory::default().db_transact_from_tx(db, tx, evm_env, inner, cheats)
+        db.transact_from_tx(tx, evm_env, inner, cheats)
     }
 
     fn console_log(&mut self, _msg: &str) {}
@@ -706,9 +706,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
     ///
     /// There may be cheatcodes in the constructor of the new contract, in order to allow them
     /// automatically we need to determine the new address.
-    fn allow_cheatcodes_on_create<
-        CTX: FoundryContextExt<Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>,
-    >(
+    fn allow_cheatcodes_on_create<CTX: FoundryContextExt<Db: DatabaseExt<FEN::EvmFactory>>>(
         &self,
         ecx: &mut CTX,
         caller: Address,
