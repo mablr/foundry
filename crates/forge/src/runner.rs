@@ -42,6 +42,7 @@ use std::{
     borrow::Cow,
     cmp::min,
     collections::BTreeMap,
+    ops::Deref,
     path::{Path, PathBuf},
     sync::Arc,
     time::Instant,
@@ -76,7 +77,7 @@ pub struct ContractRunner<'a, FEN: FoundryEvmNetwork> {
     mcr: &'a MultiContractRunner<FEN>,
 }
 
-impl<'a, FEN: FoundryEvmNetwork> std::ops::Deref for ContractRunner<'a, FEN> {
+impl<'a, FEN: FoundryEvmNetwork> Deref for ContractRunner<'a, FEN> {
     type Target = Cow<'a, TestRunnerConfig<FEN>>;
 
     #[inline(always)]
@@ -475,7 +476,7 @@ struct FunctionRunner<'a, FEN: FoundryEvmNetwork> {
     result: TestResult,
 }
 
-impl<'a, FEN: FoundryEvmNetwork> std::ops::Deref for FunctionRunner<'a, FEN> {
+impl<'a, FEN: FoundryEvmNetwork> Deref for FunctionRunner<'a, FEN> {
     type Target = Cow<'a, TestRunnerConfig<FEN>>;
 
     #[inline(always)]
