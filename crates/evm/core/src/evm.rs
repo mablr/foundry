@@ -7,7 +7,11 @@ use std::{
 use crate::{
     FoundryBlock, FoundryContextExt, FoundryInspectorExt, FoundryTransaction,
     backend::{DatabaseExt, JournaledState},
-    constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
+    constants::{CALLER, DEFAULT_CREATE2_DEPLOYER_CODEHASH, TEST_CONTRACT_ADDRESS},
+    tempo::{
+        ADDRESS_REGISTRY_ADDRESS, SIGNATURE_VERIFIER_ADDRESS, TEMPO_PRECOMPILE_ADDRESSES,
+        TEMPO_TIP20_TOKENS, initialize_tempo_genesis_inner,
+    },
 };
 use alloy_consensus::{
     SignableTransaction, Signed, constants::KECCAK_EMPTY, transaction::SignerRecoverable,
@@ -39,11 +43,13 @@ use revm::{
         interpreter::EthInterpreter, interpreter_action::FrameInit, return_ok,
     },
     primitives::hardfork::SpecId,
+    state::Bytecode,
 };
 use serde::{Deserialize, Serialize};
 use tempo_alloy::TempoNetwork;
 use tempo_chainspec::hardfork::TempoHardfork;
 use tempo_evm::evm::TempoEvmFactory;
+use tempo_precompiles::storage::StorageCtx;
 use tempo_revm::{
     TempoBlockEnv, TempoHaltReason, TempoInvalidTransaction, TempoTxEnv, evm::TempoContext,
     gas_params::tempo_gas_params, handler::TempoEvmHandler,
@@ -649,6 +655,43 @@ pub struct TempoFoundryEvm<
     pub inner: TempoRevmEvm<'db, I>,
 }
 
+/// Initialize Tempo precompiles and contracts for a newly created [`TempoFoundryEvm`].
+///
+/// In non-fork mode, runs full genesis initialization (precompile sentinel bytecode,
+/// TIP20 fee tokens, standard contracts) via [`StorageCtx::enter_evm`].
+///
+/// In fork mode, warms up precompile and TIP20 token addresses with sentinel bytecode
+/// to prevent repeated RPC round-trips for addresses that are Rust-native precompiles
+/// on Tempo nodes (no real EVM bytecode on-chain).
+fn initialize_tempo_evm<
+    'db,
+    I: FoundryInspectorExt<TempoContext<&'db mut dyn DatabaseExt<TempoEvmFactory>>>,
+>(
+    evm: &mut TempoFoundryEvm<'db, I>,
+    is_forked: bool,
+) {
+    let ctx = &mut evm.inner.inner.ctx;
+    StorageCtx::enter_evm(&mut ctx.journaled_state, &ctx.block, &ctx.cfg, &ctx.tx, || {
+        if is_forked {
+            // In fork mode, warm up precompile accounts to avoid repeated RPC fetches.
+            let mut sctx = StorageCtx;
+            let sentinel = Bytecode::new_legacy(Bytes::from_static(&[0xef]));
+            for addr in TEMPO_PRECOMPILE_ADDRESSES
+                .iter()
+                .chain(&[SIGNATURE_VERIFIER_ADDRESS, ADDRESS_REGISTRY_ADDRESS])
+                .chain(TEMPO_TIP20_TOKENS.iter())
+            {
+                sctx.set_code(*addr, sentinel.clone())
+                    .expect("failed to warm tempo precompile address");
+            }
+        } else {
+            // In non-fork mode, run full genesis initialization.
+            initialize_tempo_genesis_inner(TEST_CONTRACT_ADDRESS, CALLER)
+                .expect("tempo genesis initialization failed");
+        }
+    });
+}
+
 impl FoundryEvmFactory for TempoEvmFactory {
     type FoundryContext<'db> = TempoContext<&'db mut dyn DatabaseExt<Self>>;
 
@@ -661,6 +704,7 @@ impl FoundryEvmFactory for TempoEvmFactory {
         evm_env: EvmEnv<Self::Spec, Self::BlockEnv>,
         inspector: I,
     ) -> Self::FoundryEvm<'db, I> {
+        let is_forked = db.is_forked_mode();
         let spec = *evm_env.spec_id();
         let tempo_evm = Self::default().create_evm_with_inspector(db, evm_env, inspector);
         let mut inner = tempo_evm.into_inner();
@@ -670,6 +714,8 @@ impl FoundryEvmFactory for TempoEvmFactory {
         let mut evm = TempoFoundryEvm { inner };
         let networks = Evm::inspector(&evm).get_networks();
         networks.inject_precompiles(evm.precompiles_mut());
+
+        initialize_tempo_evm(&mut evm, is_forked);
         evm
     }
 
