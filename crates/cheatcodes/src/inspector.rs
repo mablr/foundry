@@ -707,11 +707,9 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
     ///
     /// There may be cheatcodes in the constructor of the new contract, in order to allow them
     /// automatically we need to determine the new address.
-    fn allow_cheatcodes_on_create<
-        CTX: FoundryContextExt<Db: DatabaseExt<CTX::Block, CTX::Tx, CTX::Spec>>,
-    >(
+    fn allow_cheatcodes_on_create(
         &self,
-        ecx: &mut CTX,
+        ecx: &mut FoundryContextFor<FEN>,
         caller: Address,
         created_address: Address,
     ) {
@@ -725,7 +723,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
     /// If the transaction type is [TransactionType::Legacy] we need to upgrade it to
     /// [TransactionType::Eip2930] in order to use access lists. Other transaction types support
     /// access lists themselves.
-    fn apply_accesslist<CTX: FoundryContextExt>(&mut self, ecx: &mut CTX) {
+    fn apply_accesslist(&mut self, ecx: &mut FoundryContextFor<FEN>) {
         if let Some(access_list) = &self.access_list {
             ecx.tx_mut().set_access_list(access_list.clone());
 
@@ -739,7 +737,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
     ///
     /// Cleanup any previously applied cheatcodes that altered the state in such a way that revm's
     /// revert would run into issues.
-    pub fn on_revert<CTX: ContextTr<Journal: JournalExt>>(&mut self, ecx: &mut CTX) {
+    pub fn on_revert(&mut self, ecx: &mut FoundryContextFor<FEN>) {
         trace!(deals=?self.eth_deals.len(), "rolling back deals");
 
         // Delay revert clean up until expected revert is handled, if set.
