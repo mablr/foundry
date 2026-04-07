@@ -814,10 +814,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         evm_env: &mut EvmEnvFor<FEN>,
         tx_env: &mut TxEnvFor<FEN>,
         inspector: I,
-    ) -> eyre::Result<ResultAndState<HaltReasonFor<FEN>>>
-    where
-        Self: DatabaseExt<FEN::EvmFactory>,
-    {
+    ) -> eyre::Result<ResultAndState<HaltReasonFor<FEN>>> {
         self.initialize(evm_env.cfg_env.spec, tx_env.caller(), tx_env.kind());
         let mut evm = FEN::EvmFactory::default().create_foundry_evm_with_inspector(
             self,
