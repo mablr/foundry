@@ -1,5 +1,9 @@
 use std::{cmp::Ordering, sync::Arc, time::Duration};
 
+use crate::{
+    ScriptArgs, ScriptConfig, build::LinkedBuildData, progress::ScriptProgress,
+    sequence::ScriptSequenceKind, verify::BroadcastedState,
+};
 use alloy_chains::{Chain, NamedChain};
 use alloy_consensus::{SignableTransaction, Signed};
 use alloy_eips::{BlockId, eip2718::Encodable2718};
@@ -26,12 +30,6 @@ use foundry_wallets::{TempoAccessKeyConfig, WalletSigner, wallet_browser::signer
 use futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use tempo_alloy::provider::TempoProviderExt;
-
-use crate::{
-    ScriptArgs, ScriptConfig, build::LinkedBuildData, progress::ScriptProgress,
-    sequence::ScriptSequenceKind, verify::BroadcastedState,
-};
 
 pub async fn estimate_gas<N: Network, P: Provider<N>>(
     tx: &mut N::TransactionRequest,
@@ -72,15 +70,14 @@ pub enum SendTransactionKind<'a, N: Network> {
     Raw(N::TransactionRequest, &'a EthereumWallet),
     Browser(N::TransactionRequest, &'a BrowserSigner<N>),
     Signed(N::TxEnvelope),
-    AccessKey(N::TransactionRequest, &'a WalletSigner, &'a TempoAccessKeyConfig, String),
+    AccessKey(N::TransactionRequest, &'a WalletSigner, &'a TempoAccessKeyConfig),
 }
 
 impl<'a, N: Network> SendTransactionKind<'a, N>
 where
     N::TxEnvelope: From<Signed<N::UnsignedTx>>,
     N::UnsignedTx: SignableTransaction<Signature>,
-    N::TransactionRequest:
-        FoundryTransactionBuilder<N> + Into<tempo_alloy::rpc::TempoTransactionRequest>,
+    N::TransactionRequest: FoundryTransactionBuilder<N>,
 {
     /// Prepares the transaction for broadcasting by synchronizing nonce and estimating gas.
     ///
@@ -99,7 +96,7 @@ where
         if let Self::Raw(tx, _)
         | Self::Unlocked(tx)
         | Self::Browser(tx, _)
-        | Self::AccessKey(tx, _, _, _) = self
+        | Self::AccessKey(tx, _, _) = self
         {
             if sequential_broadcast {
                 let from = tx.from().expect("no sender");
@@ -176,31 +173,18 @@ where
                 // Sign and send the transaction via the browser wallet
                 Ok(signer.send_transaction_via_browser(tx).await?)
             }
-            Self::AccessKey(mut tx, signer, access_key, rpc_url) => {
+            Self::AccessKey(tx, signer, access_key) => {
                 debug!("sending transaction via tempo access key: {:?}", tx);
 
-                // Check if the key needs on-chain provisioning.
-                if let Some(auth) = &access_key.key_authorization {
-                    let tempo_provider = foundry_common::provider::ProviderBuilder::<
-                        tempo_alloy::TempoNetwork,
-                    >::new(&rpc_url)
-                    .build()?;
-                    if !tempo_provider
-                        .get_keychain_key(access_key.wallet_address, access_key.key_address)
-                        .await
-                        .map(|info| info.keyId != Address::ZERO)
-                        .unwrap_or(false)
-                    {
-                        tx.set_key_authorization(auth.clone());
-                    }
-                }
-
-                let raw_tx = foundry_wallets::tempo::sign_with_access_key(
-                    tx,
-                    signer,
-                    access_key.wallet_address,
-                )
-                .await?;
+                let raw_tx = tx
+                    .sign_with_access_key_provisioning(
+                        provider.as_ref(),
+                        signer,
+                        access_key.wallet_address,
+                        access_key.key_address,
+                        access_key.key_authorization.as_ref(),
+                    )
+                    .await?;
 
                 let pending = provider.send_raw_transaction(&raw_tx).await?;
                 Ok(*pending.tx_hash())
@@ -253,7 +237,6 @@ impl<N: Network> SendTransactionsKind<N> {
         &self,
         addr: &Address,
         tx: N::TransactionRequest,
-        rpc_url: &str,
     ) -> Result<SendTransactionKind<'_, N>> {
         match self {
             Self::Unlocked(unlocked) => {
@@ -264,7 +247,7 @@ impl<N: Network> SendTransactionsKind<N> {
             }
             Self::Raw { eth_wallets, browser, access_keys } => {
                 if let Some((signer, config)) = access_keys.get(addr) {
-                    Ok(SendTransactionKind::AccessKey(tx, signer, config, rpc_url.to_string()))
+                    Ok(SendTransactionKind::AccessKey(tx, signer, config))
                 } else if let Some(wallet) = eth_wallets.get(addr) {
                     Ok(SendTransactionKind::Raw(tx, wallet))
                 } else if let Some(b) = browser
@@ -338,8 +321,7 @@ where
     where
         N::TxEnvelope: From<Signed<N::UnsignedTx>>,
         N::UnsignedTx: SignableTransaction<Signature>,
-        N::TransactionRequest:
-            FoundryTransactionBuilder<N> + Into<tempo_alloy::rpc::TempoTransactionRequest>,
+        N::TransactionRequest: FoundryTransactionBuilder<N>,
     {
         let required_addresses = self
             .sequence
@@ -503,7 +485,7 @@ where
                                     tx.set_max_fee_per_gas(eip1559_fees.max_fee_per_gas);
                                 }
 
-                                send_kind.for_sender(&from, tx, sequence.rpc_url())?
+                                send_kind.for_sender(&from, tx)?
                             }
                         };
 
