@@ -746,3 +746,133 @@ async fn test_tempo_aa_parallel_nonces_different_keys() {
         "Recipient should receive both transfers"
     );
 }
+
+// ============================================================================
+// Gas Estimation
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_gas_estimation() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+
+    let token = IERC20::new(ALPHA_USD, &provider);
+    let transfer_call = token.transfer(accounts[1], U256::from(1000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tx = TransactionRequest::default().from(accounts[0]).to(ALPHA_USD).with_input(calldata);
+
+    let gas_estimate = provider.estimate_gas(tx.into()).await.unwrap();
+
+    // TIP20 transfer should use more than 21000 gas
+    assert!(gas_estimate > 21000, "TIP20 transfer should use more than 21000 gas");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_gas_estimation_for_contract_call() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+
+    let token = IERC20::new(ALPHA_USD, &provider);
+    let transfer_call = token.transfer(accounts[1], U256::from(1000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tx = TransactionRequest::default().from(accounts[0]).to(ALPHA_USD).with_input(calldata);
+
+    let gas_estimate = provider.estimate_gas(tx.into()).await.unwrap();
+
+    // Contract call should use more gas than simple transfer
+    assert!(gas_estimate > 21000, "Contract call should use more than 21000 gas");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_gas_estimation_with_value_fails() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+
+    // Gas estimation with native value should fail in Tempo mode
+    let tx = TransactionRequest::default()
+        .from(accounts[0])
+        .to(accounts[1])
+        .value(U256::from(1_000_000_000_000_000_000u64));
+
+    let result = provider.estimate_gas(tx.into()).await;
+    assert!(result.is_err(), "Gas estimation with native value should fail in Tempo mode");
+}
+
+// ============================================================================
+// Gas Price & Base Fee
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_gas_price() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let gas_price = provider.get_gas_price().await.unwrap();
+
+    assert!(gas_price > 0, "Gas price should be non-zero");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_base_fee() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    api.mine_one().await;
+
+    let block = provider.get_block(BlockNumberOrTag::Latest.into()).await.unwrap().unwrap();
+
+    assert!(block.header.base_fee_per_gas.is_some());
+}
+
+// ============================================================================
+// Fee Token Deduction
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_eip1559_fee_token_deduction() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let sender = accounts[0];
+    let recipient = accounts[1];
+
+    // Check fee token balance before (ALPHA_USD is the default fee token)
+    let fee_token = IERC20::new(ALPHA_USD, &provider);
+    let fee_balance_before = fee_token.balanceOf(sender).call().await.unwrap();
+
+    // Transfer PATH_USD so balance change is only from gas fees, not the transfer itself
+    let token = IERC20::new(PATH_USD, &provider);
+    let transfer_call = token.transfer(recipient, U256::from(100_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let tx = TransactionRequest::default()
+        .from(sender)
+        .to(PATH_USD)
+        .with_input(calldata)
+        .with_gas_limit(TIP20_TRANSFER_GAS)
+        .max_fee_per_gas(base_fee * 2)
+        .max_priority_fee_per_gas(base_fee / 10);
+
+    let tx = WithOtherFields::new(tx);
+    let receipt = provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+
+    assert!(receipt.status(), "Transaction should succeed");
+
+    // Fee token balance should have decreased (gas fees paid in ALPHA_USD)
+    let fee_balance_after = fee_token.balanceOf(sender).call().await.unwrap();
+    assert!(
+        fee_balance_after < fee_balance_before,
+        "Fee token balance should decrease after paying gas (before: {fee_balance_before}, after: {fee_balance_after})"
+    );
+}
