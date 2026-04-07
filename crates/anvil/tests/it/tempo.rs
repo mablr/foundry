@@ -40,8 +40,12 @@ sol! {
         function name() external view returns (string memory);
         function symbol() external view returns (string memory);
         function decimals() external view returns (uint8);
+        function totalSupply() external view returns (uint256);
         function balanceOf(address account) external view returns (uint256);
         function transfer(address to, uint256 amount) external returns (bool);
+        function allowance(address owner, address spender) external view returns (uint256);
+        function approve(address spender, uint256 amount) external returns (bool);
+        function transferFrom(address from, address to, uint256 amount) external returns (bool);
     }
 }
 
@@ -133,6 +137,224 @@ async fn test_dev_accounts_have_balance() {
         let balance = provider.get_balance(account).await.unwrap();
         assert_eq!(balance, genesis_balance, "Dev account {account} should have genesis balance");
     }
+}
+
+// ============================================================================
+// TIP20 Token Operations: Transfer
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tip20_transfer() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let sender = accounts[0];
+    let recipient = accounts[1];
+
+    let token = IERC20::new(PATH_USD, &provider);
+
+    let sender_balance_before = token.balanceOf(sender).call().await.unwrap();
+    let recipient_balance_before = token.balanceOf(recipient).call().await.unwrap();
+
+    let transfer_amount = U256::from(1_000_000);
+    let transfer_call = token.transfer(recipient, transfer_amount);
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tx = TransactionRequest::default()
+        .from(sender)
+        .to(PATH_USD)
+        .with_input(calldata)
+        .with_gas_limit(TIP20_TRANSFER_GAS);
+
+    let tx = WithOtherFields::new(tx);
+    let receipt = provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+    assert!(receipt.status());
+
+    let sender_balance_after = token.balanceOf(sender).call().await.unwrap();
+    let recipient_balance_after = token.balanceOf(recipient).call().await.unwrap();
+
+    assert_eq!(
+        sender_balance_before - transfer_amount,
+        sender_balance_after,
+        "Sender balance should decrease by transfer amount"
+    );
+    assert_eq!(
+        recipient_balance_before + transfer_amount,
+        recipient_balance_after,
+        "Recipient balance should increase by transfer amount"
+    );
+}
+
+// ============================================================================
+// TIP20 Token Operations: Approve and TransferFrom
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tip20_approve_and_transfer_from() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let owner = accounts[0];
+    let spender = accounts[1];
+    let recipient = accounts[2];
+
+    let token = IERC20::new(BETA_USD, &provider);
+
+    // Owner approves spender
+    let approve_amount = U256::from(5_000_000);
+    let approve_call = token.approve(spender, approve_amount);
+    let calldata: Bytes = approve_call.calldata().clone();
+
+    let tx = TransactionRequest::default()
+        .from(owner)
+        .to(BETA_USD)
+        .with_input(calldata)
+        .with_gas_limit(TIP20_TRANSFER_GAS);
+
+    let tx = WithOtherFields::new(tx);
+    provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+
+    let allowance = token.allowance(owner, spender).call().await.unwrap();
+    assert_eq!(allowance, approve_amount);
+
+    // Spender transfers from owner to recipient
+    let transfer_amount = U256::from(2_000_000);
+    let transfer_from_call = token.transferFrom(owner, recipient, transfer_amount);
+    let calldata: Bytes = transfer_from_call.calldata().clone();
+
+    let recipient_balance_before = token.balanceOf(recipient).call().await.unwrap();
+
+    let tx = TransactionRequest::default()
+        .from(spender)
+        .to(BETA_USD)
+        .with_input(calldata)
+        .with_gas_limit(TIP20_TRANSFER_GAS);
+
+    let tx = WithOtherFields::new(tx);
+    let receipt = provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+    assert!(receipt.status());
+
+    let recipient_balance_after = token.balanceOf(recipient).call().await.unwrap();
+    assert_eq!(recipient_balance_before + transfer_amount, recipient_balance_after);
+
+    let allowance_after = token.allowance(owner, spender).call().await.unwrap();
+    assert_eq!(allowance_after, approve_amount - transfer_amount);
+}
+
+// ============================================================================
+// TIP20 Token Operations: Total Supply
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tip20_total_supply() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let total_supply = token.totalSupply().call().await.unwrap();
+
+    assert!(total_supply > U256::ZERO, "Total supply should be non-zero");
+}
+
+// ============================================================================
+// TIP20 Token Operations: Transfer Between Different Fee Tokens
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_transfer_between_different_fee_tokens() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let sender = accounts[0];
+    let recipient = accounts[1];
+
+    for token_addr in [PATH_USD, ALPHA_USD, BETA_USD, THETA_USD] {
+        let token = IERC20::new(token_addr, &provider);
+        let balance_before = token.balanceOf(recipient).call().await.unwrap();
+
+        let transfer_amount = U256::from(100_000);
+        let transfer_call = token.transfer(recipient, transfer_amount);
+        let calldata: Bytes = transfer_call.calldata().clone();
+
+        let tx = TransactionRequest::default()
+            .from(sender)
+            .to(token_addr)
+            .with_input(calldata)
+            .with_gas_limit(TIP20_TRANSFER_GAS);
+
+        let tx = WithOtherFields::new(tx);
+        let receipt = provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+        assert!(receipt.status(), "Transfer for {token_addr} failed");
+
+        let balance_after = token.balanceOf(recipient).call().await.unwrap();
+        assert_eq!(balance_after, balance_before + transfer_amount);
+    }
+}
+
+// ============================================================================
+// TIP20 Token Operations: All Fee Tokens Have Correct Metadata
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_all_fee_tokens_have_correct_metadata() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let tokens = [
+        (PATH_USD, "PathUSD"),
+        (ALPHA_USD, "AlphaUSD"),
+        (BETA_USD, "BetaUSD"),
+        (THETA_USD, "ThetaUSD"),
+    ];
+
+    for (addr, expected_name) in tokens {
+        let token = IERC20::new(addr, &provider);
+        let name = token.name().call().await.unwrap();
+        let decimals = token.decimals().call().await.unwrap();
+
+        assert_eq!(name, expected_name, "Token at {addr} should be named {expected_name}");
+        assert_eq!(decimals, 6, "All TIP20 tokens use 6 decimals");
+    }
+}
+
+// ============================================================================
+// TIP20 Token Operations: Transfer Emits Event
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_transfer_emits_event() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let from = accounts[0];
+    let to = accounts[1];
+
+    let token = IERC20::new(ALPHA_USD, &provider);
+    let transfer_amount = U256::from(1_000_000);
+    let transfer_call = token.transfer(to, transfer_amount);
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tx = TransactionRequest::default()
+        .from(from)
+        .to(ALPHA_USD)
+        .with_input(calldata)
+        .with_gas_limit(TIP20_TRANSFER_GAS);
+
+    let tx = WithOtherFields::new(tx);
+    let receipt = provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+
+    assert!(!receipt.inner.logs().is_empty(), "Transfer should emit event");
+
+    let log = &receipt.inner.logs()[0];
+    assert_eq!(log.address(), ALPHA_USD);
+
+    let transfer_topic =
+        alloy_primitives::keccak256("Transfer(address,address,uint256)".as_bytes());
+    assert_eq!(log.topics()[0], transfer_topic);
 }
 
 // ============================================================================
