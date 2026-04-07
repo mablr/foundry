@@ -111,10 +111,21 @@ impl FoundryEvmNetwork for TempoEvmNetwork {
 }
 
 /// Convenience type aliases for accessing associated types through [`FoundryEvmNetwork`].
-pub type SpecFor<FEN> = <<FEN as FoundryEvmNetwork>::EvmFactory as EvmFactory>::Spec;
-pub type TxEnvFor<FEN> = <<FEN as FoundryEvmNetwork>::EvmFactory as EvmFactory>::Tx;
-pub type BlockEnvFor<FEN> = <<FEN as FoundryEvmNetwork>::EvmFactory as EvmFactory>::BlockEnv;
+pub type EvmFactoryFor<FEN> = <FEN as FoundryEvmNetwork>::EvmFactory;
+pub type FoundryContextFor<'db, FEN> =
+    <EvmFactoryFor<FEN> as FoundryEvmFactory>::FoundryContext<'db>;
+pub type TxEnvFor<FEN> = <EvmFactoryFor<FEN> as EvmFactory>::Tx;
+pub type HaltReasonFor<FEN> = <EvmFactoryFor<FEN> as EvmFactory>::HaltReason;
+pub type SpecFor<FEN> = <EvmFactoryFor<FEN> as EvmFactory>::Spec;
+pub type BlockEnvFor<FEN> = <EvmFactoryFor<FEN> as EvmFactory>::BlockEnv;
+pub type PrecompilesFor<FEN> = <EvmFactoryFor<FEN> as EvmFactory>::Precompiles;
 pub type EvmEnvFor<FEN> = EvmEnv<SpecFor<FEN>, BlockEnvFor<FEN>>;
+
+pub type NetworkFor<FEN> = <FEN as FoundryEvmNetwork>::Network;
+pub type TxEnvelopeFor<FEN> = <NetworkFor<FEN> as Network>::TxEnvelope;
+pub type TransactionRequestFor<FEN> = <NetworkFor<FEN> as Network>::TransactionRequest;
+pub type TransactionResponseFor<FEN> = <NetworkFor<FEN> as Network>::TransactionResponse;
+pub type BlockResponseFor<FEN> = <NetworkFor<FEN> as Network>::BlockResponse;
 
 pub trait FoundryEvmFactory:
     EvmFactory<
