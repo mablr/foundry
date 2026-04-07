@@ -676,7 +676,7 @@ impl<FEN: FoundryEvmNetwork> ScriptConfig<FEN> {
                 None => {
                     let fork =
                         self.evm_opts.get_fork(&self.config, evm_env.cfg_env.chain_id, fork_block);
-                    let backend = Backend::<FEN>::spawn(fork)?;
+                    let backend = Backend::spawn(fork)?;
                     self.backends.insert(fork_url.clone(), backend.clone());
                     backend
                 }
