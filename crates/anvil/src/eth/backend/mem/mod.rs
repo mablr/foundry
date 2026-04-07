@@ -1265,26 +1265,32 @@ impl<N: Network> Backend<N> {
     {
         let inspector = self.build_mining_inspector();
 
+        macro_rules! run {
+            ($evm:expr) => {{
+                self.inject_precompiles($evm.precompiles_mut());
+                let mut executor = AnvilBlockExecutor::new($evm, parent_hash, spec_id);
+                executor.apply_pre_execution_changes().expect("pre-execution changes failed");
+                let pool_result = execute_pool_transactions(
+                    &mut executor,
+                    pool_transactions,
+                    gas_config,
+                    inspector_tx_config,
+                    self.cheats(),
+                    validator,
+                );
+                let (evm, block_result) = executor.finish().expect("executor finish failed");
+                drop(evm);
+                (pool_result, block_result)
+            }};
+        }
+
         if self.is_optimism() {
             let op_env = EvmEnv::new(
                 evm_env.cfg_env.clone().with_spec_and_mainnet_gas_params(OpSpecId::ISTHMUS),
                 evm_env.block_env.clone(),
             );
             let mut evm = OpEvmFactory::default().create_evm_with_inspector(db, op_env, inspector);
-            self.inject_precompiles(evm.precompiles_mut());
-            let mut executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id);
-            executor.apply_pre_execution_changes().expect("pre-execution changes failed");
-            let pool_result = execute_pool_transactions(
-                &mut executor,
-                pool_transactions,
-                gas_config,
-                inspector_tx_config,
-                self.cheats(),
-                validator,
-            );
-            let (evm, block_result) = executor.finish().expect("executor finish failed");
-            drop(evm);
-            (pool_result, block_result)
+            run!(evm)
         } else if self.is_tempo() {
             let hardfork = TempoHardfork::from(evm_env.cfg_env.spec);
             let tempo_env = EvmEnv::new(
@@ -1296,37 +1302,11 @@ impl<N: Network> Backend<N> {
             );
             let mut evm =
                 TempoEvmFactory::default().create_evm_with_inspector(db, tempo_env, inspector);
-            self.inject_precompiles(evm.precompiles_mut());
-            let mut executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id);
-            executor.apply_pre_execution_changes().expect("pre-execution changes failed");
-            let pool_result = execute_pool_transactions(
-                &mut executor,
-                pool_transactions,
-                gas_config,
-                inspector_tx_config,
-                self.cheats(),
-                validator,
-            );
-            let (evm, block_result) = executor.finish().expect("executor finish failed");
-            drop(evm);
-            (pool_result, block_result)
+            run!(evm)
         } else {
             let mut evm =
                 EthEvmFactory::default().create_evm_with_inspector(db, evm_env.clone(), inspector);
-            self.inject_precompiles(evm.precompiles_mut());
-            let mut executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id);
-            executor.apply_pre_execution_changes().expect("pre-execution changes failed");
-            let pool_result = execute_pool_transactions(
-                &mut executor,
-                pool_transactions,
-                gas_config,
-                inspector_tx_config,
-                self.cheats(),
-                validator,
-            );
-            let (evm, block_result) = executor.finish().expect("executor finish failed");
-            drop(evm);
-            (pool_result, block_result)
+            run!(evm)
         }
     }
 
