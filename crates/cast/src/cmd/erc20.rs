@@ -5,7 +5,7 @@ use alloy_consensus::{SignableTransaction, Signed};
 use alloy_eips::BlockId;
 use alloy_ens::NameOrAddress;
 use alloy_network::{AnyNetwork, EthereumWallet, Network, TransactionBuilder};
-use alloy_primitives::{U64, U256};
+use alloy_primitives::{Address, U64, U256};
 use alloy_provider::{Provider, fillers::RecommendedFillers};
 use alloy_signer::Signature;
 use alloy_sol_types::sol;
@@ -23,7 +23,7 @@ use foundry_common::{
 #[doc(hidden)]
 pub use foundry_config::{Chain, utils::*};
 use foundry_wallets::{TempoAccessKeyConfig, WalletSigner};
-use tempo_alloy::TempoNetwork;
+use tempo_alloy::{TempoNetwork, provider::TempoProviderExt};
 
 sol! {
     #[sol(rpc)]
@@ -584,12 +584,7 @@ async fn send_tempo_keychain<P: Provider<TempoNetwork>>(
 ) -> eyre::Result<()> {
     // Only include key_authorization if the key is not yet provisioned on-chain.
     if let Some(ref auth) = access_key.key_authorization
-        && !crate::tempo::is_key_provisioned(
-            provider,
-            access_key.wallet_address,
-            access_key.key_address,
-        )
-        .await
+        && !is_key_provisioned(provider, access_key.wallet_address, access_key.key_address).await
     {
         tx.set_key_authorization(auth.clone());
     }
@@ -600,4 +595,16 @@ async fn send_tempo_keychain<P: Provider<TempoNetwork>>(
 
     let cast = crate::tx::CastTxSender::new(provider);
     cast.print_tx_result(tx_hash, cast_async, confirmations, timeout).await
+}
+
+/// Checks whether an access key is already provisioned on-chain.
+async fn is_key_provisioned<P: Provider<TempoNetwork>>(
+    provider: &P,
+    wallet_address: Address,
+    key_address: Address,
+) -> bool {
+    match provider.get_keychain_key(wallet_address, key_address).await {
+        Ok(info) => info.keyId != Address::ZERO,
+        Err(_) => false,
+    }
 }
