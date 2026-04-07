@@ -43,6 +43,8 @@ pub const TEMPO_PRECOMPILE_ADDRESSES: &[Address] = &[
     VALIDATOR_CONFIG_ADDRESS,
     VALIDATOR_CONFIG_V2_ADDRESS,
     ACCOUNT_KEYCHAIN_ADDRESS,
+    SIGNATURE_VERIFIER_ADDRESS,
+    ADDRESS_REGISTRY_ADDRESS,
 ];
 
 /// All well-known TIP20 fee token addresses on Tempo networks.
@@ -82,19 +84,8 @@ pub fn initialize_tempo_genesis_inner(
 
     // Set sentinel bytecode for precompile addresses
     let sentinel = Bytecode::new_legacy(Bytes::from_static(&[0xef]));
-    for precompile in [
-        NONCE_PRECOMPILE_ADDRESS,
-        STABLECOIN_DEX_ADDRESS,
-        TIP20_FACTORY_ADDRESS,
-        TIP403_REGISTRY_ADDRESS,
-        TIP_FEE_MANAGER_ADDRESS,
-        VALIDATOR_CONFIG_ADDRESS,
-        VALIDATOR_CONFIG_V2_ADDRESS,
-        ACCOUNT_KEYCHAIN_ADDRESS,
-        SIGNATURE_VERIFIER_ADDRESS,
-        ADDRESS_REGISTRY_ADDRESS,
-    ] {
-        ctx.set_code(precompile, sentinel.clone())?;
+    for precompile in TEMPO_PRECOMPILE_ADDRESSES {
+        ctx.set_code(*precompile, sentinel.clone())?;
     }
 
     // Create PathUSD token: 0x20C0000000000000000000000000000000000000

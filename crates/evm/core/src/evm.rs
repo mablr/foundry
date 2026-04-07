@@ -8,10 +8,7 @@ use crate::{
     FoundryBlock, FoundryContextExt, FoundryInspectorExt, FoundryTransaction,
     backend::{DatabaseExt, JournaledState},
     constants::{CALLER, DEFAULT_CREATE2_DEPLOYER_CODEHASH, TEST_CONTRACT_ADDRESS},
-    tempo::{
-        ADDRESS_REGISTRY_ADDRESS, SIGNATURE_VERIFIER_ADDRESS, TEMPO_PRECOMPILE_ADDRESSES,
-        TEMPO_TIP20_TOKENS, initialize_tempo_genesis_inner,
-    },
+    tempo::{TEMPO_PRECOMPILE_ADDRESSES, TEMPO_TIP20_TOKENS, initialize_tempo_genesis_inner},
 };
 use alloy_consensus::{
     SignableTransaction, Signed, constants::KECCAK_EMPTY, transaction::SignerRecoverable,
@@ -676,11 +673,7 @@ fn initialize_tempo_evm<
             // In fork mode, warm up precompile accounts to avoid repeated RPC fetches.
             let mut sctx = StorageCtx;
             let sentinel = Bytecode::new_legacy(Bytes::from_static(&[0xef]));
-            for addr in TEMPO_PRECOMPILE_ADDRESSES
-                .iter()
-                .chain(&[SIGNATURE_VERIFIER_ADDRESS, ADDRESS_REGISTRY_ADDRESS])
-                .chain(TEMPO_TIP20_TOKENS.iter())
-            {
+            for addr in TEMPO_PRECOMPILE_ADDRESSES.iter().chain(TEMPO_TIP20_TOKENS.iter()) {
                 sctx.set_code(*addr, sentinel.clone())
                     .expect("failed to warm tempo precompile address");
             }
