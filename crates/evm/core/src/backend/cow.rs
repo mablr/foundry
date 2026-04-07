@@ -8,8 +8,8 @@ use crate::{
         diagnostic::RevertDiagnostic,
     },
     evm::{
-        BlockEnvFor, EvmEnvFor, FoundryContextFor, FoundryEvmFactory, FoundryEvmNetwork,
-        HaltReasonFor, SpecFor, TxEnvFor,
+        EvmEnvFor, FoundryContextFor, FoundryEvmFactory, FoundryEvmNetwork, HaltReasonFor, SpecFor,
+        TxEnvFor,
     },
     fork::{CreateFork, ForkId},
 };
@@ -19,9 +19,9 @@ use alloy_primitives::{Address, B256, TxKind, U256};
 use eyre::WrapErr;
 use foundry_fork_db::DatabaseError;
 use revm::{
-    Context, Database, DatabaseCommit,
+    Database, DatabaseCommit,
     bytecode::Bytecode,
-    context::{CfgEnv, ContextTr, Transaction},
+    context::{ContextTr, Transaction},
     context_interface::result::ResultAndState,
     database::DatabaseRef,
     primitives::AddressMap,
@@ -133,9 +133,7 @@ impl<'a, FEN: FoundryEvmNetwork> CowBackend<'a, FEN> {
     }
 }
 
-impl<FEN: FoundryEvmNetwork> DatabaseExt<BlockEnvFor<FEN>, TxEnvFor<FEN>, SpecFor<FEN>>
-    for CowBackend<'_, FEN>
-{
+impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for CowBackend<'_, FEN> {
     fn snapshot_state(
         &mut self,
         journaled_state: &JournaledState,
@@ -218,12 +216,7 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<BlockEnvFor<FEN>, TxEnvFor<FEN>, SpecFo
         evm_env: EvmEnvFor<FEN>,
         journaled_state: &mut JournaledState,
         inspector: &mut dyn for<'db> FoundryInspectorExt<
-            Context<
-                BlockEnvFor<FEN>,
-                TxEnvFor<FEN>,
-                CfgEnv<SpecFor<FEN>>,
-                &'db mut dyn DatabaseExt<BlockEnvFor<FEN>, TxEnvFor<FEN>, SpecFor<FEN>>,
-            >,
+            <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'db>,
         >,
     ) -> eyre::Result<()> {
         self.backend_mut().transact(id, transaction, evm_env, journaled_state, inspector)
@@ -235,12 +228,7 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<BlockEnvFor<FEN>, TxEnvFor<FEN>, SpecFo
         evm_env: EvmEnvFor<FEN>,
         journaled_state: &mut JournaledState,
         inspector: &mut dyn for<'db> FoundryInspectorExt<
-            Context<
-                BlockEnvFor<FEN>,
-                TxEnvFor<FEN>,
-                CfgEnv<SpecFor<FEN>>,
-                &'db mut dyn DatabaseExt<BlockEnvFor<FEN>, TxEnvFor<FEN>, SpecFor<FEN>>,
-            >,
+            <FEN::EvmFactory as FoundryEvmFactory>::FoundryContext<'db>,
         >,
     ) -> eyre::Result<()> {
         self.backend_mut().transact_from_tx(tx_env, evm_env, journaled_state, inspector)

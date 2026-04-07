@@ -210,7 +210,7 @@ impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for TransparentCheatcodesEx
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let (db, inner) = ecx.db_journal_inner_mut();
-        FEN::EvmFactory::default().db_transact(db, fork_id, transaction, evm_env, inner, cheats)
+        db.transact(fork_id, transaction, evm_env, inner, cheats)
     }
 
     fn transact_from_tx_on_db(
@@ -221,7 +221,7 @@ impl<FEN: FoundryEvmNetwork> CheatcodesExecutor<FEN> for TransparentCheatcodesEx
     ) -> eyre::Result<()> {
         let evm_env = ecx.evm_clone();
         let (db, inner) = ecx.db_journal_inner_mut();
-        FEN::EvmFactory::default().db_transact_from_tx(db, tx, evm_env, inner, cheats)
+        db.transact_from_tx(tx, evm_env, inner, cheats)
     }
 
     fn console_log(&mut self, _msg: &str) {}
