@@ -34,7 +34,7 @@ use foundry_config::{
     },
 };
 use foundry_evm::{
-    core::evm::EthEvmNetwork,
+    core::{FoundryBlock, evm::EthEvmNetwork},
     executors::TracingExecutor,
     opts::EvmOpts,
     traces::{InternalTraceMode, TraceMode},
@@ -305,15 +305,15 @@ impl CallArgs {
             // modify settings that usually set in eth_call
             evm_env.cfg_env.disable_block_gas_limit = true;
             evm_env.cfg_env.tx_gas_limit_cap = Some(u64::MAX);
-            evm_env.block_env.gas_limit = u64::MAX;
+            evm_env.block_env.set_gas_limit(u64::MAX);
 
             // Apply the block overrides.
             if let Some(block_overrides) = block_overrides {
                 if let Some(number) = block_overrides.number {
-                    evm_env.block_env.number = number.to();
+                    evm_env.block_env.set_number(number.to());
                 }
                 if let Some(time) = block_overrides.time {
-                    evm_env.block_env.timestamp = U256::from(time);
+                    evm_env.block_env.set_timestamp(U256::from(time));
                 }
             }
 
