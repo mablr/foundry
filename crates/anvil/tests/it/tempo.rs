@@ -1098,3 +1098,365 @@ async fn test_eip1559_fee_token_deduction() {
         "Fee token balance should decrease after paying gas (before: {fee_balance_before}, after: {fee_balance_after})"
     );
 }
+
+// ============================================================================
+// Anvil Control: Set Balance
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_anvil_set_balance() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let random_address = Address::random();
+    let new_balance = U256::from(1_000_000_000_000_000_000u64);
+
+    let balance_before = provider.get_balance(random_address).await.unwrap();
+    assert_eq!(balance_before, U256::ZERO);
+
+    api.anvil_set_balance(random_address, new_balance).await.unwrap();
+
+    let balance_after = provider.get_balance(random_address).await.unwrap();
+    assert_eq!(balance_after, new_balance);
+}
+
+// ============================================================================
+// Anvil Control: Set Code
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_anvil_set_code() {
+    let (api, _handle) = spawn(NodeConfig::test_tempo()).await;
+
+    let target = Address::random();
+
+    let code_before = api.get_code(target, None).await.unwrap();
+    assert!(code_before.is_empty());
+
+    let bytecode = vec![0x60, 0x00, 0x60, 0x00, 0xf3]; // PUSH 0, PUSH 0, RETURN
+    api.anvil_set_code(target, bytecode.clone().into()).await.unwrap();
+
+    let code_after = api.get_code(target, None).await.unwrap();
+    assert_eq!(code_after.as_ref(), bytecode.as_slice());
+}
+
+// ============================================================================
+// Anvil Control: Auto Mine Toggle
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_auto_mine_toggle() {
+    let (api, _handle) = spawn(NodeConfig::test_tempo()).await;
+
+    assert!(api.anvil_get_auto_mine().unwrap());
+
+    api.anvil_set_auto_mine(false).await.unwrap();
+    assert!(!api.anvil_get_auto_mine().unwrap());
+
+    api.anvil_set_auto_mine(true).await.unwrap();
+    assert!(api.anvil_get_auto_mine().unwrap());
+}
+
+// ============================================================================
+// Anvil Control: Manual Mining
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_manual_mining() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let block_before = provider.get_block_number().await.unwrap();
+
+    api.mine_one().await;
+
+    let block_after = provider.get_block_number().await.unwrap();
+    assert_eq!(block_after, block_before + 1);
+
+    api.anvil_mine(Some(U256::from(5)), None).await.unwrap();
+
+    let block_final = provider.get_block_number().await.unwrap();
+    assert_eq!(block_final, block_after + 5);
+}
+
+// ============================================================================
+// Anvil Control: Impersonate Account
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_impersonate_account() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let impersonated = handle.dev_accounts().next().unwrap();
+    let recipient = handle.dev_accounts().nth(1).unwrap();
+
+    api.anvil_impersonate_account(impersonated).await.unwrap();
+
+    let token = IERC20::new(ALPHA_USD, &provider);
+    let transfer_call = token.transfer(recipient, U256::from(1000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tx = TransactionRequest::default()
+        .from(impersonated)
+        .to(ALPHA_USD)
+        .with_input(calldata)
+        .with_gas_limit(TIP20_TRANSFER_GAS);
+
+    let tx = WithOtherFields::new(tx);
+    let receipt = provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+
+    assert!(receipt.status());
+
+    api.anvil_stop_impersonating_account(impersonated).await.unwrap();
+}
+
+// ============================================================================
+// Anvil Control: Snapshot and Revert
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_snapshot_and_revert() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let from = accounts[0];
+    let to = accounts[1];
+
+    let token = IERC20::new(ALPHA_USD, &provider);
+    let balance_before = token.balanceOf(to).call().await.unwrap();
+    let block_before = provider.get_block_number().await.unwrap();
+
+    let snapshot_id = api.evm_snapshot().await.unwrap();
+
+    let transfer_call = token.transfer(to, U256::from(1_000_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tx = TransactionRequest::default()
+        .from(from)
+        .to(ALPHA_USD)
+        .with_input(calldata)
+        .with_gas_limit(TIP20_TRANSFER_GAS);
+
+    let tx = WithOtherFields::new(tx);
+    provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+
+    let balance_after_tx = token.balanceOf(to).call().await.unwrap();
+    assert!(balance_after_tx > balance_before);
+
+    api.evm_revert(snapshot_id).await.unwrap();
+
+    let balance_reverted = token.balanceOf(to).call().await.unwrap();
+    let block_reverted = provider.get_block_number().await.unwrap();
+
+    assert_eq!(balance_reverted, balance_before);
+    assert_eq!(block_reverted, block_before);
+}
+
+// ============================================================================
+// Block & Chain: Tempo Mode Enabled
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_mode_enabled_by_default() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let block_number = provider.get_block_number().await.unwrap();
+    assert_eq!(block_number, 0);
+}
+
+// ============================================================================
+// Block & Chain: Fee Tokens Deployed
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_fee_tokens_deployed() {
+    let (api, _handle) = spawn(NodeConfig::test_tempo()).await;
+
+    for token in [PATH_USD, ALPHA_USD, BETA_USD, THETA_USD] {
+        let code = api.get_code(token, None).await.unwrap();
+        assert!(!code.is_empty(), "Token {token} should have code deployed");
+    }
+}
+
+// ============================================================================
+// Block & Chain: Block Has Timestamp
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_block_has_timestamp() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    api.mine_one().await;
+
+    let block = provider.get_block(1.into()).await.unwrap().unwrap();
+    assert!(block.header.timestamp > 0, "Block should have a timestamp");
+}
+
+// ============================================================================
+// Block & Chain: Block Timestamp Increases
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_block_timestamp_increases() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    api.mine_one().await;
+    let block1 = provider.get_block(1.into()).await.unwrap().unwrap();
+
+    let future_timestamp = block1.header.timestamp + 100;
+    api.evm_set_next_block_timestamp(future_timestamp).unwrap();
+
+    api.mine_one().await;
+    let block2 = provider.get_block(2.into()).await.unwrap().unwrap();
+
+    assert_eq!(block2.header.timestamp, future_timestamp);
+    assert!(block2.header.timestamp > block1.header.timestamp);
+}
+
+// ============================================================================
+// Block & Chain: Block Timestamps Are Monotonic
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_block_timestamps_are_monotonic() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    api.mine_one().await;
+    let block1 = provider.get_block(BlockNumberOrTag::Latest.into()).await.unwrap().unwrap();
+    let timestamp1 = block1.header.timestamp;
+
+    let future_timestamp = timestamp1 + 10;
+    api.evm_set_next_block_timestamp(future_timestamp).unwrap();
+
+    api.mine_one().await;
+    let block2 = provider.get_block(BlockNumberOrTag::Latest.into()).await.unwrap().unwrap();
+    let timestamp2 = block2.header.timestamp;
+
+    assert!(
+        timestamp2 > timestamp1,
+        "Block timestamps must be strictly increasing: {timestamp2} should be > {timestamp1}",
+    );
+    assert_eq!(timestamp2, future_timestamp, "Block timestamp should match the set value");
+}
+
+// ============================================================================
+// Block & Chain: Block Gas Limit
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_block_gas_limit() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    api.mine_one().await;
+
+    let block = provider.get_block(BlockNumberOrTag::Latest.into()).await.unwrap().unwrap();
+
+    assert!(block.header.gas_limit > 0);
+}
+
+// ============================================================================
+// Block & Chain: Transaction Respects Gas Limit
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_transaction_respects_gas_limit() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+
+    let token = IERC20::new(ALPHA_USD, &provider);
+    let transfer_call = token.transfer(accounts[1], U256::from(1000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tx = TransactionRequest::default()
+        .from(accounts[0])
+        .to(ALPHA_USD)
+        .with_input(calldata)
+        .with_gas_limit(TIP20_TRANSFER_GAS);
+
+    let tx = WithOtherFields::new(tx);
+    let receipt = provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+
+    assert!(receipt.status());
+    assert!(receipt.gas_used <= TIP20_TRANSFER_GAS);
+}
+
+// ============================================================================
+// Block & Chain: Multiple Transactions in Block
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_multiple_transactions_in_block() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    api.anvil_set_auto_mine(false).await.unwrap();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+
+    let token = IERC20::new(ALPHA_USD, &provider);
+
+    let transfer1 = token.transfer(accounts[1], U256::from(1000));
+    let calldata1: Bytes = transfer1.calldata().clone();
+    let tx1 = TransactionRequest::default()
+        .from(accounts[0])
+        .to(ALPHA_USD)
+        .with_input(calldata1)
+        .with_gas_limit(TIP20_TRANSFER_GAS);
+
+    let transfer2 = token.transfer(accounts[3], U256::from(2000));
+    let calldata2: Bytes = transfer2.calldata().clone();
+    let tx2 = TransactionRequest::default()
+        .from(accounts[2])
+        .to(ALPHA_USD)
+        .with_input(calldata2)
+        .with_gas_limit(TIP20_TRANSFER_GAS);
+
+    let tx1 = WithOtherFields::new(tx1);
+    let tx2 = WithOtherFields::new(tx2);
+
+    let pending1 = provider.send_transaction(tx1).await.unwrap();
+    let pending2 = provider.send_transaction(tx2).await.unwrap();
+
+    api.mine_one().await;
+
+    let receipt1 = pending1.get_receipt().await.unwrap();
+    let receipt2 = pending2.get_receipt().await.unwrap();
+
+    assert_eq!(receipt1.block_number, receipt2.block_number);
+}
+
+// ============================================================================
+// Block & Chain: Chain ID
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_chain_id() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let chain_id = provider.get_chain_id().await.unwrap();
+    assert_eq!(chain_id, 31337);
+}
+
+// ============================================================================
+// Block & Chain: Custom Chain ID
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_custom_chain_id() {
+    let custom_chain_id = 42069u64;
+    let (_api, handle) = spawn(NodeConfig::test_tempo().with_chain_id(Some(custom_chain_id))).await;
+    let provider = handle.http_provider();
+
+    let chain_id = provider.get_chain_id().await.unwrap();
+    assert_eq!(chain_id, custom_chain_id);
+}
