@@ -596,6 +596,30 @@ impl<N: Network> Backend<N> {
         Err(BlockchainError::TempoTransactionUnsupported)
     }
 
+    /// Builds the [`InspectorTxConfig`] from the backend's current settings.
+    fn inspector_tx_config(&self) -> InspectorTxConfig {
+        InspectorTxConfig {
+            print_traces: self.print_traces,
+            print_logs: self.print_logs,
+            enable_steps_tracing: self.enable_steps_tracing,
+            call_trace_decoder: self.call_trace_decoder.clone(),
+        }
+    }
+
+    /// Builds the [`PoolTxGasConfig`] from the given EVM environment.
+    fn pool_tx_gas_config(&self, evm_env: &EvmEnv) -> PoolTxGasConfig {
+        let spec_id = *evm_env.spec_id();
+        let is_cancun = spec_id >= SpecId::CANCUN;
+        let blob_params = self.blob_params();
+        PoolTxGasConfig {
+            disable_block_gas_limit: evm_env.cfg_env.disable_block_gas_limit,
+            tx_gas_limit_cap: evm_env.cfg_env.tx_gas_limit_cap,
+            tx_gas_limit_cap_resolved: evm_env.cfg_env.tx_gas_limit_cap(),
+            max_blob_gas_per_block: blob_params.max_blob_gas_per_block(),
+            is_cancun,
+        }
+    }
+
     /// Returns the block gas limit
     pub fn gas_limit(&self) -> u64 {
         self.evm_env.read().block_env.gas_limit
@@ -2496,22 +2520,8 @@ where
                 let excess_blob_gas =
                     if is_cancun { evm_env.block_env.blob_excess_gas() } else { None };
 
-                let blob_params = self.blob_params();
-
-                let inspector_tx_config = InspectorTxConfig {
-                    print_traces: self.print_traces,
-                    print_logs: self.print_logs,
-                    enable_steps_tracing: self.enable_steps_tracing,
-                    call_trace_decoder: self.call_trace_decoder.clone(),
-                };
-
-                let gas_config = PoolTxGasConfig {
-                    disable_block_gas_limit: evm_env.cfg_env.disable_block_gas_limit,
-                    tx_gas_limit_cap: evm_env.cfg_env.tx_gas_limit_cap,
-                    tx_gas_limit_cap_resolved: evm_env.cfg_env.tx_gas_limit_cap(),
-                    max_blob_gas_per_block: blob_params.max_blob_gas_per_block(),
-                    is_cancun,
-                };
+                let inspector_tx_config = self.inspector_tx_config();
+                let gas_config = self.pool_tx_gas_config(&evm_env);
 
                 let (pool_result, block_result) = self.execute_with_block_executor(
                     &mut **db,
@@ -2752,22 +2762,8 @@ where
             if spec_id >= SpecId::LONDON { Some(evm_env.block_env.basefee) } else { None };
         let excess_blob_gas = if is_cancun { evm_env.block_env.blob_excess_gas() } else { None };
 
-        let blob_params = self.blob_params();
-
-        let inspector_tx_config = InspectorTxConfig {
-            print_traces: self.print_traces,
-            print_logs: self.print_logs,
-            enable_steps_tracing: self.enable_steps_tracing,
-            call_trace_decoder: self.call_trace_decoder.clone(),
-        };
-
-        let gas_config = PoolTxGasConfig {
-            disable_block_gas_limit: evm_env.cfg_env.disable_block_gas_limit,
-            tx_gas_limit_cap: evm_env.cfg_env.tx_gas_limit_cap,
-            tx_gas_limit_cap_resolved: evm_env.cfg_env.tx_gas_limit_cap(),
-            max_blob_gas_per_block: blob_params.max_blob_gas_per_block(),
-            is_cancun,
-        };
+        let inspector_tx_config = self.inspector_tx_config();
+        let gas_config = self.pool_tx_gas_config(&evm_env);
 
         let (pool_result, block_result) = self.execute_with_block_executor(
             &mut cache_db,
@@ -3263,24 +3259,9 @@ where
             evm_env.block_env = block_env_from_header(&block.header);
 
             let spec_id = *evm_env.spec_id();
-            let is_cancun = spec_id >= SpecId::CANCUN;
 
-            let blob_params = self.blob_params();
-
-            let inspector_tx_config = InspectorTxConfig {
-                print_traces: self.print_traces,
-                print_logs: self.print_logs,
-                enable_steps_tracing: self.enable_steps_tracing,
-                call_trace_decoder: self.call_trace_decoder.clone(),
-            };
-
-            let gas_config = PoolTxGasConfig {
-                disable_block_gas_limit: evm_env.cfg_env.disable_block_gas_limit,
-                tx_gas_limit_cap: evm_env.cfg_env.tx_gas_limit_cap,
-                tx_gas_limit_cap_resolved: evm_env.cfg_env.tx_gas_limit_cap(),
-                max_blob_gas_per_block: blob_params.max_blob_gas_per_block(),
-                is_cancun,
-            };
+            let inspector_tx_config = self.inspector_tx_config();
+            let gas_config = self.pool_tx_gas_config(&evm_env);
 
             self.execute_with_block_executor(
                 &mut cache_db,
