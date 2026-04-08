@@ -338,6 +338,9 @@ impl TestArgs {
             InternalTraceMode::None
         };
 
+        // Auto-detect network from fork chain ID when not explicitly configured.
+        evm_opts.infer_network_from_fork().await;
+
         // Dispatch based on network type.
         let (libraries, mut outcome) = if evm_opts.networks.is_tempo() {
             self.build_and_run_tests::<TempoEvmNetwork>(

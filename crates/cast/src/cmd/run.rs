@@ -132,7 +132,11 @@ impl RunArgs {
     /// Note: This executes the transaction(s) as is: Cheatcodes are disabled
     pub async fn run(self) -> Result<()> {
         let figment = self.rpc.clone().into_figment(self.with_local_artifacts).merge(&self);
-        let evm_opts = figment.extract::<EvmOpts>()?;
+        let mut evm_opts = figment.extract::<EvmOpts>()?;
+
+        // Auto-detect network from fork chain ID when not explicitly configured.
+        evm_opts.infer_network_from_fork().await;
+
         if evm_opts.networks.is_tempo() {
             self.run_with_evm::<TempoEvmNetwork>().await
         } else {

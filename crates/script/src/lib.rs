@@ -270,7 +270,12 @@ impl ScriptArgs {
     pub async fn run_script(self) -> Result<()> {
         trace!(target: "script", "executing script command");
 
-        let is_tempo = self.load_config_and_evm_opts()?.1.networks.is_tempo();
+        let (_, mut evm_opts) = self.load_config_and_evm_opts()?;
+
+        // Auto-detect network from fork chain ID when not explicitly configured.
+        evm_opts.infer_network_from_fork().await;
+
+        let is_tempo = evm_opts.networks.is_tempo();
 
         if self.batch && !is_tempo {
             eyre::bail!("--batch mode is only supported on Tempo networks");
