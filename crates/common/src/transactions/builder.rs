@@ -240,11 +240,11 @@ pub trait FoundryTransactionBuilder<N: Network>: TransactionBuilder<N> {
     /// on-chain as part of this transaction.
     fn set_key_authorization(&mut self, _key_authorization: SignedKeyAuthorization) {}
 
-    /// Converts a CREATE transaction's input/value into an AA-compatible call entry.
+    /// Converts a CREATE transaction into an AA-compatible call entry.
     ///
-    /// Tempo AA transactions use a `calls` list instead of `to`+`input`. This method
-    /// extracts the CREATE data from the standard tx fields and pushes it as a call
-    /// with `TxKind::Create`. No-op for non-Tempo networks.
+    /// Tempo AA transactions use a `calls` list instead of `to`+`input`. Must be
+    /// called before gas estimation so the RPC sees the correct tx structure.
+    /// No-op for non-Tempo networks.
     fn convert_create_to_call(&mut self) {}
 
     /// Signs the transaction using an access key (keychain mode).
@@ -428,7 +428,7 @@ impl FoundryTransactionBuilder<TempoNetwork> for <TempoNetwork as Network>::Tran
     }
 
     fn convert_create_to_call(&mut self) {
-        if self.calls.is_empty() {
+        if self.calls.is_empty() && self.inner.to.is_some_and(|to| to.is_create()) {
             let input = self.inner.input.input().cloned().unwrap_or_default();
             let value = self.inner.value.unwrap_or(U256::ZERO);
             self.calls.push(Call { to: TxKind::Create, value, input });
