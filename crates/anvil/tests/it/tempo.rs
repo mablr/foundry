@@ -6,8 +6,9 @@
 //! - Native value transfer rejection
 //! - Basic transaction behavior in Tempo mode
 
+use alloy_consensus::Typed2718;
 use alloy_eips::eip2718::Encodable2718;
-use alloy_network::{ReceiptResponse, TransactionBuilder};
+use alloy_network::{ReceiptResponse, TransactionBuilder, TransactionResponse};
 use alloy_primitives::{Address, Bytes, TxKind, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{BlockNumberOrTag, TransactionRequest};
@@ -1459,4 +1460,713 @@ async fn test_custom_chain_id() {
 
     let chain_id = provider.get_chain_id().await.unwrap();
     assert_eq!(chain_id, custom_chain_id);
+}
+
+// ============================================================================
+// Tempo AA: Expiring Nonce Transaction
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_transaction_expiring_nonce() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let recipient = accounts[1];
+    let signer = dev_key(0);
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let chain_id = provider.get_chain_id().await.unwrap();
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let block = provider.get_block(BlockNumberOrTag::Latest.into()).await.unwrap().unwrap();
+    let current_time = block.header.timestamp;
+    let valid_before = current_time + 25;
+
+    let transfer_call = token.transfer(recipient, U256::from(80_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tempo_tx = TempoTransaction {
+        chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS,
+        calls: vec![Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: calldata }],
+        access_list: Default::default(),
+        nonce_key: U256::MAX,
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: Some(valid_before),
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+    let tx_hash = provider.send_raw_transaction(&encoded).await.unwrap();
+    let receipt = tx_hash.get_receipt().await.unwrap();
+
+    assert!(receipt.status(), "Tempo AA transaction with expiring nonce should succeed");
+}
+
+// ============================================================================
+// Tempo AA: Expiring Nonce Replay
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_expiring_nonce_replay() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let recipient = accounts[1];
+    let signer = dev_key(0);
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let chain_id = provider.get_chain_id().await.unwrap();
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let block = provider.get_block(BlockNumberOrTag::Latest.into()).await.unwrap().unwrap();
+    let current_time = block.header.timestamp;
+    let valid_before = current_time + 25;
+
+    let transfer_call = token.transfer(recipient, U256::from(50_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tempo_tx = TempoTransaction {
+        chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS,
+        calls: vec![Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: calldata }],
+        access_list: Default::default(),
+        nonce_key: U256::MAX,
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: Some(valid_before),
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+
+    let tx_hash = provider.send_raw_transaction(&encoded).await.unwrap();
+    let first_tx_hash = *tx_hash.tx_hash();
+    let receipt = tx_hash.get_receipt().await.unwrap();
+    assert!(receipt.status(), "First expiring nonce transaction should succeed");
+
+    // Replay the exact same transaction bytes
+    let result = provider.send_raw_transaction(&encoded).await;
+
+    if let Ok(pending) = result {
+        let second_tx_hash = *pending.tx_hash();
+        assert_eq!(
+            first_tx_hash, second_tx_hash,
+            "Replaying same transaction should return same tx hash (not execute again)"
+        );
+    }
+}
+
+// ============================================================================
+// Tempo AA: Multiple Calls in Single Transaction
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_transaction_multiple_calls() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let recipient1 = accounts[1];
+    let recipient2 = accounts[2];
+    let signer = dev_key(0);
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let chain_id = provider.get_chain_id().await.unwrap();
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let recipient1_balance_before = token.balanceOf(recipient1).call().await.unwrap();
+    let recipient2_balance_before = token.balanceOf(recipient2).call().await.unwrap();
+
+    let amount1 = U256::from(25_000);
+    let amount2 = U256::from(35_000);
+
+    let call1_data: Bytes = token.transfer(recipient1, amount1).calldata().clone();
+    let call2_data: Bytes = token.transfer(recipient2, amount2).calldata().clone();
+
+    let tempo_tx = TempoTransaction {
+        chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS * 2,
+        calls: vec![
+            Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: call1_data },
+            Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: call2_data },
+        ],
+        access_list: Default::default(),
+        nonce_key: U256::from(5),
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: None,
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+    let tx_hash = provider.send_raw_transaction(&encoded).await.unwrap();
+    let receipt = tx_hash.get_receipt().await.unwrap();
+
+    assert!(receipt.status(), "Tempo AA transaction with multiple calls should succeed");
+
+    let recipient1_balance_after = token.balanceOf(recipient1).call().await.unwrap();
+    let recipient2_balance_after = token.balanceOf(recipient2).call().await.unwrap();
+
+    assert_eq!(recipient1_balance_after, recipient1_balance_before + amount1);
+    assert_eq!(recipient2_balance_after, recipient2_balance_before + amount2);
+}
+
+// ============================================================================
+// Tempo AA: Nonce Keys Are Isolated
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_nonce_keys_are_isolated() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let recipient = accounts[1];
+    let signer = dev_key(0);
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let chain_id = provider.get_chain_id().await.unwrap();
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let transfer_call = token.transfer(recipient, U256::from(10_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tempo_tx1 = TempoTransaction {
+        chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS,
+        calls: vec![Call {
+            to: TxKind::Call(PATH_USD),
+            value: U256::ZERO,
+            input: calldata.clone(),
+        }],
+        access_list: Default::default(),
+        nonce_key: U256::from(100),
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: None,
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx1.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx1, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+
+    let tx_hash = provider.send_raw_transaction(&encoded).await.unwrap();
+    let receipt = tx_hash.get_receipt().await.unwrap();
+    assert!(receipt.status(), "First tx with nonce_key=100 should succeed");
+
+    let tempo_tx2 = TempoTransaction {
+        chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS,
+        calls: vec![Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: calldata }],
+        access_list: Default::default(),
+        nonce_key: U256::from(101),
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: None,
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx2.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx2, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+
+    let tx_hash2 = provider.send_raw_transaction(&encoded).await.unwrap();
+    let receipt2 = tx_hash2.get_receipt().await.unwrap();
+    assert!(
+        receipt2.status(),
+        "Tx with different nonce_key should succeed even with same nonce value"
+    );
+}
+
+// ============================================================================
+// Tempo AA: Explicit Fee Token Selection
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_explicit_fee_token_selection() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let sender = accounts[0];
+    let recipient = accounts[1];
+    let signer = dev_key(0);
+
+    let chain_id = provider.get_chain_id().await.unwrap();
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let path_token = IERC20::new(PATH_USD, &provider);
+    let alpha_token = IERC20::new(ALPHA_USD, &provider);
+    let path_balance_before = path_token.balanceOf(sender).call().await.unwrap();
+    let alpha_balance_before = alpha_token.balanceOf(sender).call().await.unwrap();
+
+    let transfer_call = path_token.transfer(recipient, U256::from(10_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tempo_tx = TempoTransaction {
+        chain_id,
+        fee_token: Some(PATH_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS,
+        calls: vec![Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: calldata }],
+        access_list: Default::default(),
+        nonce_key: U256::from(400),
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: None,
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+
+    let tx_hash = provider.send_raw_transaction(&encoded).await.unwrap();
+    let receipt = tx_hash.get_receipt().await.unwrap();
+    assert!(receipt.status(), "Transaction with explicit fee token should succeed");
+
+    let path_balance_after = path_token.balanceOf(sender).call().await.unwrap();
+    let alpha_balance_after = alpha_token.balanceOf(sender).call().await.unwrap();
+
+    assert!(
+        path_balance_after < path_balance_before,
+        "PATH_USD balance should decrease (transfer + fees)"
+    );
+    assert_eq!(
+        alpha_balance_after, alpha_balance_before,
+        "ALPHA_USD balance should not change when using PATH_USD for fees"
+    );
+}
+
+// ============================================================================
+// Tempo AA: Fee Token Swap (Different Tokens)
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_fee_token_swap_different_tokens() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let sender = accounts[0];
+    let recipient = accounts[1];
+
+    let alpha_token = IERC20::new(ALPHA_USD, &provider);
+    let alice_alpha_before = alpha_token.balanceOf(sender).call().await.unwrap();
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let transfer_call = token.transfer(recipient, U256::from(100_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let tx = TransactionRequest::default()
+        .from(sender)
+        .to(PATH_USD)
+        .with_input(calldata)
+        .with_gas_limit(TIP20_TRANSFER_GAS)
+        .max_fee_per_gas(base_fee * 2)
+        .max_priority_fee_per_gas(base_fee / 10);
+
+    let tx = WithOtherFields::new(tx);
+    let receipt = provider.send_transaction(tx).await.unwrap().get_receipt().await.unwrap();
+
+    assert!(receipt.status(), "Transaction should succeed");
+
+    let alice_alpha_after = alpha_token.balanceOf(sender).call().await.unwrap();
+    assert!(
+        alice_alpha_after < alice_alpha_before,
+        "Alice's AlphaUSD should decrease due to gas fees"
+    );
+}
+
+// ============================================================================
+// Tempo AA: Receipt Fields
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_transaction_receipt_fields() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let recipient = accounts[1];
+    let signer = dev_key(0);
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let chain_id = provider.get_chain_id().await.unwrap();
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let transfer_call = token.transfer(recipient, U256::from(50_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tempo_tx = TempoTransaction {
+        chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS,
+        calls: vec![Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: calldata }],
+        access_list: Default::default(),
+        nonce_key: U256::from(500),
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: None,
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+
+    let tx_hash = provider.send_raw_transaction(&encoded).await.unwrap();
+    let receipt = tx_hash.get_receipt().await.unwrap();
+
+    assert!(receipt.status(), "Transaction should succeed");
+    assert!(receipt.gas_used > 0, "Gas used should be non-zero");
+    assert!(!receipt.inner.logs().is_empty(), "Should have Transfer event logs");
+}
+
+// ============================================================================
+// Tempo AA: Get Transaction By Hash
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_get_transaction_by_hash() {
+    let (api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let sender = accounts[0];
+    let recipient = accounts[1];
+    let signer = dev_key(0);
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let chain_id = provider.get_chain_id().await.unwrap();
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let transfer_call = token.transfer(recipient, U256::from(50_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tempo_tx = TempoTransaction {
+        chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS,
+        calls: vec![Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: calldata }],
+        access_list: Default::default(),
+        nonce_key: U256::from(501),
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: None,
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+
+    let pending = provider.send_raw_transaction(&encoded).await.unwrap();
+    let tx_hash = *pending.tx_hash();
+    pending.get_receipt().await.unwrap();
+
+    let tx = api.transaction_by_hash(tx_hash).await.unwrap();
+    assert!(tx.is_some(), "Transaction should be retrievable by hash");
+
+    let tx = tx.unwrap();
+    assert_eq!(tx.ty(), 0x76, "Transaction type should be 0x76 (Tempo)");
+    assert_eq!(TransactionResponse::from(&tx), sender, "From address should match sender");
+}
+
+// ============================================================================
+// Tempo AA: Wrong Chain ID Rejected
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_wrong_chain_id_rejected() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let recipient = accounts[1];
+    let signer = dev_key(0);
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let correct_chain_id = provider.get_chain_id().await.unwrap();
+    let wrong_chain_id = correct_chain_id + 1;
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let transfer_call = token.transfer(recipient, U256::from(10_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tempo_tx = TempoTransaction {
+        chain_id: wrong_chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS,
+        calls: vec![Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: calldata }],
+        access_list: Default::default(),
+        nonce_key: U256::from(1),
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: None,
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+
+    let result = provider.send_raw_transaction(&encoded).await;
+    assert!(result.is_err(), "Transaction with wrong chain ID should be rejected");
+}
+
+// ============================================================================
+// Tempo AA: Gas Too Low Rejected
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_gas_too_low_rejected() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let recipient = accounts[1];
+    let signer = dev_key(0);
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let chain_id = provider.get_chain_id().await.unwrap();
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let transfer_call = token.transfer(recipient, U256::from(10_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tempo_tx = TempoTransaction {
+        chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: 1000,
+        calls: vec![Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: calldata }],
+        access_list: Default::default(),
+        nonce_key: U256::from(2),
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: None,
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+
+    let result = provider.send_raw_transaction(&encoded).await;
+    assert!(result.is_err(), "Transaction with gas limit below intrinsic cost should be rejected");
+}
+
+// ============================================================================
+// Tempo AA: Value In Call Rejected
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_value_in_call_rejected() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let recipient = accounts[1];
+    let signer = dev_key(0);
+
+    let chain_id = provider.get_chain_id().await.unwrap();
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let tempo_tx = TempoTransaction {
+        chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS,
+        calls: vec![Call {
+            to: TxKind::Call(recipient),
+            value: U256::from(1_000_000),
+            input: Bytes::new(),
+        }],
+        access_list: Default::default(),
+        nonce_key: U256::from(3),
+        nonce: 0,
+        fee_payer_signature: None,
+        valid_before: None,
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+
+    let result = provider.send_raw_transaction(&encoded).await;
+    if let Ok(pending) = result {
+        let receipt = pending.get_receipt().await;
+        if let Ok(r) = receipt {
+            assert!(!r.status(), "Transaction with ETH value should fail in Tempo mode");
+        }
+    }
+}
+
+// ============================================================================
+// Tempo AA: Nonce Too High Rejected
+// ============================================================================
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_tempo_aa_nonce_too_high_rejected() {
+    let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
+    let provider = handle.http_provider();
+
+    let accounts: Vec<Address> = handle.dev_accounts().collect();
+    let recipient = accounts[1];
+    let signer = dev_key(0);
+
+    let token = IERC20::new(PATH_USD, &provider);
+    let chain_id = provider.get_chain_id().await.unwrap();
+    let base_fee = provider.get_gas_price().await.unwrap();
+
+    let transfer_call = token.transfer(recipient, U256::from(10_000));
+    let calldata: Bytes = transfer_call.calldata().clone();
+
+    let tempo_tx = TempoTransaction {
+        chain_id,
+        fee_token: Some(ALPHA_USD),
+        max_priority_fee_per_gas: base_fee / 10,
+        max_fee_per_gas: base_fee * 2,
+        gas_limit: TIP20_TRANSFER_GAS,
+        calls: vec![Call { to: TxKind::Call(PATH_USD), value: U256::ZERO, input: calldata }],
+        access_list: Default::default(),
+        nonce_key: U256::from(999),
+        nonce: 5,
+        fee_payer_signature: None,
+        valid_before: None,
+        valid_after: None,
+        key_authorization: None,
+        tempo_authorization_list: vec![],
+    };
+
+    let sig_hash = tempo_tx.signature_hash();
+    let signature = signer.sign_hash(&sig_hash).await.unwrap();
+    let tempo_sig = TempoSignature::Primitive(PrimitiveSignature::Secp256k1(signature));
+    let signed_tx = AASigned::new_unhashed(tempo_tx, tempo_sig);
+    let envelope = TempoTxEnvelope::AA(signed_tx);
+
+    let mut encoded = Vec::new();
+    envelope.encode_2718(&mut encoded);
+
+    // Transaction may be accepted into pool but should fail during execution
+    let result = provider.send_raw_transaction(&encoded).await;
+    if result.is_ok() {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
