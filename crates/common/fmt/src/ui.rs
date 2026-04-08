@@ -1,13 +1,13 @@
 //! Helper trait and functions to format Ethereum types.
 
 use alloy_consensus::{
-    BlockHeader, Eip658Value, Receipt, ReceiptWithBloom, Signed, Transaction as TxTrait, TxEip1559,
-    TxEip2930, TxEip4844Variant, TxEip7702, TxEnvelope, TxLegacy, TxReceipt, Typed2718,
+    BlockHeader, Eip658Value, Signed, Transaction as TxTrait, TxEip1559, TxEip2930,
+    TxEip4844Variant, TxEip7702, TxEnvelope, TxLegacy, TxReceipt, Typed2718,
     transaction::TxHashRef,
 };
 use alloy_network::{
-    AnyReceiptEnvelope, AnyRpcBlock, AnyRpcHeader, AnyRpcTransaction, AnyTransactionReceipt,
-    AnyTxEnvelope, BlockResponse, Network, ReceiptResponse, primitives::HeaderResponse,
+    AnyRpcBlock, AnyRpcHeader, AnyRpcTransaction, AnyTransactionReceipt, AnyTxEnvelope,
+    BlockResponse, Network, ReceiptResponse, primitives::HeaderResponse,
 };
 use alloy_primitives::{
     Address, Bloom, Bytes, FixedBytes, I256, Signature, U8, U64, U256, Uint, hex,
@@ -171,37 +171,10 @@ impl UIfmt for Signature {
     }
 }
 
-impl UIfmt for AnyTransactionReceipt {
-    fn pretty(&self) -> String {
-        let Self {
-            inner:
-                TransactionReceipt {
-                    transaction_hash,
-                    transaction_index,
-                    block_hash,
-                    block_number,
-                    from,
-                    to,
-                    gas_used,
-                    contract_address,
-                    effective_gas_price,
-                    inner:
-                        AnyReceiptEnvelope {
-                            r#type: transaction_type,
-                            inner:
-                                ReceiptWithBloom {
-                                    receipt: Receipt { status, cumulative_gas_used, logs },
-                                    logs_bloom,
-                                },
-                        },
-                    blob_gas_price,
-                    blob_gas_used,
-                },
-            other,
-        } = self;
-
-        let mut pretty = format!(
-            "
+/// Pretty-prints the common fields of any `TransactionReceipt<T>`.
+fn pretty_receipt<T: TxReceipt<Log = Log>>(receipt: &TransactionReceipt<T>, tx_type: u8) -> String {
+    let mut pretty = format!(
+        "
 blockHash            {}
 blockNumber          {}
 contractAddress      {}
@@ -218,31 +191,41 @@ transactionIndex     {}
 type                 {}
 blobGasPrice         {}
 blobGasUsed          {}",
-            block_hash.pretty(),
-            block_number.pretty(),
-            contract_address.pretty(),
-            cumulative_gas_used.pretty(),
-            effective_gas_price.pretty(),
-            from.pretty(),
-            gas_used.pretty(),
-            serde_json::to_string(&logs).unwrap(),
-            logs_bloom.pretty(),
-            self.state_root().pretty(),
-            status.pretty(),
-            transaction_hash.pretty(),
-            transaction_index.pretty(),
-            transaction_type,
-            blob_gas_price.pretty(),
-            blob_gas_used.pretty()
-        );
+        receipt.block_hash.pretty(),
+        receipt.block_number.pretty(),
+        receipt.contract_address.pretty(),
+        receipt.inner.cumulative_gas_used().pretty(),
+        receipt.effective_gas_price.pretty(),
+        receipt.from.pretty(),
+        receipt.gas_used.pretty(),
+        serde_json::to_string(receipt.inner.logs()).unwrap(),
+        receipt.inner.bloom().pretty(),
+        receipt.state_root().pretty(),
+        receipt.inner.status_or_post_state().pretty(),
+        receipt.transaction_hash.pretty(),
+        receipt.transaction_index.pretty(),
+        tx_type,
+        receipt.blob_gas_price.pretty(),
+        receipt.blob_gas_used.pretty()
+    );
 
-        if let Some(to) = to {
-            pretty.push_str(&format!("\nto                   {}", to.pretty()));
-        }
+    if let Some(to) = receipt.to {
+        pretty.push_str(&format!("\nto                   {}", to.pretty()));
+    }
 
-        // additional captured fields
-        pretty.push_str(&other.pretty());
+    pretty
+}
 
+impl UIfmt for TransactionReceipt {
+    fn pretty(&self) -> String {
+        pretty_receipt(self, self.transaction_type() as u8)
+    }
+}
+
+impl UIfmt for AnyTransactionReceipt {
+    fn pretty(&self) -> String {
+        let mut pretty = pretty_receipt(&self.inner, self.inner.inner.r#type);
+        pretty.push_str(&self.other.pretty());
         pretty
     }
 }
@@ -763,52 +746,8 @@ type                 {}{}",
 
 impl UIfmt for FoundryTxReceipt {
     fn pretty(&self) -> String {
-        let receipt = &self.0.inner;
-        let other = &self.0.other;
-
-        let mut pretty = format!(
-            "
-blockHash            {}
-blockNumber          {}
-contractAddress      {}
-cumulativeGasUsed    {}
-effectiveGasPrice    {}
-from                 {}
-gasUsed              {}
-logs                 {}
-logsBloom            {}
-root                 {}
-status               {}
-transactionHash      {}
-transactionIndex     {}
-type                 {}
-blobGasPrice         {}
-blobGasUsed          {}",
-            receipt.block_hash().pretty(),
-            receipt.block_number().pretty(),
-            receipt.contract_address().pretty(),
-            receipt.cumulative_gas_used().pretty(),
-            receipt.effective_gas_price().pretty(),
-            receipt.from().pretty(),
-            receipt.gas_used().pretty(),
-            serde_json::to_string(receipt.inner.logs()).unwrap(),
-            receipt.inner.logs_bloom().pretty(),
-            self.state_root().pretty(),
-            receipt.status().pretty(),
-            receipt.transaction_hash().pretty(),
-            receipt.transaction_index().pretty(),
-            receipt.inner.tx_type() as u8,
-            receipt.blob_gas_price().pretty(),
-            receipt.blob_gas_used().pretty()
-        );
-
-        if let Some(to) = receipt.to() {
-            pretty.push_str(&format!("\nto                   {}", to.pretty()));
-        }
-
-        // additional captured fields
-        pretty.push_str(&other.pretty());
-
+        let mut pretty = pretty_receipt(&self.0.inner, self.0.inner.inner.tx_type() as u8);
+        pretty.push_str(&self.0.other.pretty());
         pretty
     }
 }
@@ -918,13 +857,35 @@ pub trait UIfmtReceiptExt {
     fn tx_type_pretty(&self) -> String;
 }
 
-impl UIfmtReceiptExt for AnyTransactionReceipt {
+fn receipt_logs_pretty<T: TxReceipt<Log = Log>>(receipt: &TransactionReceipt<T>) -> String {
+    serde_json::to_string(receipt.inner.logs()).unwrap_or_default()
+}
+
+fn receipt_logs_bloom_pretty<T: TxReceipt<Log = Log>>(receipt: &TransactionReceipt<T>) -> String {
+    receipt.inner.bloom().pretty()
+}
+
+impl UIfmtReceiptExt for TransactionReceipt {
     fn logs_pretty(&self) -> String {
-        serde_json::to_string(&self.inner.inner.inner.receipt.logs).unwrap_or_default()
+        receipt_logs_pretty(self)
     }
 
     fn logs_bloom_pretty(&self) -> String {
-        self.inner.inner.inner.logs_bloom.pretty()
+        receipt_logs_bloom_pretty(self)
+    }
+
+    fn tx_type_pretty(&self) -> String {
+        self.transaction_type().to_string()
+    }
+}
+
+impl UIfmtReceiptExt for AnyTransactionReceipt {
+    fn logs_pretty(&self) -> String {
+        receipt_logs_pretty(&self.inner)
+    }
+
+    fn logs_bloom_pretty(&self) -> String {
+        receipt_logs_bloom_pretty(&self.inner)
     }
 
     fn tx_type_pretty(&self) -> String {
@@ -934,11 +895,11 @@ impl UIfmtReceiptExt for AnyTransactionReceipt {
 
 impl UIfmtReceiptExt for FoundryTxReceipt {
     fn logs_pretty(&self) -> String {
-        serde_json::to_string(self.0.inner.inner.logs()).unwrap_or_default()
+        receipt_logs_pretty(&self.0.inner)
     }
 
     fn logs_bloom_pretty(&self) -> String {
-        self.0.inner.inner.logs_bloom().pretty()
+        receipt_logs_bloom_pretty(&self.0.inner)
     }
 
     fn tx_type_pretty(&self) -> String {
@@ -1958,8 +1919,29 @@ to                   0x20C0000000000000000000000000000000000000
                 .contains("0x1234567890123456789012345678901234567890123456789012345678901234")
         );
 
-        // Verify status is pretty printed correctly (boolean true for successful transaction)
-        assert!(pretty_output.contains("true"));
+        // Verify status is pretty printed correctly (Eip658Value for successful transaction)
+        assert!(pretty_output.contains("1 (success)"));
+    }
+
+    #[test]
+    fn test_ethereum_receipt_uifmt() {
+        let s = r#"{"type":"0x2","status":"0x1","cumulativeGasUsed":"0x5208","logs":[],"logsBloom":"0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000","transactionHash":"0x1234567890123456789012345678901234567890123456789012345678901234","transactionIndex":"0x0","blockHash":"0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd","blockNumber":"0x1","gasUsed":"0x5208","effectiveGasPrice":"0x3b9aca00","from":"0x1234567890123456789012345678901234567890","to":"0x0987654321098765432109876543210987654321","contractAddress":null}"#;
+        let receipt: TransactionReceipt = serde_json::from_str(s).unwrap();
+
+        let pretty_output = receipt.pretty();
+
+        assert!(pretty_output.contains("blockHash"));
+        assert!(pretty_output.contains("blockNumber"));
+        assert!(pretty_output.contains("status"));
+        assert!(pretty_output.contains("gasUsed"));
+        assert!(pretty_output.contains("transactionHash"));
+        assert!(pretty_output.contains("type"));
+        assert!(
+            pretty_output
+                .contains("0x1234567890123456789012345678901234567890123456789012345678901234")
+        );
+        assert!(pretty_output.contains("1 (success)"));
+        assert!(pretty_output.contains("0x0987654321098765432109876543210987654321"));
     }
 
     #[test]
