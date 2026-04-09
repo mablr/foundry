@@ -48,7 +48,7 @@ use foundry_evm::{
     backend::Backend,
     core::{
         Breakpoints,
-        evm::{EthEvmNetwork, FoundryEvmNetwork, TempoEvmNetwork},
+        evm::{EthEvmNetwork, FoundryEvmNetwork, OpEvmNetwork, TempoEvmNetwork},
     },
     executors::ExecutorBuilder,
     inspectors::{
@@ -306,6 +306,8 @@ impl ScriptArgs {
                 broadcasted.verify().await?;
             }
             Ok(())
+        } else if evm_opts.networks.is_optimism() {
+            self.run_generic_script::<OpEvmNetwork>(config, evm_opts).await
         } else {
             self.run_generic_script::<EthEvmNetwork>(config, evm_opts).await
         }
