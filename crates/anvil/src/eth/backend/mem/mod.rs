@@ -1412,8 +1412,10 @@ impl<N: Network> Backend<N> {
             evm_env.cfg_env.disable_base_fee = true;
         }
 
-        // Deposit transaction?
-        if let Ok(deposit) = get_deposit_tx_parts(&other) {
+        // Deposit transaction? (only valid when op-stack deposits are active)
+        if self.ensure_op_deposits_active().is_ok()
+            && let Ok(deposit) = get_deposit_tx_parts(&other)
+        {
             tx_env.deposit = deposit;
         }
 
