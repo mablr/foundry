@@ -4993,7 +4993,7 @@ dependencies = [
  "alloy-transport",
  "alloy-transport-ipc",
  "alloy-transport-ws",
- "anstream 0.6.21",
+ "anstream 1.0.0",
  "anstyle",
  "axum",
  "chrono",
