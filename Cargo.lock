@@ -2764,6 +2764,7 @@ dependencies = [
  "foundry-config",
  "foundry-debugger",
  "foundry-evm",
+ "foundry-evm-networks",
  "foundry-test-utils",
  "foundry-wallets",
  "futures",
@@ -5403,6 +5404,7 @@ dependencies = [
  "foundry-evm-hardforks",
  "revm",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
