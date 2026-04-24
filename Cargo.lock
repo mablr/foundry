@@ -23,7 +23,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d122413f284cf2d62fb1b7db97e02edb8cda96d769b16e443a4f6195e35662b0"
 dependencies = [
- "crypto-common",
+ "crypto-common 0.1.7",
  "generic-array",
 ]
 
@@ -2393,6 +2393,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "block-buffer"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdd35008169921d80bc60d3d0ab416eecb028c4cd653352907921d95084790be"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
 name = "block2"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2947,7 +2956,7 @@ version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773f3b9af64447d2ce9850330c473515014aa235e6a783b02db81ff39e4a3dad"
 dependencies = [
- "crypto-common",
+ "crypto-common 0.1.7",
  "inout",
  "zeroize",
 ]
@@ -3650,6 +3659,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto-common"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77727bb15fa921304124b128af125e7e3b968275d1b108b379190264f4423710"
+dependencies = [
+ "hybrid-array",
+]
+
+[[package]]
 name = "ctr"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3950,8 +3968,18 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer 0.10.4",
  "const-oid",
- "crypto-common",
+ "crypto-common 0.1.7",
  "subtle",
+]
+
+[[package]]
+name = "digest"
+version = "0.11.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4850db49bf08e663084f7fb5c87d202ef91a3907271aff24a94eb97ff039153c"
+dependencies = [
+ "block-buffer 0.12.0",
+ "crypto-common 0.2.1",
 ]
 
 [[package]]
@@ -4856,15 +4884,15 @@ dependencies = [
 
 [[package]]
 name = "foundry-block-explorers"
-version = "0.22.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff814624bb21bfe43b70fb736ab39527b405d04cdc94d90b7e182fba28b25ec7"
+checksum = "c41211d5c69c92070d2e2174eff99ffb259d0d568d2e4f789d2a7251b4416ccd"
 dependencies = [
  "alloy-chains",
  "alloy-json-abi",
  "alloy-primitives",
  "foundry-compilers",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "semver 1.0.28",
  "serde",
  "serde_json",
@@ -5092,9 +5120,9 @@ dependencies = [
 
 [[package]]
 name = "foundry-compilers"
-version = "0.19.14"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e639f98fe54d1cc0011a4bdb2eb1d838b379c9f004991ae7555a4cc09e8da32a"
+checksum = "8a46823427db611c6b97506ee8f26b4424058366abcc9a97ac5c4c3419798518"
 dependencies = [
  "alloy-json-abi",
  "alloy-primitives",
@@ -5111,7 +5139,7 @@ dependencies = [
  "semver 1.0.28",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "solar-compiler",
  "svm-rs",
  "svm-rs-builds",
@@ -5124,9 +5152,9 @@ dependencies = [
 
 [[package]]
 name = "foundry-compilers-artifacts"
-version = "0.19.14"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93ec96df20055211f4e46b5a61fa479b2ea7d1ce0659818e0359afadfcded8d2"
+checksum = "c29c6a49e82684909549e8e3a63a9dea4c92dfeb1b5b3a5e3ad683db42324ac3"
 dependencies = [
  "foundry-compilers-artifacts-solc",
  "foundry-compilers-artifacts-vyper",
@@ -5134,9 +5162,9 @@ dependencies = [
 
 [[package]]
 name = "foundry-compilers-artifacts-solc"
-version = "0.19.14"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8a206e475b5dd1a77dc33cd917cde4846148f5136729a24edb3a16ab431b90a"
+checksum = "02d3e554932001133f433473b3bdb37c74b4a648750ab61cd7966e7db0ead16d"
 dependencies = [
  "alloy-json-abi",
  "alloy-primitives",
@@ -5155,27 +5183,25 @@ dependencies = [
 
 [[package]]
 name = "foundry-compilers-artifacts-vyper"
-version = "0.19.14"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f74883db8036522fa21d0853c21ac318e165ec88e141f1ef1d6f7b4dfa841ff7"
+checksum = "583168b6df6b73cc3de8d205a922dca58a9c0b4c2774f6b115b3ff7e79d23900"
 dependencies = [
  "alloy-json-abi",
  "alloy-primitives",
  "foundry-compilers-artifacts-solc",
  "foundry-compilers-core",
- "path-slash",
  "semver 1.0.28",
  "serde",
 ]
 
 [[package]]
 name = "foundry-compilers-core"
-version = "0.19.14"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ab384daeaea5c33cad8c3c094a1eb6f98e70922e18380c660980c74c19e362b"
+checksum = "b9f80dd5d9f3ed065e412ecef2da3904ea21708d53f79fac29a3547c10ae947f"
 dependencies = [
  "alloy-primitives",
- "cfg-if",
  "dunce",
  "fs_extra",
  "path-slash",
@@ -5462,8 +5488,9 @@ dependencies = [
 
 [[package]]
 name = "foundry-fork-db"
-version = "0.25.0"
-source = "git+https://github.com/foundry-rs/foundry-core?rev=2f90eb86d4549fa15a8cc2d99bfc1039bc083977#2f90eb86d4549fa15a8cc2d99bfc1039bc083977"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2ce9e91abb900e4ab5346d06b97c3784ae6ed4fc44b9fa22d3dc712b7e21be9"
 dependencies = [
  "alloy-chains",
  "alloy-primitives",
@@ -5479,6 +5506,7 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+ "zstd",
 ]
 
 [[package]]
@@ -6159,6 +6187,15 @@ name = "httpdate"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
+name = "hybrid-array"
+version = "0.4.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3944cf8cf766b40e2a1a333ee5e9b563f854d5fa49d6a8ca2764e97c6eddb214"
+dependencies = [
+ "typenum",
+]
 
 [[package]]
 name = "hyper"
@@ -7774,7 +7811,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b685c8311c9171d1bd2895222965d25616b2de2cb5819dd3504ed9250df9fecd"
 dependencies = [
  "ahash",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.0",
  "parking_lot",
  "stable_deref_trait",
 ]
@@ -10518,6 +10555,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha2"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.3.0",
+ "digest 0.11.2",
+]
+
+[[package]]
 name = "sha3"
 version = "0.10.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -12323,7 +12371,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc1de2c688dc15305988b563c3854064043356019f97a4b46276fe734c4f07ea"
 dependencies = [
- "crypto-common",
+ "crypto-common 0.1.7",
  "subtle",
 ]
 
