@@ -643,7 +643,7 @@ pub struct Cheatcodes<FEN: FoundryEvmNetwork = EthEvmNetwork> {
     ///
     /// Toggled by the inspector stack around the inner `transact_raw`
     /// call. Cheatcodes that mutate the tx/block env consult this flag and
-    /// route the change through [`EnvOverrides`] instead of the actual env
+    /// route the change through `EnvOverrides` instead of the actual env
     /// when `true`, so they don't fight with the fee-accounting zeroing.
     pub in_isolation_context: bool,
 }
