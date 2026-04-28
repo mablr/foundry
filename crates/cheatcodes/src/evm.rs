@@ -512,7 +512,16 @@ impl Cheatcode for feeCall {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { newBasefee } = self;
         ensure!(*newBasefee <= U256::from(u64::MAX), "base fee must be less than 2^64");
-        ccx.ecx.block_mut().set_basefee(newBasefee.saturating_to());
+        let basefee: u64 = newBasefee.saturating_to();
+        // Always record the override so `BASEFEE` reads the cheatcode value
+        // even inside the synthetic isolation transaction (which zeroes
+        // `block.basefee` for fee-accounting). See `EnvOverrides`.
+        ccx.state.env_overrides.basefee = Some(basefee);
+        // Outside isolation, also mutate the real env to preserve the
+        // historical behavior other code paths rely on.
+        if !ccx.state.in_isolation_context {
+            ccx.ecx.block_mut().set_basefee(basefee);
+        }
         Ok(Default::default())
     }
 }
@@ -551,9 +560,17 @@ impl Cheatcode for blobhashesCall {
             "`blobhashes` is not supported before the Cancun hard fork; \
              see EIP-4844: https://eips.ethereum.org/EIPS/eip-4844"
         );
-        ccx.ecx.tx_mut().set_blob_hashes(hashes.clone());
-        // force this as 4844 txtype
-        ccx.ecx.tx_mut().set_tx_type(EIP4844_TX_TYPE_ID);
+        // Always record the override so `BLOBHASH` returns the cheatcode
+        // value even inside the synthetic isolation transaction (which does
+        // not propagate `tx.blob_hashes`). See `EnvOverrides`.
+        ccx.state.env_overrides.blob_hashes = Some(hashes.clone());
+        // Outside isolation, also mutate the real env to preserve the
+        // historical behavior other code paths rely on.
+        if !ccx.state.in_isolation_context {
+            ccx.ecx.tx_mut().set_blob_hashes(hashes.clone());
+            // force this as 4844 txtype
+            ccx.ecx.tx_mut().set_tx_type(EIP4844_TX_TYPE_ID);
+        }
         Ok(Default::default())
     }
 }
@@ -589,7 +606,18 @@ impl Cheatcode for txGasPriceCall {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { newGasPrice } = self;
         ensure!(*newGasPrice <= U256::from(u64::MAX), "gas price must be less than 2^64");
-        ccx.ecx.tx_mut().set_gas_price(newGasPrice.saturating_to());
+        let gas_price: u128 = newGasPrice.saturating_to();
+        // Always record the override so `GASPRICE` reads the cheatcode value
+        // even inside the synthetic isolation transaction (which zeroes
+        // `tx.gas_price` for fee-accounting). See `EnvOverrides`.
+        ccx.state.env_overrides.gas_price = Some(gas_price);
+        // Outside isolation, also mutate the real env to preserve the
+        // historical behavior other code paths rely on. Inside isolation we
+        // intentionally leave `tx.gas_price` at 0 so that the pranked caller
+        // does not need to pre-fund `gas * gasPrice` (see #7277).
+        if !ccx.state.in_isolation_context {
+            ccx.ecx.tx_mut().set_gas_price(gas_price);
+        }
         Ok(Default::default())
     }
 }
