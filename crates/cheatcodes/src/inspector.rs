@@ -289,12 +289,11 @@ pub struct RecordDebugStepInfo {
 /// outer env is restored from the cached snapshot taken before
 /// `transact_inner`, which means:
 ///
-/// - the override **does** persist for subsequent `BASEFEE`, `GASPRICE` and
-///   `BLOBHASH` reads (this hook fires in `step_end` regardless of isolation),
-/// - but the real `block.basefee` / `tx.gas_price` / `tx.blob_hashes` do
-///   **not** reflect the cheatcode value, so non-opcode env consumers will
-///   not see it. In particular, `vm.getBlobhashes()` reads
-///   `ecx.tx().blob_versioned_hashes()` directly and will return the
+/// - the override **does** persist for subsequent `BASEFEE`, `GASPRICE` and `BLOBHASH` reads (this
+///   hook fires in `step_end` regardless of isolation),
+/// - but the real `block.basefee` / `tx.gas_price` / `tx.blob_hashes` do **not** reflect the
+///   cheatcode value, so non-opcode env consumers will not see it. In particular,
+///   `vm.getBlobhashes()` reads `ecx.tx().blob_versioned_hashes()` directly and will return the
 ///   pre-isolation value.
 ///
 /// Calling these cheatcodes outside isolation behaves as before (real env
@@ -1375,12 +1374,8 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcode
             // non-continue result (halt/revert/error) — i.e. it didn't push
             // its normal result. `None` means "still running", which is the
             // success path for a stack-only opcode in `step_end`.
-            let opcode_failed = interpreter
-                .bytecode
-                .action
-                .as_ref()
-                .and_then(|a| a.instruction_result())
-                .is_some();
+            let opcode_failed =
+                interpreter.bytecode.action.as_ref().and_then(|a| a.instruction_result()).is_some();
             if opcode_failed {
                 self.env_overrides.pending_opcode = None;
                 self.env_overrides.pending_blobhash_index = None;
