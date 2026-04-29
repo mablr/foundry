@@ -40,3 +40,54 @@ contract BaseFeeRecorder {
         lastBaseFee = block.basefee;
     }
 }
+
+/// `vm.snapshotState` / `vm.revertToState` must roll back the cheatcode-side
+/// `EnvOverrides` for `vm.fee` in lockstep with the backend snapshot,
+/// otherwise the BASEFEE opcode (rewritten in `step_end` from the override)
+/// keeps returning the post-snapshot value even after `revertToState` rolls
+/// back the underlying `EvmEnv`. Regression test for the review on PR
+/// #14493.
+contract FeeSnapshotRevertTest is Test {
+    function test_fee_revert_to_state_clears_override() public {
+        vm.fee(1000);
+        uint256 id = vm.snapshotState();
+        vm.fee(2000);
+        assertEq(block.basefee, 2000, "pre-revert override not applied");
+        assertTrue(vm.revertToState(id), "revertToState failed");
+        assertEq(block.basefee, 1000, "override leaked past revertToState");
+    }
+
+    function test_fee_revert_to_state_restores_prior_override() public {
+        uint256 id = vm.snapshotState();
+        vm.fee(2000);
+        assertEq(block.basefee, 2000, "override not applied before revert");
+        assertTrue(vm.revertToState(id), "revertToState failed");
+        // Before the snapshot no override was set, so BASEFEE should fall
+        // back to the underlying env value (which `revert_state` restores).
+        assertTrue(block.basefee != 2000, "override leaked past revertToState");
+    }
+}
+
+/// Same regression as `FeeSnapshotRevertTest`, but exercised under `--isolate`
+/// where `vm.fee` only writes the override (the real `block.basefee` is left
+/// untouched), so the snapshot/revert path is the only thing that can roll
+/// the override back.
+/// forge-config: default.isolate = true
+contract IsolatedFeeSnapshotRevertTest is Test {
+    BaseFeeRecorder internal recorder;
+
+    function setUp() public {
+        recorder = new BaseFeeRecorder();
+    }
+
+    function test_fee_revert_to_state_clears_override_in_isolation() public {
+        vm.fee(1000);
+        uint256 id = vm.snapshotState();
+        vm.fee(2000);
+        recorder.record();
+        assertEq(recorder.lastBaseFee(), 2000, "pre-revert override not seen by call");
+        assertTrue(vm.revertToState(id), "revertToState failed");
+        recorder.record();
+        assertEq(recorder.lastBaseFee(), 1000, "override leaked past revertToState");
+    }
+}

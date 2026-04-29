@@ -922,6 +922,7 @@ impl Cheatcode for deleteSnapshotCall {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { snapshotId } = self;
         let result = ccx.ecx.db_mut().delete_state_snapshot(*snapshotId);
+        ccx.state.env_overrides_snapshots.remove(snapshotId);
         Ok(result.abi_encode())
     }
 }
@@ -930,6 +931,7 @@ impl Cheatcode for deleteStateSnapshotCall {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self { snapshotId } = self;
         let result = ccx.ecx.db_mut().delete_state_snapshot(*snapshotId);
+        ccx.state.env_overrides_snapshots.remove(snapshotId);
         Ok(result.abi_encode())
     }
 }
@@ -939,6 +941,7 @@ impl Cheatcode for deleteSnapshotsCall {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self {} = self;
         ccx.ecx.db_mut().delete_state_snapshots();
+        ccx.state.env_overrides_snapshots.clear();
         Ok(Default::default())
     }
 }
@@ -947,6 +950,7 @@ impl Cheatcode for deleteStateSnapshotsCall {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
         let Self {} = self;
         ccx.ecx.db_mut().delete_state_snapshots();
+        ccx.state.env_overrides_snapshots.clear();
         Ok(Default::default())
     }
 }
@@ -1366,8 +1370,13 @@ pub(super) fn get_nonce<FEN: FoundryEvmNetwork>(
 
 fn inner_snapshot_state<FEN: FoundryEvmNetwork>(ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
     let evm_env = ccx.ecx.evm_clone();
+    let env_overrides = ccx.state.env_overrides.clone();
     let (db, inner) = ccx.ecx.db_journal_inner_mut();
     let id = db.snapshot_state(inner, &evm_env);
+    // Capture the cheatcode-side env overrides alongside the backend
+    // snapshot so they can be rolled back in lockstep with `EvmEnv`. See
+    // `Cheatcodes::env_overrides_snapshots`.
+    ccx.state.env_overrides_snapshots.insert(id, env_overrides);
     Ok(id.abi_encode())
 }
 
@@ -1387,6 +1396,11 @@ fn inner_revert_to_state<FEN: FoundryEvmNetwork>(
     ) {
         *inner = restored;
         ccx.ecx.set_evm(evm_env);
+        // `RevertKeep` keeps the backend snapshot alive for further
+        // reverts, so keep our matching env-overrides copy too.
+        if let Some(snap) = ccx.state.env_overrides_snapshots.get(&snapshot_id) {
+            ccx.state.env_overrides = snap.clone();
+        }
         Ok(true.abi_encode())
     } else {
         Ok(false.abi_encode())
@@ -1409,6 +1423,9 @@ fn inner_revert_to_state_and_delete<FEN: FoundryEvmNetwork>(
     ) {
         *inner = restored;
         ccx.ecx.set_evm(evm_env);
+        if let Some(snap) = ccx.state.env_overrides_snapshots.remove(&snapshot_id) {
+            ccx.state.env_overrides = snap;
+        }
         Ok(true.abi_encode())
     } else {
         Ok(false.abi_encode())

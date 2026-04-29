@@ -636,6 +636,17 @@ pub struct Cheatcodes<FEN: FoundryEvmNetwork = EthEvmNetwork> {
     /// zeroes the corresponding tx/block env fields for fee-accounting.
     pub env_overrides: EnvOverrides,
 
+    /// Per-state-snapshot copies of [`Self::env_overrides`], captured by
+    /// `vm.snapshotState` and restored by `vm.revertToState[AndDelete]`.
+    ///
+    /// `env_overrides` lives on the cheatcode inspector rather than in
+    /// `EvmEnv`, so the backend's snapshot/revert mechanism does not see
+    /// it. Without this, an override set after a snapshot would survive a
+    /// `revertToState`, and the BASEFEE/GASPRICE/BLOBHASH opcodes (which
+    /// the override layer rewrites in `step_end`) would keep returning
+    /// the post-snapshot value even though `EvmEnv` was rolled back.
+    pub env_overrides_snapshots: HashMap<U256, EnvOverrides>,
+
     /// Whether we are currently executing inside an isolation context, i.e.
     /// the synthetic inner transaction wrapped by
     /// `InspectorStackRefMut::transact_inner` (used by `--gas-report` and
@@ -705,6 +716,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
             dynamic_gas_limit: Default::default(),
             execution_evm_version: None,
             env_overrides: Default::default(),
+            env_overrides_snapshots: Default::default(),
             in_isolation_context: false,
         }
     }
