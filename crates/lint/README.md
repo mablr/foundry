@@ -32,6 +32,7 @@ It helps enforce best practices and improve code quality within Foundry projects
   - `unsafe-cheatcode`: Usage of unsafe cheatcodes that can perform dangerous operations.
 - **Gas Optimizations:**
   - `asm-keccak256`: Recommends using inline assembly for `keccak256` for potential gas savings.
+  - `could-be-immutable`: Recommends declaring constructor-only state variables as `immutable`.
   - `custom-errors`: Recommends using custom errors instead of strings and plain reverts for potential gas savings.
 - **Code Size:**
   - `unwrapped-modifier-logic`: Recommends wrapping modifier logic to reduce contract code size.
