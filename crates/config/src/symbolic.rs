@@ -103,8 +103,6 @@ pub struct SymbolicConfig {
     pub symbolic_call_targets: bool,
     /// Whether to dump SMT-LIB queries before invoking the configured solver.
     pub dump_smt: bool,
-    /// Whether to send hard-arithmetic branch queries to the solver before using local heuristics.
-    pub solver_first_hard_arithmetic: bool,
     /// Storage modelling mode used for symbolic storage reads.
     pub storage_layout: SymbolicStorageLayout,
 }
@@ -142,7 +140,6 @@ impl Default for SymbolicConfig {
             max_calldata_bytes: 4_096,
             symbolic_call_targets: false,
             dump_smt: false,
-            solver_first_hard_arithmetic: false,
             storage_layout: SymbolicStorageLayout::Solidity,
         }
     }
@@ -194,7 +191,6 @@ mod tests {
             "max_calldata_bytes": 4096,
             "symbolic_call_targets": false,
             "dump_smt": false,
-            "solver_first_hard_arithmetic": false,
             "storage_layout": "solidity"
         });
 

@@ -1019,10 +1019,6 @@ pub struct TestArgs {
     #[arg(long, env = "FOUNDRY_SYMBOLIC_DUMP_SMT")]
     pub symbolic_dump_smt: bool,
 
-    /// Send hard-arithmetic branch queries to the solver before using local heuristics.
-    #[arg(long, env = "FOUNDRY_SYMBOLIC_SOLVER_FIRST_HARD_ARITHMETIC")]
-    pub symbolic_solver_first_hard_arithmetic: bool,
-
     /// Symbolic storage modelling mode.
     #[arg(
         long,
@@ -3797,9 +3793,6 @@ impl Provider for TestArgs {
         }
         if self.symbolic_dump_smt {
             symbolic_dict.insert("dump_smt".to_string(), true.into());
-        }
-        if self.symbolic_solver_first_hard_arithmetic {
-            symbolic_dict.insert("solver_first_hard_arithmetic".to_string(), true.into());
         }
         if let Some(storage_layout) = self.symbolic_storage_layout.clone() {
             symbolic_dict.insert("storage_layout".to_string(), storage_layout.into());

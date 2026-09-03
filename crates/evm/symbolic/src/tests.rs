@@ -4924,7 +4924,7 @@ fn is_sat_uses_validated_hard_arithmetic_fallback_before_solver() {
     assert_eq!(stats.smt_queries, 0);
     assert_eq!(stats.sat_queries, 2);
     assert_eq!(stats.sat_cache_hits, 1);
-    assert_eq!(solver.heuristic_witnesses(), 1);
+    assert_eq!(solver.heuristic_witnesses(), 0);
     assert_eq!(counted_solver_invocations(&marker), 0);
     let _ = std::fs::remove_file(&marker);
 }
@@ -5020,6 +5020,35 @@ fn is_sat_hard_arithmetic_without_witness_still_honors_solver_unsat() {
     assert_eq!(stats.sat_queries, 1);
     assert_eq!(stats.sat_cache_hits, 0);
     assert_eq!(solver.heuristic_witnesses(), 0);
+    assert_eq!(counted_solver_invocations(&marker), 1);
+    let _ = std::fs::remove_file(&marker);
+}
+
+#[cfg(unix)]
+#[test]
+fn branch_hard_arithmetic_without_witness_defers_solver_work() {
+    let mut cx = SymCx::new();
+    let marker = portfolio_test_marker("hard-arith-branch-phase");
+    let commands = vec![counted_solver_command(&marker, "unsat")];
+    let mut solver = SmtLibSubprocessSolver::new(Ok(commands), None, 2, false);
+    let x = SymExpr::var(&mut cx, "x");
+    let y = SymExpr::var(&mut cx, "y");
+    let zero = SymExpr::zero(&mut cx);
+    let x_is_zero = SymBoolExpr::eq(&mut cx, x.clone(), zero);
+    let product = SymExpr::binop(&mut cx, SymBinOp::Mul, x, y);
+    let one = SymExpr::one(&mut cx);
+    let product_eq_one = SymBoolExpr::eq(&mut cx, product, one);
+    let constraints = vec![x_is_zero, product_eq_one];
+
+    assert!(matches!(
+        solver.is_sat_branch(&mut cx, &constraints),
+        Err(SymbolicError::HardArithmeticDeferred)
+    ));
+    assert_eq!(solver.stats().smt_queries, 0);
+    assert_eq!(counted_solver_invocations(&marker), 0);
+
+    assert!(!solver.is_sat(&mut cx, &constraints).unwrap());
+    assert_eq!(solver.stats().smt_queries, 1);
     assert_eq!(counted_solver_invocations(&marker), 1);
     let _ = std::fs::remove_file(&marker);
 }

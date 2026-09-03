@@ -66,16 +66,41 @@ impl SymbolicExecutor {
         state: &PathState,
         constraints: &[SymBoolExpr],
     ) -> Result<bool, SymbolicError> {
+        match self.branch_feasibility(state, constraints, false)? {
+            Some(feasible) => Ok(feasible),
+            None => self
+                .branch_feasibility(state, constraints, true)
+                .map(|result| result.expect("complete solver phase cannot defer hard arithmetic")),
+        }
+    }
+
+    /// Checks branch feasibility in either the fast local phase or complete solver phase.
+    pub(super) fn branch_feasibility(
+        &mut self,
+        state: &PathState,
+        constraints: &[SymBoolExpr],
+        solver_phase: bool,
+    ) -> Result<Option<bool>, SymbolicError> {
         let replayable_storage = state.world.replay_storage_symbols();
-        match self.solver.is_sat_branch_with_replayable_storage(
-            &mut self.cx,
-            constraints,
-            &replayable_storage,
-        ) {
-            Ok(feasible) => Ok(feasible),
+        let result = if solver_phase {
+            self.solver.is_sat_with_replayable_storage(
+                &mut self.cx,
+                constraints,
+                &replayable_storage,
+            )
+        } else {
+            self.solver.is_sat_branch_with_replayable_storage(
+                &mut self.cx,
+                constraints,
+                &replayable_storage,
+            )
+        };
+        match result {
+            Ok(feasible) => Ok(Some(feasible)),
+            Err(SymbolicError::HardArithmeticDeferred) => Ok(None),
             Err(SymbolicError::SolverUnknown) => {
                 self.defer_solver_unknown();
-                Ok(false)
+                Ok(Some(false))
             }
             Err(err) => Err(err),
         }
@@ -247,6 +272,8 @@ impl SymbolicExecutor {
         }
         order_roots_by_corpus_seed_count(&mut roots, self.config.exploration_order);
         let mut worklist = roots.into_iter().collect::<VecDeque<_>>();
+        let mut deferred_hard_arithmetic = VecDeque::new();
+        let mut solver_phase = false;
         let mut completed_paths = 0usize;
         let mut reverted_paths = 0usize;
         let mut normal_paths = 0usize;
@@ -254,7 +281,11 @@ impl SymbolicExecutor {
         let path_limit = self.config.path_width() as usize;
         let depth_limit = self.config.execution_depth() as usize;
 
-        while let Some(mut state) = self.pop_next_feasible_path(&mut worklist)? {
+        while let Some(mut state) = self.pop_next_feasible_path(
+            &mut worklist,
+            &mut deferred_hard_arithmetic,
+            &mut solver_phase,
+        )? {
             if completed_paths >= path_limit {
                 debug!(completed_paths, path_limit, "symbolic path limit reached");
                 return Ok(SymbolicRunResult::Incomplete {

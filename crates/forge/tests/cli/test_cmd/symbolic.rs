@@ -1499,15 +1499,9 @@ contract SymbolicOusdRebaseOptIn {
 "#,
     );
 
-    assert_symbolic(cmd.args([
-        "test",
-        "--symbolic",
-        "--symbolic-solver-first-hard-arithmetic",
-        "--match-test",
-        "check_rebaseOptIn",
-    ]))
-    .success()
-    .stdout_eq(str![[r#"
+    assert_symbolic(cmd.args(["test", "--symbolic", "--match-test", "check_rebaseOptIn"]))
+        .success()
+        .stdout_eq(str![[r#"
 ...
 Ran 1 test for test/SymbolicOusdRebaseOptIn.t.sol:SymbolicOusdRebaseOptIn
 [PASS] check_rebaseOptIn(uint128) ([METRICS])

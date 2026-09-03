@@ -131,6 +131,9 @@ pub enum SymbolicError {
     /// The solver returned `unknown`.
     #[error("solver returned unknown")]
     SolverUnknown,
+    /// A hard-arithmetic branch was deferred until the solver phase.
+    #[error("hard-arithmetic branch deferred")]
+    HardArithmeticDeferred,
     /// The configured symbolic execution timeout was exceeded.
     #[error("symbolic execution timeout exceeded ({0}s)")]
     Timeout(u32),
@@ -149,7 +152,9 @@ impl SymbolicError {
             | Self::CalldataVariantLimit(_)
             | Self::UnsupportedOpcode(_)
             | Self::SolverQueryLimit(_) => SymbolicStopReason::Stuck,
-            Self::SolverUnknown | Self::Timeout(_) => SymbolicStopReason::Timeout,
+            Self::SolverUnknown | Self::HardArithmeticDeferred | Self::Timeout(_) => {
+                SymbolicStopReason::Timeout
+            }
             Self::Solver(_)
             | Self::MissingAccount(_)
             | Self::MissingCode(_)

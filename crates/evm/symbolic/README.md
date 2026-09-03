@@ -475,7 +475,6 @@ frontier_pcs = []
 frontier_selectors = []
 symbolic_call_targets = false
 dump_smt = false
-solver_first_hard_arithmetic = false
 storage_layout = "solidity"
 ```
 
@@ -507,7 +506,6 @@ forge test --symbolic --symbolic-array-lengths 2,4
 forge test --symbolic --symbolic-invariant-depth 6
 forge test --symbolic --symbolic-call-targets
 forge test --symbolic --symbolic-dump-smt
-forge test --symbolic --symbolic-solver-first-hard-arithmetic
 
 FOUNDRY_SYMBOLIC=true forge test
 FOUNDRY_SYMBOLIC_SOLVER=z3 forge test --symbolic
@@ -515,12 +513,6 @@ FOUNDRY_SYMBOLIC_SOLVER_COMMAND="z3 -in -smt2" forge test --symbolic
 FOUNDRY_SYMBOLIC_SOLVER_PORTFOLIO="yices,z3" forge test --symbolic
 FOUNDRY_SYMBOLIC_TIMEOUT=120 forge test --symbolic
 ```
-
-`symbolic.solver_first_hard_arithmetic` sends branch queries involving symbolic
-multiplication, division, or remainder to the configured solver before trying
-the bounded local witness heuristic. It is disabled by default because these
-queries can consume the full solver timeout. When enabled, the local heuristic
-is still used if every configured solver returns `unknown`.
 
 Known solver names are `z3`, `yices`, `cvc5`, `cvc5-int`, `bitwuzla`, and
 `bitwuzla-abs`. Unknown `symbolic.solver` values are treated as z3-compatible

@@ -123,11 +123,17 @@ impl SymbolicExecutor {
         state.constraints.extend(constraints);
 
         let mut worklist = VecDeque::from([state]);
+        let mut deferred_hard_arithmetic = VecDeque::new();
+        let mut solver_phase = false;
         let mut outcomes = Vec::new();
         let path_limit = self.config.path_width() as usize;
         let depth_limit = self.config.execution_depth() as usize;
 
-        while let Some(mut state) = self.pop_next_feasible_path(&mut worklist)? {
+        while let Some(mut state) = self.pop_next_feasible_path(
+            &mut worklist,
+            &mut deferred_hard_arithmetic,
+            &mut solver_phase,
+        )? {
             if *completed_paths >= path_limit {
                 return Err(SymbolicError::Unsupported("symbolic path limit exceeded"));
             }

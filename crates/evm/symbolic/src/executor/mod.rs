@@ -53,15 +53,35 @@ impl SymbolicExecutor {
     pub(super) fn pop_next_feasible_path(
         &mut self,
         paths: &mut VecDeque<PathState>,
+        deferred_hard_arithmetic: &mut VecDeque<PathState>,
+        solver_phase: &mut bool,
     ) -> Result<Option<PathState>, SymbolicError> {
-        while let Some(mut state) = self.pop_next_path(paths) {
-            if state.take_deferred_feasibility_check()
-                && !self.branch_is_sat_or_defer(&state, &state.constraints)?
-            {
-                continue;
+        loop {
+            // Keep expensive solver work off the hot path while any locally decidable state
+            // remains. A hard-arithmetic miss is preserved for the complete second phase.
+            while let Some(mut state) = self.pop_next_path(paths) {
+                if state.take_deferred_feasibility_check() {
+                    match self.branch_feasibility(&state, &state.constraints, *solver_phase)? {
+                        Some(true) => {}
+                        Some(false) => continue,
+                        None => {
+                            state.defer_feasibility_check();
+                            deferred_hard_arithmetic.push_back(state);
+                            continue;
+                        }
+                    }
+                }
+                return Ok(Some(state));
             }
-            return Ok(Some(state));
+
+            if *solver_phase || deferred_hard_arithmetic.is_empty() {
+                return Ok(None);
+            }
+
+            // Switch once per execution worklist so descendants of retried paths also receive
+            // complete branch-feasibility checks.
+            *solver_phase = true;
+            paths.append(deferred_hard_arithmetic);
         }
-        Ok(None)
     }
 }
