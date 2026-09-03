@@ -229,6 +229,7 @@ pub(crate) struct SmtLibSubprocessSolver {
     queries: usize,
     query_observer: Option<QueryObserver>,
     dump_smt: bool,
+    solver_first_hard_arithmetic: bool,
     portfolio_scheduler: PortfolioScheduler,
     portfolio_diagnostics: PortfolioDiagnostics,
     captured_diagnostics: Option<String>,
@@ -264,6 +265,7 @@ impl SmtLibSubprocessSolver {
             queries: 0,
             query_observer: None,
             dump_smt,
+            solver_first_hard_arithmetic: false,
             portfolio_scheduler: PortfolioScheduler::default(),
             portfolio_diagnostics: PortfolioDiagnostics::default(),
             captured_diagnostics: None,
@@ -288,12 +290,14 @@ impl SmtLibSubprocessSolver {
 
     /// Constructs a subprocess solver from Foundry symbolic config.
     pub(crate) fn from_config(config: &SymbolicConfig) -> Self {
-        Self::new(
+        let mut solver = Self::new(
             solver_commands_for_config(config),
             config.timeout,
             config.max_solver_queries as usize,
             config.dump_smt,
-        )
+        );
+        solver.solver_first_hard_arithmetic = config.solver_first_hard_arithmetic;
+        solver
     }
 }
 
@@ -493,7 +497,8 @@ impl SymbolicSolver for SmtLibSubprocessSolver {
             self.cache_sat_result(cache_key.clone(), true);
             return Ok(model);
         }
-        if constraints_prefer_hard_arith_fallback_first(cx, &smt_constraints)
+        if !self.solver_first_hard_arithmetic
+            && constraints_prefer_hard_arith_fallback_first(cx, &smt_constraints)
             && let Some(model) =
                 validated_hard_arith_fallback_model(cx, &smt_constraints, constraints)
         {
@@ -644,7 +649,9 @@ impl SmtLibSubprocessSolver {
             self.cache_sat_result(cache_key, true);
             return Ok(true);
         }
-        if constraints_prefer_hard_arith_fallback_first(cx, &smt_constraints) {
+        if !self.solver_first_hard_arithmetic
+            && constraints_prefer_hard_arith_fallback_first(cx, &smt_constraints)
+        {
             if validated_hard_arith_fallback_model(cx, &smt_constraints, constraints).is_some() {
                 self.heuristic_witnesses += 1;
                 trace!("is_sat: validated hard arithmetic fallback model before solver");

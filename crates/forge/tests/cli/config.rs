@@ -405,6 +405,7 @@ forgetest!(can_extract_config_values, |prj, cmd| {
             max_calldata_bytes: 2048,
             symbolic_call_targets: true,
             dump_smt: true,
+            solver_first_hard_arithmetic: true,
             storage_layout: SymbolicStorageLayout::Generic,
         },
         coverage: Default::default(),

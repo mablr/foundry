@@ -1434,6 +1434,87 @@ check_riddle(uint256)
     assert!(!stdout.contains("unsupported symbolic execution feature"), "{stdout}");
 });
 
+forgetest_init!(symbolic_proves_ousd_rebase_opt_in_accounting, |prj, cmd| {
+    if !z3_available() {
+        let _ = sh_eprintln!(
+            "skipping symbolic_proves_ousd_rebase_opt_in_accounting because z3 is not available"
+        );
+        return;
+    }
+
+    prj.add_test(
+        "SymbolicOusdRebaseOptIn.t.sol",
+        r#"
+contract SymbolicOusdRebaseOptIn {
+    uint256 private constant SCALE = 1e18;
+    uint256 private constant REBASING_CREDITS_PER_TOKEN = 2e18;
+    address private constant ACCOUNT = address(0xBEEF);
+
+    mapping(address => uint256) private creditBalances;
+    mapping(address => uint256) private alternativeCreditsPerToken;
+    uint256 private rebasingCredits;
+    uint256 private nonRebasingSupply;
+
+    function check_rebaseOptIn(uint128 credits) external {
+        require(credits > 0);
+        creditBalances[ACCOUNT] = credits;
+        alternativeCreditsPerToken[ACCOUNT] = SCALE;
+        nonRebasingSupply = credits;
+
+        _rebaseOptIn(ACCOUNT);
+
+        assert(creditBalances[ACCOUNT] == rebasingCredits);
+        assert(alternativeCreditsPerToken[ACCOUNT] == 0);
+        assert(nonRebasingSupply == 0);
+    }
+
+    function _rebaseOptIn(address account) internal {
+        uint256 balance = creditBalances[account];
+        require(alternativeCreditsPerToken[account] > 0 || creditBalances[account] == 0);
+
+        uint256 newCredits =
+            (balance * REBASING_CREDITS_PER_TOKEN + SCALE - 1) / SCALE;
+
+        alternativeCreditsPerToken[account] = 0;
+        creditBalances[account] = newCredits;
+        _adjustGlobals(_toInt256(newCredits), -_toInt256(balance));
+    }
+
+    function _adjustGlobals(int256 rebasingCreditsDiff, int256 nonRebasingSupplyDiff) internal {
+        rebasingCredits = _toUint256(_toInt256(rebasingCredits) + rebasingCreditsDiff);
+        nonRebasingSupply =
+            _toUint256(_toInt256(nonRebasingSupply) + nonRebasingSupplyDiff);
+    }
+
+    function _toInt256(uint256 value) internal pure returns (int256) {
+        require(value <= uint256(type(int256).max));
+        return int256(value);
+    }
+
+    function _toUint256(int256 value) internal pure returns (uint256) {
+        require(value >= 0);
+        return uint256(value);
+    }
+}
+"#,
+    );
+
+    assert_symbolic(cmd.args([
+        "test",
+        "--symbolic",
+        "--symbolic-solver-first-hard-arithmetic",
+        "--match-test",
+        "check_rebaseOptIn",
+    ]))
+    .success()
+    .stdout_eq(str![[r#"
+...
+Ran 1 test for test/SymbolicOusdRebaseOptIn.t.sol:SymbolicOusdRebaseOptIn
+[PASS] check_rebaseOptIn(uint128) ([METRICS])
+...
+"#]]);
+});
+
 forgetest_init!(symbolic_ignores_plain_require_revert, |prj, cmd| {
     if !z3_available() {
         let _ = sh_eprintln!(
