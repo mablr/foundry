@@ -1,5 +1,5 @@
 use alloy_evm::{Evm, EvmEnv, FromRecoveredTx};
-use alloy_primitives::{Address, Bytes, TxKind, U256};
+use alloy_primitives::{Address, B256, Bytes, TxKind, U256, bytes};
 use alloy_signer::Signer;
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::SolCall;
@@ -9,8 +9,8 @@ use foundry_evm_core::{
     fork::MultiFork,
 };
 use revm::{
-    Inspector,
-    context::result::{ExecutionResult, HaltReason},
+    DatabaseRef, Inspector,
+    context::result::{EVMError, ExecutionResult, HaltReason, InvalidTransaction},
     inspector::NoOpInspector,
     state::{AccountInfo, Bytecode},
 };
@@ -31,7 +31,7 @@ use tempo_primitives::{
     AASigned, TempoSignature, TempoTransaction,
     transaction::{Call, KeychainSignature, PrimitiveSignature, calc_gas_balance_spending},
 };
-use tempo_revm::{TempoTxEnv, gas_params::tempo_gas_params};
+use tempo_revm::{TempoInvalidTransaction, TempoTxEnv, gas_params::tempo_gas_params};
 
 const GAS_LIMIT: u64 = 500_000;
 const GAS_PRICE: u128 = 1_000_000_000_000;
@@ -237,4 +237,91 @@ async fn foundry_factory_keychain_limit_refund_does_not_leak_storage_credit() {
         0,
         "post-tx fee refund recreates the keychain spending-limit slot, so the same-tx clear credit must be canceled",
     );
+}
+
+#[tokio::test]
+async fn tempo_batch_revert_settles_fees_and_nonce_without_publishing_call_state() {
+    let signer = PrivateKeySigner::from_bytes(&B256::repeat_byte(1)).unwrap();
+    let writer = Address::repeat_byte(0xdd);
+    let reverter = Address::repeat_byte(0xee);
+    for &spec in TempoHardfork::VARIANTS {
+        let mut db = in_memory_tempo_backend();
+        seed_fee_token_balances(&mut db, signer.address(), reverter);
+        db.insert_account_info(
+            writer,
+            AccountInfo::default().with_code(Bytecode::new_raw(bytes!("600160005500"))),
+        );
+        db.insert_account_info(
+            reverter,
+            AccountInfo::default()
+                .with_code(Bytecode::new_raw(bytes!("63deadbeef6000526004601cfd"))),
+        );
+        let slot =
+            TIP20Token::from_address_unchecked(DEFAULT_FEE_TOKEN).balances[signer.address()].slot();
+        db.insert_account_storage(DEFAULT_FEE_TOKEN, slot, U256::from(6_000_000)).unwrap();
+        let initial_tokens = db.storage_ref(DEFAULT_FEE_TOKEN, slot).unwrap();
+        let initial_native = db.basic_ref(signer.address()).unwrap().unwrap().balance;
+        let env = EvmEnv::new(
+            revm::context::CfgEnv::<TempoHardfork>::default()
+                .with_spec_and_gas_params(spec, tempo_gas_params(spec)),
+            TempoBlockEnv::default(),
+        );
+        let mut evm = TempoEvmFactory::default().create_foundry_evm_with_inspector(
+            &mut db,
+            env,
+            NoOpInspector,
+        );
+        let call =
+            |target| Call { to: TxKind::Call(target), value: U256::ZERO, input: Bytes::new() };
+        let mut tx = TempoTransaction {
+            chain_id: 1,
+            fee_token: Some(DEFAULT_FEE_TOKEN),
+            gas_limit: 2_000_000,
+            max_fee_per_gas: GAS_PRICE,
+            max_priority_fee_per_gas: GAS_PRICE,
+            calls: vec![call(writer), call(reverter)],
+            ..Default::default()
+        };
+        let result = evm.transact_commit(primitive_tx(&signer, tx.clone()).await).unwrap();
+        assert!(
+            matches!(&result, ExecutionResult::Revert { output, .. } if *output == bytes!("deadbeef")),
+            "{spec:?}: {result:?}"
+        );
+        // GAS_PRICE is 10^12 attodollars: one charged gas equals one token base unit.
+        let fee = U256::from(result.tx_gas_used());
+        assert!(fee > U256::ZERO);
+        let db = &mut evm.ctx_mut().journaled_state.database;
+        assert_eq!(db.storage(writer, U256::ZERO).unwrap(), U256::ZERO, "{spec:?}");
+        assert_eq!(db.basic(signer.address()).unwrap().unwrap().nonce, 1, "{spec:?}");
+        assert_eq!(db.basic(signer.address()).unwrap().unwrap().balance, initial_native);
+        assert_eq!(db.storage(DEFAULT_FEE_TOKEN, slot).unwrap(), initial_tokens - fee, "{spec:?}");
+
+        // Admission failure must not consume another nonce, fee, or application write.
+        tx.nonce = 7;
+        tx.calls = vec![call(writer)];
+        let error = evm.transact_commit(primitive_tx(&signer, tx.clone()).await).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                EVMError::Transaction(TempoInvalidTransaction::EthInvalidTransaction(
+                    InvalidTransaction::NonceTooHigh { tx: 7, state: 1 }
+                ))
+            ),
+            "{spec:?}: {error:?}"
+        );
+        let db = &mut evm.ctx_mut().journaled_state.database;
+        assert_eq!(db.basic(signer.address()).unwrap().unwrap().nonce, 1);
+        assert_eq!(db.storage(DEFAULT_FEE_TOKEN, slot).unwrap(), initial_tokens - fee);
+        assert_eq!(db.storage(writer, U256::ZERO).unwrap(), U256::ZERO);
+
+        // The same engine must remain usable after both EVM revert and admission error.
+        tx.nonce = 1;
+        let next = evm.transact_commit(primitive_tx(&signer, tx).await).unwrap();
+        assert!(next.is_success(), "{spec:?}: {next:?}");
+        let next_fee = U256::from(next.tx_gas_used());
+        let db = &mut evm.ctx_mut().journaled_state.database;
+        assert_eq!(db.basic(signer.address()).unwrap().unwrap().nonce, 2);
+        assert_eq!(db.storage(writer, U256::ZERO).unwrap(), U256::ONE);
+        assert_eq!(db.storage(DEFAULT_FEE_TOKEN, slot).unwrap(), initial_tokens - fee - next_fee);
+    }
 }

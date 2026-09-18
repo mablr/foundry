@@ -129,6 +129,104 @@ const FLAKY_TESTDATA_CONTRACTS: &str = "Issue4232Test|Issue4640Test|Issue14212Te
 // transaction lookups that are not reliably served by the public Base RPC endpoint used in CI.
 const FLAKY_TESTDATA_RUN_CONTRACTS: &str = "Issue4232Test|Issue4640Test";
 
+// Exercise live fork replacement and ancestor settlement against two local Ethereum nodes.
+forgetest_async!(fork_suspended_parent_settlement, |prj, cmd| {
+    let (_api_a, node_a) = spawn(NodeConfig::test()).await;
+    let (_api_b, node_b) = spawn(NodeConfig::test()).await;
+    prj.add_source("SuspendedFork.t.sol", include_str!("../../fixtures/SuspendedFork.t.sol"));
+    for isolate in [false, true] {
+        prj.update_config(|config| config.isolate = isolate);
+        cmd.forge_fuse();
+        cmd.env("SUSPENDED_FORK_RPC_A", node_a.http_endpoint());
+        cmd.env("SUSPENDED_FORK_RPC_B", node_b.http_endpoint());
+        cmd.args(["test", "--match-contract", "SuspendedForkTest"]).assert_success().stdout_eq(
+            str![[r#"
+...
+Ran 2 tests for src/SuspendedFork.t.sol:SuspendedForkTest
+[PASS] testForkSuspendedParentRevert() ([GAS])
+[PASS] testForkSuspendedParentSuccess() ([GAS])
+Suite result: ok. 2 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
+
+"#]],
+        );
+    }
+});
+
+// Exercise native precompile storage through live replacement and enclosing rollback.
+forgetest!(tempo_suspended_snapshot_settlement, |prj, cmd| {
+    prj.add_source(
+        "TempoSuspendedState.t.sol",
+        include_str!("../../fixtures/TempoSuspendedState.t.sol"),
+    );
+    for &hardfork in foundry_evm::hardforks::TempoHardfork::VARIANTS {
+        for isolate in [false, true] {
+            prj.update_config(|config| {
+                config.networks = foundry_evm_networks::NetworkConfigs::with_tempo();
+                config.hardfork = Some(foundry_config::FoundryHardfork::Tempo(hardfork));
+                config.isolate = isolate;
+            });
+            cmd.forge_fuse();
+            cmd.env("TEMPO_EXPECTED_HARDFORK", hardfork.to_string().to_lowercase());
+            cmd.args(["test", "--match-contract", "TempoSuspendedStateTest"])
+                .assert_success()
+                .stdout_eq(str![[r#"
+...
+Ran 3 tests for src/TempoSuspendedState.t.sol:TempoSuspendedStateTest
+[PASS] testTempoSnapshotParentHalt() ([GAS])
+[PASS] testTempoSnapshotParentRevert() ([GAS])
+[PASS] testTempoSnapshotParentSuccess() ([GAS])
+Suite result: ok. 3 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 3 tests passed, 0 failed, 0 skipped (3 total tests)
+
+"#]]);
+        }
+    }
+});
+
+// Check native token publication across fork switches while parent frames remain suspended.
+forgetest_async!(fork_tempo_suspended_native_settlement, |prj, cmd| {
+    let hardfork = "tempo:T11".parse::<foundry_config::FoundryHardfork>().unwrap();
+    let (api_a, node_a) = spawn(NodeConfig::test_tempo().with_hardfork(Some(hardfork))).await;
+    let (api_b, node_b) = spawn(NodeConfig::test_tempo().with_hardfork(Some(hardfork))).await;
+    let owner = Address::with_last_byte(0xca);
+    let token = foundry_evm::core::tempo::PATH_USD_ADDRESS;
+    api_a.anvil_deal_tip20(owner, token, U256::from(1000)).await.unwrap();
+    api_b.anvil_deal_tip20(owner, token, U256::from(1000)).await.unwrap();
+    prj.add_source(
+        "TempoSuspendedState.t.sol",
+        include_str!("../../fixtures/TempoSuspendedState.t.sol"),
+    );
+    prj.add_source(
+        "TempoSuspendedFork.t.sol",
+        include_str!("../../fixtures/TempoSuspendedFork.t.sol"),
+    );
+    for isolate in [false, true] {
+        prj.update_config(|config| {
+            config.networks = foundry_evm_networks::NetworkConfigs::with_tempo();
+            config.hardfork = Some(hardfork);
+            config.isolate = isolate;
+        });
+        cmd.forge_fuse();
+        cmd.env("TEMPO_STATE_RPC_A", node_a.http_endpoint());
+        cmd.env("TEMPO_STATE_RPC_B", node_b.http_endpoint());
+        cmd.args(["test", "--match-contract", "TempoSuspendedForkTest"])
+            .assert_success()
+            .stdout_eq(str![[r#"
+...
+Ran 2 tests for src/TempoSuspendedFork.t.sol:TempoSuspendedForkTest
+[PASS] testForkTempoSuspendedParentRevert() ([GAS])
+[PASS] testForkTempoSuspendedParentSuccess() ([GAS])
+Suite result: ok. 2 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
+
+"#]]);
+    }
+});
+
 // Run `forge test` on `/testdata`.
 forgetest!(testdata, |_prj, cmd| {
     setup_testdata_cmd(&mut cmd);

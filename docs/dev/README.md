@@ -44,6 +44,8 @@ use forking must contain `fork` in their name. Forge and Cast CLI tests live und
 - [Lint rules](./lintrules.md) covers the lint registry, UI fixtures, and documentation contract.
 - [Custom EVM integrations](./networks.md) describes network selection, execution ownership,
   state lifecycles, tool dispatch, and CI coverage.
+- [evm2 migration specification](./evm2-migration-spec.md) tracks migration transition contracts,
+  test evidence, and unresolved coverage for the Ethereum-first migration.
 - [Output channels](./output-channels.md) defines the stdout/stderr contract for Foundry commands.
 - [Scripting](./scripting.md) documents the internal script execution and broadcast pipeline.
 - [Showmap corpus replay](./showmap.md) documents the persisted-corpus coverage workflow and file
