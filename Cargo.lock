@@ -5634,6 +5634,7 @@ dependencies = [
  "dialoguer",
  "ecdsa 0.16.9",
  "ed25519-consensus",
+ "evm2",
  "eyre",
  "forge-script-sequence",
  "foundry-cheatcodes-spec",

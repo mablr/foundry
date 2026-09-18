@@ -3,7 +3,8 @@
 Updated 2026-09-18. Extends the [shared transition specification](evm2-migration-spec.md)
 using its S/T/G/V evidence definitions. Ethereum remains the first migration gate;
 this assessment does not claim Tempo implementation readiness or change that order.
-Tests and documentation changed; production execution and network gates did not.
+This records the pre-migration REVM baseline at the pin below. Those runs do not
+certify Tempo on the current native Executor, which explicitly accepts Ethereum only.
 
 ## Pins and scope
 

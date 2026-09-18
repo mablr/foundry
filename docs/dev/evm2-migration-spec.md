@@ -819,3 +819,55 @@ replay consumers, full cancellation lifecycle and performance. G-01/G-03 and the
 full Ethereum acceptance gate remain open. The parallel checkpoint experiment is
 not applied to this dependency; its local result does not establish snapshot support
 in Forge.
+
+
+## 12. Native cheatcode slice (2026-09-18)
+
+**M2 is partial.** Foundry still pins unpatched evm2 `2c8b67f0`.
+[Native dispatch](../../crates/cheatcodes/src/native.rs) builds no REVM live context;
+existing assertion predicates, revert registration/matching and console formatting
+are shared. The existing backend/result/session boundary is retained temporarily.
+
+| Capability / transition | Implemented and verified | Remaining boundary |
+| --- | --- | --- |
+| Setup environment/storage/code → test | Warp, coinbase, fee, prevrandao, block/chain getters, load/store, etch, getNonce; setup mutations persist and tests begin independently. | Roll only before Prague; EIP-2935 history updates and etching the history-storage address are unsupported. Live cfg/tx mutation is not ported. |
+| Child state mutation → revert | Storage/code return to prior values; timestamp changes survive. Malformed etch preserves code; precompile writes return catchable errors. | This does not prove all warmth/refund/state-gas transitions. |
+| Assertion → failure reporting | Revert-mode assertions reuse predicates/formatters. Legacy mode emits a diagnostic and writes `GLOBAL_FAIL_SLOT`. | All overloads/fuzz cases are not certified; nested legacy rollback and snapshot sticky failure evidence remain open. |
+| Expected CALL/CREATE/CREATE2 failure → parent resumes | All 17 revert-expectation registration overloads share registration. Native callbacks handle counts, depth/reverter tracking, cheatcode suppression and shared matching/error formatting after native settlement. | This is not `expectCall`/`expectEmit`/`expectCreate` support. Failure paths without captured raw gas remain unsupported. |
+| Expected failure → gas accounting | `step_end` retains terminal failed-frame gas/depth for the following end callback. Restores unused exceptional gas and failure refunds when rewriting the result. | E2-08: precompile and CREATE preparation/code-deposit failures need further coverage/API assessment. No Amsterdam acceptance. |
+| Console call → diagnostics | Existing Hardhat decoder/collector, including live-log mode, is wired into native callbacks. | Full observer/debugger/trace parity remains M4 work. |
+| Prank registration → child → cleanup | Sender-only and `(address,bool)` delegate overloads, stopPrank/readCallers; skip cheatcode/console application; clean up before expected-revert rewriting; persist configuration through setup. CREATE destinations are recomputed for the new caller. | Origin-changing overloads fail explicitly (E2-07). Not every prank edge case/hardfork is certified. |
+| Descendant deal/nonce override → revert | Reference-only obligation: overridden balance/nonce 99/8 survive child revert rather than returning to 11/7. | Native calls are rejected pending the controlled override policy, E2-06. |
+| Unmigrated cheatcode → caught Solidity revert | Native executor still fails the test explicitly. | No fallback or silent omission of behavior. |
+
+### Evidence and reproduction
+
+All differential results below use preserved REVM, Solc 0.8.35, Cancun,
+`--no-isolate` and the checked-in optimizer configuration.
+
+| Fixture | Result and assertions |
+| --- | --- |
+| [Cheatcodes.t.sol](../../crates/forge/tests/fixtures/evm2/Cheatcodes.t.sol) | 9 positive tests match reported gas: setup/independence, storage/code rollback, environment, assertions, malformed code and precompile writes. One legacy assertion matches failure diagnostic/gas. |
+| [Expectations.t.sol](../../crates/forge/tests/fixtures/evm2/Expectations.t.sol) | 11 positive tests match gas: any/string/partial/address/count matching, cheatcode errors, console interposition, CREATE/CREATE2, INVALID and storage-clear/refund rollback. Four intentional failures match reasons/gas: wrong reason, dangling expectation, missing count and successful unexpected call. |
+| [Pranks.t.sol](../../crates/forge/tests/fixtures/evm2/Pranks.t.sol) | 11 positive tests match gas: one-shot/persistent/nested, revert cleanup, CREATE/CREATE2 identity/nonce, delegate context, EOA rejection, overwrite rejection, introspection and setup persistence. A caught origin override intentionally fails the native host gate. |
+| [AccountMutation.t.sol](../../crates/forge/tests/fixtures/evm2/AccountMutation.t.sol) | Reference-only passing obligation; not a passing native acceptance test. Retained to specify E2-06. |
+
+Current checks: **11 native CLI regressions and 3 executor unit tests pass**;
+nightly formatting and strict all-feature/all-target workspace Clippy pass.
+[Fixture README](../../crates/forge/tests/fixtures/evm2/README.md) owns commands and
+expected exits. Counts overlap with the Solidity cases; do not add them as independent
+behavioral coverage. No throughput or full-suite claim.
+
+Earlier isolated runs of unchanged fixtures passed Warp (2), Load (3), Store, Etch,
+GetNonce, Fee, Roll (2), Prevrandao, plus `Assert.t.sol::testAssertBool` and
+`testAssertApproxEqRel`. The array assertion test still fails on an unmigrated utility;
+fuzz assertions are unsupported. The expectation helper itself is now migrated.
+
+### Remaining M2 work
+
+Origin-changing pranks; call/emit/create expectations; mocks; recordings/storage hooks;
+gas controls/snapshots; remaining state/environment and utility calls; callback and
+cancellation lifecycle coverage. [E2-06–08](evm2-upstream-requirements.md#native-cheatcode-follow-up-assessment)
+record engine-facing requirements separately from ordinary Foundry porting work.
+M3 additionally needs setup/test snapshot lifetime, backing-state and companion-state
+coordination; the separate engine patch rejects cross-transaction restoration.

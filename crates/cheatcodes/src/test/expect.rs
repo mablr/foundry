@@ -566,207 +566,287 @@ fn expect_logo_uri_updated<FEN: FoundryEvmNetwork>(
 
 impl Cheatcode for expectRevert_0Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self {} = self;
-        expect_revert(ccx.state, None, ccx.ecx.journal().depth(), false, false, None, 1)
+        Some(expect_revert(expected, None, depth, false, false, None, 1))
     }
 }
 
 impl Cheatcode for expectRevert_1Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData } = self;
-        expect_revert(
-            ccx.state,
-            Some(revertData.as_ref()),
-            ccx.ecx.journal().depth(),
-            false,
-            false,
-            None,
-            1,
-        )
+        Some(expect_revert(expected, Some(revertData.as_ref()), depth, false, false, None, 1))
     }
 }
 
 impl Cheatcode for expectRevert_2Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData } = self;
-        expect_revert(ccx.state, Some(revertData), ccx.ecx.journal().depth(), false, false, None, 1)
+        Some(expect_revert(expected, Some(revertData), depth, false, false, None, 1))
     }
 }
 
 impl Cheatcode for expectRevert_3Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { reverter } = self;
-        expect_revert(ccx.state, None, ccx.ecx.journal().depth(), false, false, Some(*reverter), 1)
+        Some(expect_revert(expected, None, depth, false, false, Some(*reverter), 1))
     }
 }
 
 impl Cheatcode for expectRevert_4Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData, reverter } = self;
-        expect_revert(
-            ccx.state,
+        Some(expect_revert(
+            expected,
             Some(revertData.as_ref()),
-            ccx.ecx.journal().depth(),
+            depth,
             false,
             false,
             Some(*reverter),
             1,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectRevert_5Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData, reverter } = self;
-        expect_revert(
-            ccx.state,
-            Some(revertData),
-            ccx.ecx.journal().depth(),
-            false,
-            false,
-            Some(*reverter),
-            1,
-        )
+        Some(expect_revert(expected, Some(revertData), depth, false, false, Some(*reverter), 1))
     }
 }
 
 impl Cheatcode for expectRevert_6Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { count } = self;
-        expect_revert(ccx.state, None, ccx.ecx.journal().depth(), false, false, None, *count)
+        Some(expect_revert(expected, None, depth, false, false, None, *count))
     }
 }
 
 impl Cheatcode for expectRevert_7Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData, count } = self;
-        expect_revert(
-            ccx.state,
-            Some(revertData.as_ref()),
-            ccx.ecx.journal().depth(),
-            false,
-            false,
-            None,
-            *count,
-        )
+        Some(expect_revert(expected, Some(revertData.as_ref()), depth, false, false, None, *count))
     }
 }
 
 impl Cheatcode for expectRevert_8Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData, count } = self;
-        expect_revert(
-            ccx.state,
-            Some(revertData),
-            ccx.ecx.journal().depth(),
-            false,
-            false,
-            None,
-            *count,
-        )
+        Some(expect_revert(expected, Some(revertData), depth, false, false, None, *count))
     }
 }
 
 impl Cheatcode for expectRevert_9Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { reverter, count } = self;
-        expect_revert(
-            ccx.state,
-            None,
-            ccx.ecx.journal().depth(),
-            false,
-            false,
-            Some(*reverter),
-            *count,
-        )
+        Some(expect_revert(expected, None, depth, false, false, Some(*reverter), *count))
     }
 }
 
 impl Cheatcode for expectRevert_10Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData, reverter, count } = self;
-        expect_revert(
-            ccx.state,
+        Some(expect_revert(
+            expected,
             Some(revertData.as_ref()),
-            ccx.ecx.journal().depth(),
+            depth,
             false,
             false,
             Some(*reverter),
             *count,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectRevert_11Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData, reverter, count } = self;
-        expect_revert(
-            ccx.state,
+        Some(expect_revert(
+            expected,
             Some(revertData),
-            ccx.ecx.journal().depth(),
+            depth,
             false,
             false,
             Some(*reverter),
             *count,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectPartialRevert_0Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData } = self;
-        expect_revert(
-            ccx.state,
-            Some(revertData.as_ref()),
-            ccx.ecx.journal().depth(),
-            false,
-            true,
-            None,
-            1,
-        )
+        Some(expect_revert(expected, Some(revertData.as_ref()), depth, false, true, None, 1))
     }
 }
 
 impl Cheatcode for expectPartialRevert_1Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData, reverter } = self;
-        expect_revert(
-            ccx.state,
+        Some(expect_revert(
+            expected,
             Some(revertData.as_ref()),
-            ccx.ecx.journal().depth(),
+            depth,
             false,
             true,
             Some(*reverter),
             1,
-        )
+        ))
     }
 }
 
 impl Cheatcode for _expectCheatcodeRevert_0Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
-        expect_revert(ccx.state, None, ccx.ecx.journal().depth(), true, false, None, 1)
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
+        Some(expect_revert(expected, None, depth, true, false, None, 1))
     }
 }
 
 impl Cheatcode for _expectCheatcodeRevert_1Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData } = self;
-        expect_revert(
-            ccx.state,
-            Some(revertData.as_ref()),
-            ccx.ecx.journal().depth(),
-            true,
-            false,
-            None,
-            1,
-        )
+        Some(expect_revert(expected, Some(revertData.as_ref()), depth, true, false, None, 1))
     }
 }
 
 impl Cheatcode for _expectCheatcodeRevert_2Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_expectation(&mut ccx.state.expected_revert, ccx.ecx.journal().depth()).unwrap()
+    }
+
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { revertData } = self;
-        expect_revert(ccx.state, Some(revertData), ccx.ecx.journal().depth(), true, false, None, 1)
+        Some(expect_revert(expected, Some(revertData), depth, true, false, None, 1))
     }
 }
 
@@ -1149,8 +1229,8 @@ fn expect_create<FEN: FoundryEvmNetwork>(
     Ok(Default::default())
 }
 
-fn expect_revert<FEN: FoundryEvmNetwork>(
-    state: &mut Cheatcodes<FEN>,
+fn expect_revert(
+    expected: &mut Option<ExpectedRevert>,
     reason: Option<&[u8]>,
     depth: usize,
     cheatcode: bool,
@@ -1159,10 +1239,10 @@ fn expect_revert<FEN: FoundryEvmNetwork>(
     count: u64,
 ) -> Result {
     ensure!(
-        state.expected_revert.is_none(),
+        expected.is_none(),
         "you must call another function prior to expecting a second revert"
     );
-    state.expected_revert = Some(ExpectedRevert {
+    *expected = Some(ExpectedRevert {
         reason: reason.map(Bytes::copy_from_slice),
         depth,
         kind: if cheatcode {

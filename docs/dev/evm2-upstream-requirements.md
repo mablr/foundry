@@ -1,4 +1,4 @@
-# evm2 capabilities needed for Foundry live-state replacement
+# evm2 capabilities needed for Foundry integration
 
 Status: request preparation, 2026-09-18. Nothing has been submitted upstream.
 This records the missing capability and its evidence, not an approved API design.
@@ -192,3 +192,81 @@ behavior and performance remain open. E2-02 has a tested candidate mechanism;
 upstream API agreement and Foundry integration have not been completed. The earlier
 prototype/report remain separately archived under
 `/Volumes/Stockage/dev-cache/evm2-live-state-agent/`.
+
+
+## Native cheatcode follow-up assessment
+
+Native cheatcode integration exposes further requirements beyond snapshots.
+These are requests to assess the supported extension surface, **not confirmed
+consensus bugs or proof that engine changes are the only implementation option**.
+
+| ID | Required behavior | Evidence / next decision |
+| --- | --- | --- |
+| E2-06 | Controlled account overrides with Foundry's rollback policy, distinct from ordinary journaled balance/nonce writes. | The retained `AccountMutation.t.sol` probe passes on preserved REVM: parent sets balance/nonce to 11/7, child overrides to 99/8 then reverts, parent still reads 99/8. Native journaled setters would undo the overrides. Decide an explicit override API or adapter policy; test ancestor rollback, prior ordinary writes, top-level failure, deal cleanup and snapshots before enabling. |
+| E2-07 | Callback-time changes to selected configuration/transaction fields, visible to continued execution with defined persistence. | Source assessment: chainId mutates Foundry cfg and txGasPrice mutates live tx state; native version/config mutation is guarded during execution and transaction context is borrowed. Block replacement already works for the implemented subset. Assess a narrow supported mutation surface; runtime parity for cfg/tx overrides has not been demonstrated. |
+| E2-08 | Preserve access to pre-settlement gas when an inspector rewrites failure to success. | Terminal interpreter counters are captured in Foundry for tested cases. Failures before interpreter entry have no such capture; assess a raw outcome or supported settlement/rewrite hook. See the detailed boundary below. |
+
+E2-06 evidence is a Cancun REVM run, not native acceptance. In particular, it does
+not justify making all account mutations irreversible: store/etch have tested normal
+frame rollback, and deal has separate top-level cleanup. E2-07 needs focused probes
+before prescribing an upstream signature. Both capabilities remain explicitly
+unsupported in native Foundry. Neither prevents further independent milestone 2
+work on assertions, expectations or inspector lifecycle.
+
+The existing snapshot branch remains transaction-scoped. Using it for setup/test
+snapshots requires a separate lifetime design covering committed backend state and
+Foundry companion state; removing its transaction-identity check alone is unsafe.
+
+
+### E2-08: outcome rewriting and gas visibility
+
+A further source-backed boundary appeared during revert-expectation integration:
+`execute_message_impl` settles gas before `call_end`/`create_end`, dropping failure
+refunds and burning exceptional remaining gas. Foundry's expected-revert handler
+rewrites the status to success and historically retains those original counters.
+The Cancun fixture demonstrated both differences (INVALID and storage-clear/revert).
+
+Foundry can preserve interpreter-terminal counters in `step_end`, keyed by frame
+depth and consumed at its end callback. This adapter now matches the tested cases;
+it is **not evidence that an engine patch is mandatory for interpreted failures**.
+For failures before interpreter entry, no such capture occurs. Request/assess access
+to the pre-settlement result or a supported outcome-rewrite boundary, with explicit
+rollback/refund/state-gas ordering. Native Foundry currently rejects these expected
+failures explicitly. Include failed precompile and CREATE preparation/code-deposit
+cases before declaring the callback surface sufficient; Amsterdam remains untested.
+
+
+### E2-07 detail: prank origin overrides (native port assessment)
+
+At pinned `2c8b67f`, `Interpreter::tx_env()` in
+`crates/evm2/src/interpreter/runtime.rs` returns `&TxEnv<T>` with the frame lifetime.
+`instructions/env.rs::origin` reads `cx.state.tx().origin` directly. The mutable
+`Message` supplied to `Inspector::call/create` contains `caller`, but no transaction
+origin. No safe live origin setter was found on this inspected surface. Mutating
+behind the shared reference is not an acceptable adapter.
+
+Required contract: a prank may replace the origin for the selected child and its
+nested calls/creates, then restore the previous origin when that selected call
+returns, including revert/halt. Nested pranks need a stack of prior origins;
+cheatcode/console calls must not consume the one-shot prank. Persistent pranks must
+retain their configuration across setup/test transactions while each invocation's
+origin override has the correct frame lifetime. Fee-paying transaction identity
+must not accidentally change. Add differential tests for all these transitions.
+
+This is a **missing safe extension surface at the inspected pin**, not a claim that
+an upstream change is the sole possible design. Opcode-result interception would
+need separate correctness/performance assessment and is not implemented. Native
+Foundry rejects origin-changing overloads even when caught; the retained
+`NativePrankOriginUnsupportedTest` and CLI snapshot verify that boundary.
+
+Sender-only and delegate pranks now use mutable messages successfully. CREATE and
+CREATE2 require recalculating `destination` after changing `caller`, using the new
+sender's current nonce (CREATE) or salt/initcode hash (CREATE2). evm2 exposes
+`derive_create_destination`; this is **Foundry adapter work, not a new API gap**.
+Eleven positive Cancun prank tests, including setup persistence, match REVM gas.
+
+For E2-06, `AccountHandle::get_or_insert` is not an unjournaled escape hatch: it calls
+`present_mut`, which records a revert snapshot, just like the balance/nonce setters.
+The controlled override policy remains unresolved. E2-08 also remains open for
+failures without captured interpreter counters; the prank port introduces no new
+requirement to change snapshot APIs E2-01 through E2-05.

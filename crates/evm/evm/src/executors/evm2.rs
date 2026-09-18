@@ -6,8 +6,10 @@
 //! until the backend and result consumers migrate to native state-change interfaces.
 
 use super::{EvmExecutionCancellation, Executor, RawCallResult};
+use crate::inspectors::LogCollector;
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_primitives::{Address, B256, Bytes, Log, U256};
+use alloy_sol_types::SolInterface;
 use evm2::{
     BaseEvmTypes, Evm, EvmFeatures, ExecutionConfig, Inspector, Precompiles, Version,
     bytecode::Bytecode as NativeBytecode,
@@ -16,7 +18,10 @@ use evm2::{
     evm::{AccountChangeRef, AccountInfo as NativeAccount, Db, StateChangeSink, StorageChange},
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
+use foundry_cheatcodes::{CheatsConfig, Vm};
+use foundry_common::ErrorExt;
 use foundry_evm_core::{
+    FoundryBlock,
     backend::{Backend, DatabaseError},
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS},
     evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TxEnvFor},
@@ -122,15 +127,108 @@ impl StateChangeSink for Writes {
 }
 
 #[derive(Default)]
-struct MigrationInspector {
+struct MigrationInspector<'a> {
+    config: Option<&'a CheatsConfig>,
+    native: foundry_cheatcodes::native::Session,
+    failed_frame_gas: Option<(u16, GasTracker)>,
     unsupported: Option<String>,
-    logs: Vec<Log>,
+    log_collector: Option<LogCollector>,
     cancellation: Option<EvmExecutionCancellation>,
     cancelled: bool,
     cancellation_poll_counter: u8,
 }
 
-impl Inspector<BaseEvmTypes> for MigrationInspector {
+impl MigrationInspector<'_> {
+    fn prepare_message(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        message: &mut Message<BaseEvmTypes>,
+    ) -> Option<MessageResult<BaseEvmTypes>> {
+        if let Err(error) = self.native.prepare(interp.host(), message) {
+            self.unsupported.get_or_insert_with(|| error.to_string());
+            return Some(MessageResultExt {
+                stop: InstrStop::Revert,
+                gas: GasTracker::new(message.gas_limit),
+                ..Default::default()
+            });
+        }
+        None
+    }
+}
+
+impl Inspector<BaseEvmTypes> for MigrationInspector<'_> {
+    fn initialize_interp(&mut self, interp: &mut Interpreter<'_, '_, BaseEvmTypes>) {
+        self.native.expectations.enter(usize::from(interp.message().depth) + 1);
+    }
+
+    fn step_end(&mut self, interp: &mut Interpreter<'_, '_, BaseEvmTypes>) {
+        // evm2 settles gas before call_end. Expected failures need the original
+        // counters, including refunds, when Foundry rewrites their outcome.
+        if self.native.expectations.revert.is_some()
+            && let Err(stop) = interp.result()
+            && !stop.is_success()
+        {
+            self.failed_frame_gas = Some((interp.message().depth, *interp.gas().tracker()));
+        }
+    }
+
+    fn call_end(
+        &mut self,
+        _interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        message: &Message<BaseEvmTypes>,
+        result: &mut MessageResult<BaseEvmTypes>,
+    ) {
+        if message.code_address != CHEATCODE_ADDRESS
+            && message.code_address != HARDHAT_CONSOLE_ADDRESS
+        {
+            self.native.finish(message);
+        }
+        let failed_gas = self.failed_frame_gas.take().filter(|(depth, _)| *depth == message.depth);
+        if let Some(config) = self.config
+            && let Ok(status) = instruction_result(result.stop)
+            && let Some(outcome) =
+                self.native.expectations.finish(message, status, &result.output, config)
+        {
+            if !result.stop.is_success() && message.code_address != CHEATCODE_ADDRESS {
+                if let Some((_, gas)) = failed_gas {
+                    result.gas = gas;
+                } else {
+                    self.unsupported.get_or_insert_with(|| {
+                        "evm2 expected failure without interpreter gas is not migrated".into()
+                    });
+                }
+            }
+            match outcome {
+                Ok((address, output)) => {
+                    result.stop = InstrStop::Return;
+                    result.output = output;
+                    result.created_address = address;
+                }
+                Err(error) => {
+                    result.stop = InstrStop::Revert;
+                    result.output = foundry_cheatcodes::Error::encode(error);
+                }
+            }
+        }
+    }
+
+    fn create(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        message: &mut Message<BaseEvmTypes>,
+    ) -> Option<MessageResult<BaseEvmTypes>> {
+        self.prepare_message(interp, message)
+    }
+
+    fn create_end(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        message: &Message<BaseEvmTypes>,
+        result: &mut MessageResult<BaseEvmTypes>,
+    ) {
+        self.call_end(interp, message, result);
+    }
+
     fn step(&mut self, interp: &mut Interpreter<'_, '_, BaseEvmTypes>) {
         if let Some(cancellation) = &self.cancellation {
             let poll_deadline = self.cancellation_poll_counter == 0;
@@ -143,22 +241,69 @@ impl Inspector<BaseEvmTypes> for MigrationInspector {
     }
 
     fn log(&mut self, log: &Log, _host: &mut Evm<'_, BaseEvmTypes>) {
-        self.logs.push(log.clone());
+        if let Some(collector) = &mut self.log_collector {
+            collector.push_raw_log(log.clone());
+        }
     }
 
     fn call(
         &mut self,
-        _interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
         message: &mut Message<BaseEvmTypes>,
     ) -> Option<MessageResult<BaseEvmTypes>> {
         if message.code_address != CHEATCODE_ADDRESS
             && message.code_address != HARDHAT_CONSOLE_ADDRESS
         {
+            return self.prepare_message(interp, message);
+        }
+        if message.code_address == HARDHAT_CONSOLE_ADDRESS {
+            if let Some(collector) = &mut self.log_collector
+                && let Err(error) = collector.hardhat_log(&message.input)
+            {
+                return Some(MessageResultExt {
+                    stop: InstrStop::Revert,
+                    output: error.abi_encode_revert(),
+                    gas: GasTracker::new(message.gas_limit),
+                    ..Default::default()
+                });
+            }
             return None;
+        }
+        if message.code_address == CHEATCODE_ADDRESS
+            && let Some(config) = self.config
+        {
+            let origin = interp.tx_env().origin;
+            let result = match Vm::VmCalls::abi_decode(&message.input) {
+                Ok(call) => foundry_cheatcodes::native::dispatch(
+                    &call,
+                    interp.host(),
+                    config,
+                    &mut self.native,
+                    foundry_cheatcodes::native::CallContext { message, origin },
+                ),
+                Err(error) => Some(Err(foundry_cheatcodes::Error::display(error))),
+            };
+            for diagnostic in self.native.diagnostics.drain(..) {
+                if let Some(collector) = &mut self.log_collector {
+                    collector.push_msg(&diagnostic);
+                }
+            }
+            if let Some(result) = result {
+                let (stop, output) = match result {
+                    Ok(output) => (InstrStop::Return, Bytes::from(output)),
+                    Err(error) => (InstrStop::Revert, foundry_cheatcodes::Error::encode(error)),
+                };
+                return Some(MessageResultExt {
+                    stop,
+                    output,
+                    gas: GasTracker::new(message.gas_limit),
+                    ..Default::default()
+                });
+            }
         }
         self.unsupported.get_or_insert_with(|| {
             format!(
-                "evm2 milestone 1: cheatcode/console calls are not migrated (target {}, input {})",
+                "evm2 cheatcode/console call is not migrated (target {}, input {})",
                 message.code_address, message.input,
             )
         });
@@ -173,7 +318,7 @@ impl Inspector<BaseEvmTypes> for MigrationInspector {
 impl<FEN: FoundryEvmNetwork> Executor<FEN> {
     pub(super) fn execute_evm2(
         &self,
-        evm_env: EvmEnvFor<FEN>,
+        mut evm_env: EvmEnvFor<FEN>,
         tx_env: TxEnvFor<FEN>,
     ) -> eyre::Result<RawCallResult<FEN>> {
         eyre::ensure!(
@@ -240,10 +385,14 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         ] {
             version.features.set(feature, enabled);
         }
+        // Synthetic Forge transactions validate against zero base fee before the
+        // inspector restores the contract-visible block. Keep that separation.
+        version.features.remove(EvmFeatures::BASE_FEE_CHECK);
         if cfg.is_eip7623_disabled() {
             version.features.remove(EvmFeatures::EIP7623);
         }
         if let Some(cheats) = &stack.cheatcodes {
+            eyre::ensure!(cheats.broadcast.is_none(), "evm2 broadcast context is not migrated");
             eyre::ensure!(
                 cheats.gas_price.is_none_or(|price| price == 0),
                 "evm2 synthetic gas-price overrides are not migrated"
@@ -278,6 +427,22 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         };
         let stipend = intrinsic_gas(&version, caller, tx.to, &tx.input, 0, 0, tx.value);
         let mut inspector = MigrationInspector {
+            config: stack.cheatcodes.as_ref().map(|cheats| cheats.config.as_ref()),
+            native: foundry_cheatcodes::native::Session {
+                expectations: foundry_cheatcodes::native::Expectations {
+                    revert: stack
+                        .cheatcodes
+                        .as_ref()
+                        .and_then(|cheats| cheats.expected_revert.clone()),
+                },
+                pranks: stack
+                    .cheatcodes
+                    .as_ref()
+                    .map(|cheats| cheats.pranks.clone())
+                    .unwrap_or_default(),
+                ..Default::default()
+            },
+            log_collector: stack.log_collector.as_deref().cloned(),
             cancellation: stack.execution_cancellation().cloned(),
             ..Default::default()
         };
@@ -295,7 +460,19 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             .transact(&Recovered::new_unchecked(TxEnvelope::Legacy(tx), caller))?
             .discard_with(&mut writes)
             .unwrap();
+        let final_block = *evm.block();
         drop(evm);
+        evm_env.block_env.set_timestamp(final_block.timestamp);
+        evm_env.block_env.set_number(final_block.number);
+        evm_env.block_env.set_beneficiary(final_block.beneficiary);
+        evm_env.block_env.set_basefee(final_block.basefee.to());
+        evm_env.block_env.set_prevrandao(Some(B256::from(final_block.prevrandao)));
+        let mut cheatcodes = stack.cheatcodes.clone();
+        if let Some(cheats) = &mut cheatcodes {
+            cheats.block = Some(evm_env.block_env.clone());
+            cheats.expected_revert = inspector.native.expectations.revert.take();
+            cheats.pranks = std::mem::take(&mut inspector.native.pranks);
+        }
         if let Some(error) = inspector.unsupported {
             eyre::bail!(error);
         }
@@ -320,11 +497,14 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             gas_used,
             gas_refunded: result.refunded,
             stipend,
-            logs: inspector.logs,
+            logs: inspector
+                .log_collector
+                .and_then(LogCollector::into_captured_logs)
+                .unwrap_or_default(),
             state_changeset: writes.0,
             evm_env,
             tx_env,
-            cheatcodes: stack.cheatcodes.clone(),
+            cheatcodes,
             execution_cancelled: inspector.cancelled,
             out,
             ..Default::default()

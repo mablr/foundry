@@ -196,13 +196,24 @@ fn handle_assertion_result<FEN: FoundryEvmNetwork, E>(
     error_formatter: Option<&dyn Fn(&E) -> String>,
     error_msg: Option<&str>,
 ) -> Result {
+    handle_assertion_result_mono(
+        ccx,
+        executor,
+        format_assertion_error(err, error_formatter, error_msg),
+    )
+}
+
+fn format_assertion_error<E>(
+    err: E,
+    error_formatter: Option<&dyn Fn(&E) -> String>,
+    error_msg: Option<&str>,
+) -> Cow<'static, str> {
     let error_msg = error_msg.unwrap_or(ASSERTION_FAILED_PREFIX);
-    let msg = if let Some(error_formatter) = error_formatter {
-        Cow::Owned(format!("{error_msg}: {}", error_formatter(&err)))
+    Cow::Owned(if let Some(formatter) = error_formatter {
+        format!("{error_msg}: {}", formatter(&err))
     } else {
-        Cow::Borrowed(error_msg)
-    };
-    handle_assertion_result_mono(ccx, executor, msg)
+        error_msg.to_owned()
+    })
 }
 
 fn handle_assertion_result_mono<FEN: FoundryEvmNetwork>(
@@ -248,6 +259,12 @@ macro_rules! impl_assertions {
 
     (@impl $no_error:ident, $with_error:ident, ($($arg:ident),*), $body:expr, $error_formatter:expr) => {
         impl crate::Cheatcode for $no_error {
+            fn assertion_result(&self) -> Option<Result> {
+                let Self { $($arg),* } = self;
+                Some($body.map(|()| Vec::new()).map_err(|err| {
+                    format_assertion_error(err, $error_formatter, None).into_owned().into()
+                }))
+            }
             fn apply_full<FEN: FoundryEvmNetwork>(
                 &self,
                 ccx: &mut CheatsCtxt<'_, '_, FEN>,
@@ -262,6 +279,12 @@ macro_rules! impl_assertions {
         }
 
         impl crate::Cheatcode for $with_error {
+            fn assertion_result(&self) -> Option<Result> {
+                let Self { $($arg,)* err } = self;
+                Some($body.map(|()| Vec::new()).map_err(|assertion_err| {
+                    format_assertion_error(assertion_err, $error_formatter, Some(err)).into_owned().into()
+                }))
+            }
             fn apply_full<FEN: FoundryEvmNetwork>(
                 &self,
                 ccx: &mut CheatsCtxt<'_, '_, FEN>,

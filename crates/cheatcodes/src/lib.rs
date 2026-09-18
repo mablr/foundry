@@ -47,6 +47,8 @@ pub use env::{current_execution_context, set_execution_context};
 
 mod evm;
 
+pub mod native;
+
 mod fs;
 
 mod inspector;
@@ -73,6 +75,21 @@ mod utils;
 
 /// Cheatcode implementation.
 pub(crate) trait Cheatcode: CheatcodeDef {
+    /// Evaluates an assertion without accessing execution state.
+    fn assertion_result(&self) -> Option<Result> {
+        None
+    }
+
+    /// Registers a revert expectation without accessing engine state.
+    fn apply_expectation(
+        &self,
+        expected: &mut Option<test::expect::ExpectedRevert>,
+        depth: usize,
+    ) -> Option<Result> {
+        let _ = (expected, depth);
+        None
+    }
+
     /// Applies this cheatcode to the given state.
     ///
     /// Implement this function if you don't need access to the EVM data.
