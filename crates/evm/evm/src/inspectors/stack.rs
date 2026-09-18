@@ -608,6 +608,11 @@ impl<FEN: FoundryEvmNetwork> InspectorStack<FEN> {
         self.execution_cancellation = Some(cancellation);
     }
 
+    /// Returns the cancellation signal shared with the native executor.
+    pub(crate) const fn execution_cancellation(&self) -> Option<&EvmExecutionCancellation> {
+        self.inner.execution_cancellation.as_ref()
+    }
+
     /// Returns whether this inspector halted execution due to cancellation.
     #[inline]
     pub(crate) const fn execution_cancelled(&self) -> bool {

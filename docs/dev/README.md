@@ -46,6 +46,8 @@ use forking must contain `fork` in their name. Forge and Cast CLI tests live und
   state lifecycles, tool dispatch, and CI coverage.
 - [evm2 migration specification](./evm2-migration-spec.md) tracks migration transition contracts,
   test evidence, and unresolved coverage for the Ethereum-first migration.
+- [evm2 upstream capability requirements](./evm2-upstream-requirements.md) records the
+  live-state API request, reproducer, acceptance criteria and unresolved semantics.
 - [Output channels](./output-channels.md) defines the stdout/stderr contract for Foundry commands.
 - [Scripting](./scripting.md) documents the internal script execution and broadcast pipeline.
 - [Showmap corpus replay](./showmap.md) documents the persisted-corpus coverage workflow and file

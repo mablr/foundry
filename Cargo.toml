@@ -301,6 +301,8 @@ crossterm.opt-level = "s"
 alloy-json-abi.opt-level = "s"
 
 [workspace.dependencies]
+# Ethereum execution engine for the migration branch (requires Rust 1.96+).
+evm2 = { git = "https://github.com/mablr/evm2", rev = "2c8b67f03fb0c86c0c2502d840d2e529bdf4b1a8" }
 anvil = { path = "crates/anvil", default-features = false }
 
 forge-doc = { path = "crates/doc", default-features = false }

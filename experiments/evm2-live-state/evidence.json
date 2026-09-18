@@ -1,0 +1,2213 @@
+{
+  "status": "snapshot gate failed; not a parity allowlist",
+  "rustc": "rustc 1.99.0-nightly (73dc9167f 2026-08-01)",
+  "runs": {
+    "checkpoint": {
+      "cases": 54,
+      "matches": 30,
+      "reference_process_errors": 0,
+      "candidate_process_errors": 12,
+      "metadata": {
+        "foundry_head": "29564767826dfabc0b1ba1fb21446bb88c5bf30f",
+        "evm2_pin": "2c8b67f03fb0c86c0c2502d840d2e529bdf4b1a8",
+        "candidate_mode": "checkpoint",
+        "trace_enabled": false,
+        "reference_binary_sha256": "730986da2eed4e0b5e5fd6be0a271463f46508b780c696d5ac69b733f842d0a2",
+        "candidate_binary_sha256": "348bdbde04f673b1eb216820b3fedb68c0cd1b3d20fc721b90efd9d5039e6227",
+        "generator_sha256": "656a6b0190139b65639c1597d08af4d15c853fd6bdf1e108fff4fca4cfccb433"
+      },
+      "observations": [
+        {
+          "case": "ordinary_child_success_parent_success",
+          "input_sha256": "15145ac92479a0a74e8b76d20c00005dc7513822d31f5f61b5f0feb68d197b3a",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_success_parent_revert",
+          "input_sha256": "1dc6ba7bed125c9ee9a627cd153e18c53d1fe890bfaf578e0a67a3fb9a5c52c9",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_success_parent_halt",
+          "input_sha256": "9bd3a8de7b7a4c312a31d1a19fe564ae0bd08f13bab08133165a12b7fa5d8f5a",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_revert_parent_success",
+          "input_sha256": "535cb820997bda10cd7fb72b2d0f27d37bb091dc5910f4f3e7066a29c4840841",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_revert_parent_revert",
+          "input_sha256": "7bb2012f4823d4c02be749d32b9cf9b3ef9f4c4661eff425b2a1633a757d87db",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_revert_parent_halt",
+          "input_sha256": "27ac3b675d9347e8889a6e4e3d0f8aadc7f6e8fc12635179bb737a456196945c",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_halt_parent_success",
+          "input_sha256": "1548e728fd5aca4cda102e8d2e631024f38be5881f6686a88519e9578c688fef",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_halt_parent_revert",
+          "input_sha256": "7067d142219b625dadbec43eaaa51422ed438b1077da6e8674b5523a59d5792d",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_halt_parent_halt",
+          "input_sha256": "fb2e1361b1c925cd600c9bd21344d74d3887074cf2571ec87cf87e8ac459327d",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_success_parent_success",
+          "input_sha256": "9346ff7c1233a629c617b99ada8e4c7c0c26caf2bd3d075191dafbc232148a6d",
+          "mismatched_fields": [
+            "logs"
+          ],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_success_parent_revert",
+          "input_sha256": "5d73efac8de03323e1e56c121f8ed6a397de173a7a93d757ab26c935d4edba30",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_success_parent_halt",
+          "input_sha256": "0c52ac0510b293722f76920f0c33fda6b113a8e43535e2af460688a0be068557",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_revert_parent_success",
+          "input_sha256": "52c895f1a2dd4cf98191353f276bff57eb429b694730a0fc0b04f66057d8853c",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_revert_parent_revert",
+          "input_sha256": "f4ebb57a71a87d0662d58dfdf2b273905ac2e4e160a8c838b6afbf6bf241bbfa",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_revert_parent_halt",
+          "input_sha256": "88257d2b95e053a194508fb2c126f126e8a823636a1c2cf8633bc09176f62082",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_halt_parent_success",
+          "input_sha256": "72325ad084a0ce1ee94e5338fa538e8a26d619308b1f884a6e713f0a48a5df0d",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_halt_parent_revert",
+          "input_sha256": "33ae840d4d6f5b7375027f53aa55a5d7a86212b512215b0bbb3686203a1d5545",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_halt_parent_halt",
+          "input_sha256": "c1c9966a2e6e770794c897bcc5320436d5374cfd72fd4cbd2687047b0ba3d66a",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_success_parent_success",
+          "input_sha256": "45b994fb892a48d545f007bacf19472494de7f700ce56344cea8b5adf18ef56b",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "gas_used",
+            "logs",
+            "output",
+            "storage"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 57071,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_success_parent_revert",
+          "input_sha256": "006550e1455559b09ed1a2225b002509fe79a024d988998ae38227e30464623c",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "gas_used",
+            "output"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 57071,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_success_parent_halt",
+          "input_sha256": "fba14edd3362bf5e450b666d344b8d44499ea9db9a5d292421135a9680ccc758",
+          "mismatched_fields": [
+            "diagnostic_logs"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_revert_parent_success",
+          "input_sha256": "86a60775e4026c7df1f6e5da2317ba1aa1895bfccfb1336d2411b362f4a235d2",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "gas_used",
+            "output"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 57071,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_revert_parent_revert",
+          "input_sha256": "41cd17a43bdc2a9f4c4a405a73c66cd4750a6f4abb5faba71b3f9a67405605d9",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "gas_used",
+            "output"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 57071,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_revert_parent_halt",
+          "input_sha256": "293a9466446b08bcf15ed497cd8cb65eceb0a74172a3db219f95f895b84f5af3",
+          "mismatched_fields": [
+            "diagnostic_logs"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_halt_parent_success",
+          "input_sha256": "2c5f71b2e79d433a882e0d91208025c18d27e589cf0160db2cfccfbda6d9b68d",
+          "mismatched_fields": [
+            "diagnostic_logs"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 332506,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_halt_parent_revert",
+          "input_sha256": "bc94adc777da85bd09ac0b2a5633299b10d096280bf05cb56c5de64545f77e6e",
+          "mismatched_fields": [
+            "diagnostic_logs"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 332506,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_halt_parent_halt",
+          "input_sha256": "8fc31ef425f53d63f7c0c233b3cd726c6fffa7cd0ceca2f2fdb88239a4fd4d0b",
+          "mismatched_fields": [
+            "diagnostic_logs"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_success_parent_success",
+          "input_sha256": "c0bcd0fb0a48da808eaecf002277c379b5822bab26764d6eda26548ccf90ed6e",
+          "mismatched_fields": [
+            "logs"
+          ],
+          "reference_gas": 57176,
+          "candidate_gas": 57176,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_success_parent_revert",
+          "input_sha256": "4f7d1d264e381884104523d4347d394f4e5a9b6be52c7b8d3c77d662d1c4fd13",
+          "mismatched_fields": [],
+          "reference_gas": 57176,
+          "candidate_gas": 57176,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_success_parent_halt",
+          "input_sha256": "0279baaf81fc97f88f045086c460f2089ddcebaac83c7ad7847aff6e06612b4f",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_revert_parent_success",
+          "input_sha256": "3a10dfb279014450ad49dbd2c26887931a13ce86479dcd547aac8a547d9b144b",
+          "mismatched_fields": [],
+          "reference_gas": 57176,
+          "candidate_gas": 57176,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_revert_parent_revert",
+          "input_sha256": "42294a8cab7882ccdd0d3489763707e51c46faaa14cbf1a1e82feb5ef170df61",
+          "mismatched_fields": [],
+          "reference_gas": 57176,
+          "candidate_gas": 57176,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_revert_parent_halt",
+          "input_sha256": "4ed68d52c9f22375146b1afc5f826078c45923d67602e72cf8c0426108007066",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_halt_parent_success",
+          "input_sha256": "575df95301643c521537ae1c724f05d4ce4e3da1ca512dee50397452f9657c73",
+          "mismatched_fields": [],
+          "reference_gas": 332611,
+          "candidate_gas": 332611,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_halt_parent_revert",
+          "input_sha256": "8edebdcd378f00ae28319e654e97f78c489207b6f7e56fae1745c9346ed83b98",
+          "mismatched_fields": [],
+          "reference_gas": 332611,
+          "candidate_gas": 332611,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_halt_parent_halt",
+          "input_sha256": "052552e100e7ea2a24679e22cf9cc6dc5836a287e44cbda0e2921fe8b5f104e7",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_success_parent_success",
+          "input_sha256": "5c3732a5008b2c56ae308402aea7c65cd785a787f4fa8469e1743f81f7c974a6",
+          "mismatched_fields": [],
+          "reference_gas": 32662,
+          "candidate_gas": 32662,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_success_parent_revert",
+          "input_sha256": "482f58d0d5e90ec22d553a17f4d9651b03432c1915f699b724eaa69b9e06a512",
+          "mismatched_fields": [],
+          "reference_gas": 32662,
+          "candidate_gas": 32662,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_success_parent_halt",
+          "input_sha256": "fba11b9a2bc2eceb54927dbdcd29ea7644243ed377360f94e5fa7fc0e5ccd361",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_revert_parent_success",
+          "input_sha256": "f8caf003195fd41e178c1c88d52c63c1c1410c991de9c45fb095fd9120e0be74",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 32668,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_revert_parent_revert",
+          "input_sha256": "3f7d57fac361eda4a6a74aab80c8887c89e7387f01244680d803e21b2b2f1408",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 32668,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_revert_parent_halt",
+          "input_sha256": "85e440b1d35c4e902af3a7e249730324da131c4229fb7a7ff2488bd5e08499a6",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_halt_parent_success",
+          "input_sha256": "add5fd95c1b17181a7c9bb7c67a57eeaffb6f0aca0b2aac18bd76323b11a4173",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_halt_parent_revert",
+          "input_sha256": "ea447afb648de9d4e9a56f5fb033c05d401abf32183914432f031eff567ff85b",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_halt_parent_halt",
+          "input_sha256": "b784d11e0f3935784a780478e08cf6462629c6433e3446e65c3b6e5ef0e65492",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "returned_child_snapshot_child_success_parent_success",
+          "input_sha256": "2755c73612ce950e2b5e133703cb512cb2171dcad55188f18ecebc7fdf071b4d",
+          "mismatched_fields": [
+            "logs"
+          ],
+          "reference_gas": 50171,
+          "candidate_gas": 50171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_success_parent_revert",
+          "input_sha256": "a94bda383ab1c35dc7ed5b4d519a556faff26b28b0e54dd80bb671b2907566c1",
+          "mismatched_fields": [],
+          "reference_gas": 50171,
+          "candidate_gas": 50171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_success_parent_halt",
+          "input_sha256": "6936cc29fbc03e3e2e5a8712adf4e979c767f34364afaab25b4a5f426fd81d8b",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_revert_parent_success",
+          "input_sha256": "d7301a84714a6ea890c6d9e57d88b213876e2385411c48b3c9da34ecbdcdd65b",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 52671,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "returned_child_snapshot_child_revert_parent_revert",
+          "input_sha256": "2dafc427d294fe065175cea3dba138bfe516d0cbca8f62f77fe35af983640642",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 52671,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "returned_child_snapshot_child_revert_parent_halt",
+          "input_sha256": "54193df3124c31ef18a7e7fb370688310c7d6109ce0bd1de0fcd7337419a4e4f",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "returned_child_snapshot_child_halt_parent_success",
+          "input_sha256": "27eab77d6b369080475440868328b1e0b1a3a8f18fcb9ecf6260c62af758e933",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 332515,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "returned_child_snapshot_child_halt_parent_revert",
+          "input_sha256": "c8d0f26b6e69fde65741a5e6a2d5e17e65b8648635aeda58f597c6e117b03695",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 332515,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "returned_child_snapshot_child_halt_parent_halt",
+          "input_sha256": "74fb83640726568f24b63dc7e8b73890c83ae65b17baf493f4a02f827fe7de41",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        }
+      ]
+    },
+    "native": {
+      "cases": 54,
+      "matches": 39,
+      "reference_process_errors": 0,
+      "candidate_process_errors": 6,
+      "metadata": {
+        "foundry_head": "29564767826dfabc0b1ba1fb21446bb88c5bf30f",
+        "evm2_pin": "2c8b67f03fb0c86c0c2502d840d2e529bdf4b1a8",
+        "candidate_mode": "native",
+        "trace_enabled": false,
+        "reference_binary_sha256": "730986da2eed4e0b5e5fd6be0a271463f46508b780c696d5ac69b733f842d0a2",
+        "candidate_binary_sha256": "b1e605e7e5db1c9e4a9508543aece09ecee75cd728d23a5361f860fc3f0d71d1",
+        "generator_sha256": "656a6b0190139b65639c1597d08af4d15c853fd6bdf1e108fff4fca4cfccb433"
+      },
+      "observations": [
+        {
+          "case": "ordinary_child_success_parent_success",
+          "input_sha256": "15145ac92479a0a74e8b76d20c00005dc7513822d31f5f61b5f0feb68d197b3a",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_success_parent_revert",
+          "input_sha256": "1dc6ba7bed125c9ee9a627cd153e18c53d1fe890bfaf578e0a67a3fb9a5c52c9",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_success_parent_halt",
+          "input_sha256": "9bd3a8de7b7a4c312a31d1a19fe564ae0bd08f13bab08133165a12b7fa5d8f5a",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_revert_parent_success",
+          "input_sha256": "535cb820997bda10cd7fb72b2d0f27d37bb091dc5910f4f3e7066a29c4840841",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_revert_parent_revert",
+          "input_sha256": "7bb2012f4823d4c02be749d32b9cf9b3ef9f4c4661eff425b2a1633a757d87db",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_revert_parent_halt",
+          "input_sha256": "27ac3b675d9347e8889a6e4e3d0f8aadc7f6e8fc12635179bb737a456196945c",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_halt_parent_success",
+          "input_sha256": "1548e728fd5aca4cda102e8d2e631024f38be5881f6686a88519e9578c688fef",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_halt_parent_revert",
+          "input_sha256": "7067d142219b625dadbec43eaaa51422ed438b1077da6e8674b5523a59d5792d",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_halt_parent_halt",
+          "input_sha256": "fb2e1361b1c925cd600c9bd21344d74d3887074cf2571ec87cf87e8ac459327d",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_success_parent_success",
+          "input_sha256": "9346ff7c1233a629c617b99ada8e4c7c0c26caf2bd3d075191dafbc232148a6d",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_success_parent_revert",
+          "input_sha256": "5d73efac8de03323e1e56c121f8ed6a397de173a7a93d757ab26c935d4edba30",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_success_parent_halt",
+          "input_sha256": "0c52ac0510b293722f76920f0c33fda6b113a8e43535e2af460688a0be068557",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_revert_parent_success",
+          "input_sha256": "52c895f1a2dd4cf98191353f276bff57eb429b694730a0fc0b04f66057d8853c",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_revert_parent_revert",
+          "input_sha256": "f4ebb57a71a87d0662d58dfdf2b273905ac2e4e160a8c838b6afbf6bf241bbfa",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_revert_parent_halt",
+          "input_sha256": "88257d2b95e053a194508fb2c126f126e8a823636a1c2cf8633bc09176f62082",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_halt_parent_success",
+          "input_sha256": "72325ad084a0ce1ee94e5338fa538e8a26d619308b1f884a6e713f0a48a5df0d",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_halt_parent_revert",
+          "input_sha256": "33ae840d4d6f5b7375027f53aa55a5d7a86212b512215b0bbb3686203a1d5545",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_halt_parent_halt",
+          "input_sha256": "c1c9966a2e6e770794c897bcc5320436d5374cfd72fd4cbd2687047b0ba3d66a",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_success_parent_success",
+          "input_sha256": "45b994fb892a48d545f007bacf19472494de7f700ce56344cea8b5adf18ef56b",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "gas_used",
+            "logs",
+            "output",
+            "storage"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 57071,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_success_parent_revert",
+          "input_sha256": "006550e1455559b09ed1a2225b002509fe79a024d988998ae38227e30464623c",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "gas_used",
+            "output"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 57071,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_success_parent_halt",
+          "input_sha256": "fba14edd3362bf5e450b666d344b8d44499ea9db9a5d292421135a9680ccc758",
+          "mismatched_fields": [
+            "diagnostic_logs"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_revert_parent_success",
+          "input_sha256": "86a60775e4026c7df1f6e5da2317ba1aa1895bfccfb1336d2411b362f4a235d2",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "gas_used",
+            "output"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 57071,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_revert_parent_revert",
+          "input_sha256": "41cd17a43bdc2a9f4c4a405a73c66cd4750a6f4abb5faba71b3f9a67405605d9",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "gas_used",
+            "output"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 57071,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_revert_parent_halt",
+          "input_sha256": "293a9466446b08bcf15ed497cd8cb65eceb0a74172a3db219f95f895b84f5af3",
+          "mismatched_fields": [
+            "diagnostic_logs"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_halt_parent_success",
+          "input_sha256": "2c5f71b2e79d433a882e0d91208025c18d27e589cf0160db2cfccfbda6d9b68d",
+          "mismatched_fields": [
+            "diagnostic_logs"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 332506,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_halt_parent_revert",
+          "input_sha256": "bc94adc777da85bd09ac0b2a5633299b10d096280bf05cb56c5de64545f77e6e",
+          "mismatched_fields": [
+            "diagnostic_logs"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": 332506,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_halt_parent_halt",
+          "input_sha256": "8fc31ef425f53d63f7c0c233b3cd726c6fffa7cd0ceca2f2fdb88239a4fd4d0b",
+          "mismatched_fields": [
+            "diagnostic_logs"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_success_parent_success",
+          "input_sha256": "c0bcd0fb0a48da808eaecf002277c379b5822bab26764d6eda26548ccf90ed6e",
+          "mismatched_fields": [],
+          "reference_gas": 57176,
+          "candidate_gas": 57176,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_success_parent_revert",
+          "input_sha256": "4f7d1d264e381884104523d4347d394f4e5a9b6be52c7b8d3c77d662d1c4fd13",
+          "mismatched_fields": [],
+          "reference_gas": 57176,
+          "candidate_gas": 57176,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_success_parent_halt",
+          "input_sha256": "0279baaf81fc97f88f045086c460f2089ddcebaac83c7ad7847aff6e06612b4f",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_revert_parent_success",
+          "input_sha256": "3a10dfb279014450ad49dbd2c26887931a13ce86479dcd547aac8a547d9b144b",
+          "mismatched_fields": [],
+          "reference_gas": 57176,
+          "candidate_gas": 57176,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_revert_parent_revert",
+          "input_sha256": "42294a8cab7882ccdd0d3489763707e51c46faaa14cbf1a1e82feb5ef170df61",
+          "mismatched_fields": [],
+          "reference_gas": 57176,
+          "candidate_gas": 57176,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_revert_parent_halt",
+          "input_sha256": "4ed68d52c9f22375146b1afc5f826078c45923d67602e72cf8c0426108007066",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_halt_parent_success",
+          "input_sha256": "575df95301643c521537ae1c724f05d4ce4e3da1ca512dee50397452f9657c73",
+          "mismatched_fields": [],
+          "reference_gas": 332611,
+          "candidate_gas": 332611,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_halt_parent_revert",
+          "input_sha256": "8edebdcd378f00ae28319e654e97f78c489207b6f7e56fae1745c9346ed83b98",
+          "mismatched_fields": [],
+          "reference_gas": 332611,
+          "candidate_gas": 332611,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_halt_parent_halt",
+          "input_sha256": "052552e100e7ea2a24679e22cf9cc6dc5836a287e44cbda0e2921fe8b5f104e7",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_success_parent_success",
+          "input_sha256": "5c3732a5008b2c56ae308402aea7c65cd785a787f4fa8469e1743f81f7c974a6",
+          "mismatched_fields": [],
+          "reference_gas": 32662,
+          "candidate_gas": 32662,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_success_parent_revert",
+          "input_sha256": "482f58d0d5e90ec22d553a17f4d9651b03432c1915f699b724eaa69b9e06a512",
+          "mismatched_fields": [],
+          "reference_gas": 32662,
+          "candidate_gas": 32662,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_success_parent_halt",
+          "input_sha256": "fba11b9a2bc2eceb54927dbdcd29ea7644243ed377360f94e5fa7fc0e5ccd361",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_revert_parent_success",
+          "input_sha256": "f8caf003195fd41e178c1c88d52c63c1c1410c991de9c45fb095fd9120e0be74",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 32668,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_revert_parent_revert",
+          "input_sha256": "3f7d57fac361eda4a6a74aab80c8887c89e7387f01244680d803e21b2b2f1408",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 32668,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_revert_parent_halt",
+          "input_sha256": "85e440b1d35c4e902af3a7e249730324da131c4229fb7a7ff2488bd5e08499a6",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_halt_parent_success",
+          "input_sha256": "add5fd95c1b17181a7c9bb7c67a57eeaffb6f0aca0b2aac18bd76323b11a4173",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_halt_parent_revert",
+          "input_sha256": "ea447afb648de9d4e9a56f5fb033c05d401abf32183914432f031eff567ff85b",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 332506,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_halt_parent_halt",
+          "input_sha256": "b784d11e0f3935784a780478e08cf6462629c6433e3446e65c3b6e5ef0e65492",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": 1000000,
+          "candidate_gas": null,
+          "reference_error": false,
+          "candidate_error": true
+        },
+        {
+          "case": "returned_child_snapshot_child_success_parent_success",
+          "input_sha256": "2755c73612ce950e2b5e133703cb512cb2171dcad55188f18ecebc7fdf071b4d",
+          "mismatched_fields": [],
+          "reference_gas": 50171,
+          "candidate_gas": 50171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_success_parent_revert",
+          "input_sha256": "a94bda383ab1c35dc7ed5b4d519a556faff26b28b0e54dd80bb671b2907566c1",
+          "mismatched_fields": [],
+          "reference_gas": 50171,
+          "candidate_gas": 50171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_success_parent_halt",
+          "input_sha256": "6936cc29fbc03e3e2e5a8712adf4e979c767f34364afaab25b4a5f426fd81d8b",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_revert_parent_success",
+          "input_sha256": "d7301a84714a6ea890c6d9e57d88b213876e2385411c48b3c9da34ecbdcdd65b",
+          "mismatched_fields": [],
+          "reference_gas": 52671,
+          "candidate_gas": 52671,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_revert_parent_revert",
+          "input_sha256": "2dafc427d294fe065175cea3dba138bfe516d0cbca8f62f77fe35af983640642",
+          "mismatched_fields": [],
+          "reference_gas": 52671,
+          "candidate_gas": 52671,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_revert_parent_halt",
+          "input_sha256": "54193df3124c31ef18a7e7fb370688310c7d6109ce0bd1de0fcd7337419a4e4f",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_halt_parent_success",
+          "input_sha256": "27eab77d6b369080475440868328b1e0b1a3a8f18fcb9ecf6260c62af758e933",
+          "mismatched_fields": [],
+          "reference_gas": 332515,
+          "candidate_gas": 332515,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_halt_parent_revert",
+          "input_sha256": "c8d0f26b6e69fde65741a5e6a2d5e17e65b8648635aeda58f597c6e117b03695",
+          "mismatched_fields": [],
+          "reference_gas": 332515,
+          "candidate_gas": 332515,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_halt_parent_halt",
+          "input_sha256": "74fb83640726568f24b63dc7e8b73890c83ae65b17baf493f4a02f827fe7de41",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        }
+      ]
+    },
+    "traced": {
+      "cases": 54,
+      "matches": 18,
+      "reference_process_errors": 36,
+      "candidate_process_errors": 6,
+      "metadata": {
+        "foundry_head": "29564767826dfabc0b1ba1fb21446bb88c5bf30f",
+        "evm2_pin": "2c8b67f03fb0c86c0c2502d840d2e529bdf4b1a8",
+        "candidate_mode": "native",
+        "trace_enabled": true,
+        "reference_binary_sha256": "730986da2eed4e0b5e5fd6be0a271463f46508b780c696d5ac69b733f842d0a2",
+        "candidate_binary_sha256": "b1e605e7e5db1c9e4a9508543aece09ecee75cd728d23a5361f860fc3f0d71d1",
+        "generator_sha256": "656a6b0190139b65639c1597d08af4d15c853fd6bdf1e108fff4fca4cfccb433"
+      },
+      "observations": [
+        {
+          "case": "ordinary_child_success_parent_success",
+          "input_sha256": "15145ac92479a0a74e8b76d20c00005dc7513822d31f5f61b5f0feb68d197b3a",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_success_parent_revert",
+          "input_sha256": "1dc6ba7bed125c9ee9a627cd153e18c53d1fe890bfaf578e0a67a3fb9a5c52c9",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_success_parent_halt",
+          "input_sha256": "9bd3a8de7b7a4c312a31d1a19fe564ae0bd08f13bab08133165a12b7fa5d8f5a",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_revert_parent_success",
+          "input_sha256": "535cb820997bda10cd7fb72b2d0f27d37bb091dc5910f4f3e7066a29c4840841",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_revert_parent_revert",
+          "input_sha256": "7bb2012f4823d4c02be749d32b9cf9b3ef9f4c4661eff425b2a1633a757d87db",
+          "mismatched_fields": [],
+          "reference_gas": 47398,
+          "candidate_gas": 47398,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_revert_parent_halt",
+          "input_sha256": "27ac3b675d9347e8889a6e4e3d0f8aadc7f6e8fc12635179bb737a456196945c",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_halt_parent_success",
+          "input_sha256": "1548e728fd5aca4cda102e8d2e631024f38be5881f6686a88519e9578c688fef",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_halt_parent_revert",
+          "input_sha256": "7067d142219b625dadbec43eaaa51422ed438b1077da6e8674b5523a59d5792d",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "ordinary_child_halt_parent_halt",
+          "input_sha256": "fb2e1361b1c925cd600c9bd21344d74d3887074cf2571ec87cf87e8ac459327d",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_success_parent_success",
+          "input_sha256": "9346ff7c1233a629c617b99ada8e4c7c0c26caf2bd3d075191dafbc232148a6d",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_success_parent_revert",
+          "input_sha256": "5d73efac8de03323e1e56c121f8ed6a397de173a7a93d757ab26c935d4edba30",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_success_parent_halt",
+          "input_sha256": "0c52ac0510b293722f76920f0c33fda6b113a8e43535e2af460688a0be068557",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_revert_parent_success",
+          "input_sha256": "52c895f1a2dd4cf98191353f276bff57eb429b694730a0fc0b04f66057d8853c",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_revert_parent_revert",
+          "input_sha256": "f4ebb57a71a87d0662d58dfdf2b273905ac2e4e160a8c838b6afbf6bf241bbfa",
+          "mismatched_fields": [],
+          "reference_gas": 52171,
+          "candidate_gas": 52171,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_revert_parent_halt",
+          "input_sha256": "88257d2b95e053a194508fb2c126f126e8a823636a1c2cf8633bc09176f62082",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_halt_parent_success",
+          "input_sha256": "72325ad084a0ce1ee94e5338fa538e8a26d619308b1f884a6e713f0a48a5df0d",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_halt_parent_revert",
+          "input_sha256": "33ae840d4d6f5b7375027f53aa55a5d7a86212b512215b0bbb3686203a1d5545",
+          "mismatched_fields": [],
+          "reference_gas": 329874,
+          "candidate_gas": 329874,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "same_depth_child_halt_parent_halt",
+          "input_sha256": "c1c9966a2e6e770794c897bcc5320436d5374cfd72fd4cbd2687047b0ba3d66a",
+          "mismatched_fields": [],
+          "reference_gas": 1000000,
+          "candidate_gas": 1000000,
+          "reference_error": false,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_success_parent_success",
+          "input_sha256": "45b994fb892a48d545f007bacf19472494de7f700ce56344cea8b5adf18ef56b",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 57071,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_success_parent_revert",
+          "input_sha256": "006550e1455559b09ed1a2225b002509fe79a024d988998ae38227e30464623c",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 57071,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_success_parent_halt",
+          "input_sha256": "fba14edd3362bf5e450b666d344b8d44499ea9db9a5d292421135a9680ccc758",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 1000000,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_revert_parent_success",
+          "input_sha256": "86a60775e4026c7df1f6e5da2317ba1aa1895bfccfb1336d2411b362f4a235d2",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 57071,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_revert_parent_revert",
+          "input_sha256": "41cd17a43bdc2a9f4c4a405a73c66cd4750a6f4abb5faba71b3f9a67405605d9",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 57071,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_revert_parent_halt",
+          "input_sha256": "293a9466446b08bcf15ed497cd8cb65eceb0a74172a3db219f95f895b84f5af3",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 1000000,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_halt_parent_success",
+          "input_sha256": "2c5f71b2e79d433a882e0d91208025c18d27e589cf0160db2cfccfbda6d9b68d",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 332506,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_halt_parent_revert",
+          "input_sha256": "bc94adc777da85bd09ac0b2a5633299b10d096280bf05cb56c5de64545f77e6e",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 332506,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_child_halt_parent_halt",
+          "input_sha256": "8fc31ef425f53d63f7c0c233b3cd726c6fffa7cd0ceca2f2fdb88239a4fd4d0b",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 1000000,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_success_parent_success",
+          "input_sha256": "c0bcd0fb0a48da808eaecf002277c379b5822bab26764d6eda26548ccf90ed6e",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 57176,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_success_parent_revert",
+          "input_sha256": "4f7d1d264e381884104523d4347d394f4e5a9b6be52c7b8d3c77d662d1c4fd13",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 57176,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_success_parent_halt",
+          "input_sha256": "0279baaf81fc97f88f045086c460f2089ddcebaac83c7ad7847aff6e06612b4f",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 1000000,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_revert_parent_success",
+          "input_sha256": "3a10dfb279014450ad49dbd2c26887931a13ce86479dcd547aac8a547d9b144b",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 57176,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_revert_parent_revert",
+          "input_sha256": "42294a8cab7882ccdd0d3489763707e51c46faaa14cbf1a1e82feb5ef170df61",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 57176,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_revert_parent_halt",
+          "input_sha256": "4ed68d52c9f22375146b1afc5f826078c45923d67602e72cf8c0426108007066",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 1000000,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_halt_parent_success",
+          "input_sha256": "575df95301643c521537ae1c724f05d4ce4e3da1ca512dee50397452f9657c73",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 332611,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_halt_parent_revert",
+          "input_sha256": "8edebdcd378f00ae28319e654e97f78c489207b6f7e56fae1745c9346ed83b98",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 332611,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_preloaded_child_halt_parent_halt",
+          "input_sha256": "052552e100e7ea2a24679e22cf9cc6dc5836a287e44cbda0e2921fe8b5f104e7",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 1000000,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_success_parent_success",
+          "input_sha256": "5c3732a5008b2c56ae308402aea7c65cd785a787f4fa8469e1743f81f7c974a6",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 32662,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_success_parent_revert",
+          "input_sha256": "482f58d0d5e90ec22d553a17f4d9651b03432c1915f699b724eaa69b9e06a512",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 32662,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_success_parent_halt",
+          "input_sha256": "fba11b9a2bc2eceb54927dbdcd29ea7644243ed377360f94e5fa7fc0e5ccd361",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 1000000,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "parent_snapshot_immediate_child_revert_parent_success",
+          "input_sha256": "f8caf003195fd41e178c1c88d52c63c1c1410c991de9c45fb095fd9120e0be74",
+          "mismatched_fields": [
+            "stderr"
+          ],
+          "reference_gas": null,
+          "candidate_gas": null,
+          "reference_error": true,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_revert_parent_revert",
+          "input_sha256": "3f7d57fac361eda4a6a74aab80c8887c89e7387f01244680d803e21b2b2f1408",
+          "mismatched_fields": [
+            "stderr"
+          ],
+          "reference_gas": null,
+          "candidate_gas": null,
+          "reference_error": true,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_revert_parent_halt",
+          "input_sha256": "85e440b1d35c4e902af3a7e249730324da131c4229fb7a7ff2488bd5e08499a6",
+          "mismatched_fields": [
+            "stderr"
+          ],
+          "reference_gas": null,
+          "candidate_gas": null,
+          "reference_error": true,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_halt_parent_success",
+          "input_sha256": "add5fd95c1b17181a7c9bb7c67a57eeaffb6f0aca0b2aac18bd76323b11a4173",
+          "mismatched_fields": [
+            "stderr"
+          ],
+          "reference_gas": null,
+          "candidate_gas": null,
+          "reference_error": true,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_halt_parent_revert",
+          "input_sha256": "ea447afb648de9d4e9a56f5fb033c05d401abf32183914432f031eff567ff85b",
+          "mismatched_fields": [
+            "stderr"
+          ],
+          "reference_gas": null,
+          "candidate_gas": null,
+          "reference_error": true,
+          "candidate_error": true
+        },
+        {
+          "case": "parent_snapshot_immediate_child_halt_parent_halt",
+          "input_sha256": "b784d11e0f3935784a780478e08cf6462629c6433e3446e65c3b6e5ef0e65492",
+          "mismatched_fields": [
+            "stderr"
+          ],
+          "reference_gas": null,
+          "candidate_gas": null,
+          "reference_error": true,
+          "candidate_error": true
+        },
+        {
+          "case": "returned_child_snapshot_child_success_parent_success",
+          "input_sha256": "2755c73612ce950e2b5e133703cb512cb2171dcad55188f18ecebc7fdf071b4d",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 50171,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_success_parent_revert",
+          "input_sha256": "a94bda383ab1c35dc7ed5b4d519a556faff26b28b0e54dd80bb671b2907566c1",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 50171,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_success_parent_halt",
+          "input_sha256": "6936cc29fbc03e3e2e5a8712adf4e979c767f34364afaab25b4a5f426fd81d8b",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 1000000,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_revert_parent_success",
+          "input_sha256": "d7301a84714a6ea890c6d9e57d88b213876e2385411c48b3c9da34ecbdcdd65b",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 52671,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_revert_parent_revert",
+          "input_sha256": "2dafc427d294fe065175cea3dba138bfe516d0cbca8f62f77fe35af983640642",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 52671,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_revert_parent_halt",
+          "input_sha256": "54193df3124c31ef18a7e7fb370688310c7d6109ce0bd1de0fcd7337419a4e4f",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 1000000,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_halt_parent_success",
+          "input_sha256": "27eab77d6b369080475440868328b1e0b1a3a8f18fcb9ecf6260c62af758e933",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 332515,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_halt_parent_revert",
+          "input_sha256": "c8d0f26b6e69fde65741a5e6a2d5e17e65b8648635aeda58f597c6e117b03695",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 332515,
+          "reference_error": true,
+          "candidate_error": false
+        },
+        {
+          "case": "returned_child_snapshot_child_halt_parent_halt",
+          "input_sha256": "74fb83640726568f24b63dc7e8b73890c83ae65b17baf493f4a02f827fe7de41",
+          "mismatched_fields": [
+            "diagnostic_logs",
+            "followup",
+            "gas_used",
+            "logs",
+            "name",
+            "output",
+            "process_error",
+            "refunded",
+            "stderr",
+            "stop",
+            "storage",
+            "success"
+          ],
+          "reference_gas": null,
+          "candidate_gas": 1000000,
+          "reference_error": true,
+          "candidate_error": false
+        }
+      ]
+    }
+  }
+}

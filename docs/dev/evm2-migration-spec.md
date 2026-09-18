@@ -723,3 +723,99 @@ access is required. No external RPC or forge-std download is needed by T-28.
 [coverage-cli]: ../../crates/forge/tests/cli/coverage.rs
 [coverage-inspector]: ../../crates/evm/coverage/src/inspector.rs
 [repros]: ../../crates/forge/tests/cli/test_cmd/repros.rs
+
+
+## 10. Historical live-state experiment (2026-09-18)
+
+The [isolated experiment](../../experiments/evm2-live-state/README.md) and its
+[machine-readable evidence](../../experiments/evm2-live-state/evidence.json) extend
+G-01 with 54 Cancun bytecode cases: six capture/restore families crossed with three
+child and three parent outcomes. Both runners execute identical bytecode; the
+reference uses the actual Foundry backend/cheatcodes. Independent assertions cover
+same-depth warmth (2107/2107/107 measured regions), storage/transient continuation,
+outer storage rollback, and a subsequent successful transaction. Each comparison
+also includes exact return data, gas/refund, result logs and diagnostic logs.
+
+- Unmodified evm2 checkpoint-only control: 30/54 match, 12 process panics.
+- Experimental native transaction-layer copy: 39/54 match, six process panics.
+- Native candidate with reference call tracing enabled: 18/54 match; the reference
+  itself panics in all 36 cross-depth cases. These are debug assertions, not
+  certified release behavior.
+
+**New source-backed boundary:** parent snapshot restoration can remove the currently
+executing child's account from the journal. REVM's assumed-present storage path
+then reports `ColdLoadSkipped`, mapped to OutOfGas. Preloading that account before
+capture removes this fixture's divergence. Separately, restoring captured journal
+depth conflicts with the inspector's actual frame depth. Neither effect should be
+silently adopted as desired semantics or normalized out of differential results.
+
+**Native blocker:** parent capture → child entry → restore → immediate child
+revert/halt leaves evm2's saved checkpoint beyond the replacement journal. Copying
+accounts, originals, warmth, transient state, journal and log policy does not solve
+this. The original native-copy patch was incomplete and is now archived.
+A replacement-aware checkpoint/settlement mechanism must establish what every
+suspended frame can undo after restoration; cursor clamping is not such a contract.
+
+The original snapshot experiment did not pass its gate. A subsequent isolated
+checkpoint prototype eliminated all six candidate panics (45/54 matches); see the
+requirements document below for evidence and limitations. Full snapshot acceptance,
+G-01/G-03, forks/isolation and cost validation remain open. Ordinary Forge integration
+proceeds independently in milestone 1. The evidence note records the archived
+harness provenance; the old reference must not be rebuilt against the native Executor.
+
+The [upstream capability request](evm2-upstream-requirements.md) is the canonical
+record of evm2-side requirements E2-01 through E2-05, source boundaries, minimal
+reproduction, proposed acceptance tests and cross-depth semantics still to agree.
+Foundry-specific reference defects are tracked separately from those requests.
+
+## 11. Native Forge milestone 1 (2026-09-18)
+
+The ordinary `Executor::{call,transact}_with_env_and_context` paths now execute
+pinned evm2 `2c8b67f03fb0c86c0c2502d840d2e529bdf4b1a8`. There is no runtime engine
+switch or fallback. This is an intermediate migration branch, not Ethereum parity.
+Other replay/system paths and consumers still retain REVM integration.
+
+| Transition | Implementation and evidence |
+| --- | --- |
+| Backend → transaction | Lazy database reads convert account/code data on demand; native evm2 owns all frame, journal, warmth and transient state during execution. |
+| Successful deployment/setup → next transaction | Stream the native transaction delta into existing Foundry account/slot results and commit through Backend. Unchanged account metadata accompanies storage-only writes. Constructor/child code and setup storage survive. |
+| Ordinary test → independent next test | Existing runner clones the setup backend; native calls return deltas without committing them. Two tests mutate the same setup state independently. |
+| Child success/revert/halt → parent resumes | Native CALL/CREATE machinery exclusively owns settlement; fixture checks storage rollback, return/revert bytes and continuation, plus CREATE2 and transferred value. No REVM journal conversion occurs at frame boundaries. |
+| Transaction end → next transaction | New native scratch state per execution; setup transient writes do not survive, while nested calls within a test share transient state. |
+| Top-level revert/halt → failure reporting | Preserve exit reason/output, gas/refund and delta semantics; CLI failures distinguish revert string, assertion panic and INVALID. Unit test checks rollback plus caller nonce consumption. |
+| Cancellation → interrupted result | Existing shared cancellation signal is checked in native step callbacks; result carries `execution_cancelled`. Focused test verifies a pre-existing interrupt prevents storage mutation. Nested/live cancellation parity is not established by that test. |
+| Unmigrated operation → explicit failure | Cheatcode/console interception produces a host error even if Solidity catches the revert. Reject isolation, forks, unsupported hardforks/transaction fields and advanced inspector modes rather than silently omitting their behavior. |
+
+Evidence anchors:
+
+- [Native executor unit tests](../../crates/evm/evm/src/executors/evm2.rs): call
+  discard vs transact commit, storage/account/code/nonce persistence, top-level
+  revert payload/rollback, cancellation before writes.
+- [CLI regressions](../../crates/forge/tests/cli/test_cmd/evm2.rs) and
+  [Solidity fixture](../../crates/forge/tests/fixtures/evm2/Milestone.t.sol): seven
+  positive tests, three intentional failures, one caught unsupported call.
+- Unchanged `SetupConsistency.t.sol` and its local utility dependencies, copied to
+  an isolated project: two passing tests. Source fixtures and existing tests were
+  not rewritten to accommodate the engine.
+- Preserved REVM Forge vs native Forge, Solc 0.8.35/Cancun/optimizer, `--no-isolate`:
+  identical reported gas for the seven positive tests. No performance conclusion.
+
+Validation: three executor unit tests and three CLI regressions passed with nonzero
+counts. `cargo +nightly fmt` and `cargo +nightly clippy --all --all-features
+--all-targets -- -D warnings` passed. The complete behavioral suite was not run;
+unmigrated workflows intentionally fail the capability checks.
+
+Reproduce Rust checks with `cargo +nightly test -p foundry-evm --lib
+executors::evm2::tests` and `cargo +nightly test -p forge --test cli
+test_cmd::evm2`; rebuild `forge` before running a CLI harness that selects a sibling
+binary. The fixture README gives direct Forge commands. Pinned evm2 requires
+Rust >=1.96; this milestone is validated with nightly, not the workspace's declared
+older MSRV. Native dependency resolution updates `alloy-eip7928` to 0.4.11.
+
+Outstanding: backend/result migration, cheatcode state and callback adaptation,
+setup/test snapshot lifetime, forks and isolation, all Ethereum hardforks and
+transaction types, native traces/debug steps/coverage, fuzz/invariant/script and
+replay consumers, full cancellation lifecycle and performance. G-01/G-03 and the
+full Ethereum acceptance gate remain open. The parallel checkpoint experiment is
+not applied to this dependency; its local result does not establish snapshot support
+in Forge.

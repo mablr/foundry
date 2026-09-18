@@ -14,6 +14,8 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+evm2.workspace = true
+alloy-consensus.workspace = true
 foundry-cheatcodes.workspace = true
 foundry-common.workspace = true
 foundry-compilers.workspace = true
