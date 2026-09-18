@@ -132,9 +132,9 @@ pub enum EmitMismatch {
 }
 
 impl EmitMismatch {
-    pub fn to_error_msg<FEN: FoundryEvmNetwork>(
+    pub fn to_error_msg(
         &self,
-        state: &Cheatcodes<FEN>,
+        identifier: Option<&foundry_evm_traces::identifier::SignaturesIdentifier>,
         checks: [bool; 5],
         expected: Option<&RawLog>,
         anonymous: bool,
@@ -147,8 +147,7 @@ impl EmitMismatch {
                 let (expected_decoded, actual_decoded) = if anonymous {
                     (None, None)
                 } else {
-                    state
-                        .signatures_identifier()
+                    identifier
                         .map(|identifier| {
                             (decode_event(identifier, expected), decode_event(identifier, actual))
                         })
@@ -216,23 +215,52 @@ impl CreateScheme {
 
 impl Cheatcode for expectCall_0Call {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
+        self.apply_call_expectation(&mut state.expected_calls).unwrap()
+    }
+    fn apply_call_expectation(&self, calls: &mut ExpectedCallTracker) -> Option<Result> {
         let Self { callee, data } = self;
-        expect_call(state, callee, data, None, None, None, None, 1, ExpectedCallType::NonCount)
+        Some(expect_call(
+            calls,
+            callee,
+            data,
+            None,
+            None,
+            None,
+            None,
+            1,
+            ExpectedCallType::NonCount,
+        ))
     }
 }
 
 impl Cheatcode for expectCall_1Call {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
+        self.apply_call_expectation(&mut state.expected_calls).unwrap()
+    }
+    fn apply_call_expectation(&self, calls: &mut ExpectedCallTracker) -> Option<Result> {
         let Self { callee, data, count } = self;
-        expect_call(state, callee, data, None, None, None, None, *count, ExpectedCallType::Count)
+        Some(expect_call(
+            calls,
+            callee,
+            data,
+            None,
+            None,
+            None,
+            None,
+            *count,
+            ExpectedCallType::Count,
+        ))
     }
 }
 
 impl Cheatcode for expectCall_2Call {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
+        self.apply_call_expectation(&mut state.expected_calls).unwrap()
+    }
+    fn apply_call_expectation(&self, calls: &mut ExpectedCallTracker) -> Option<Result> {
         let Self { callee, msgValue, data } = self;
-        expect_call(
-            state,
+        Some(expect_call(
+            calls,
             callee,
             data,
             Some(msgValue),
@@ -241,15 +269,18 @@ impl Cheatcode for expectCall_2Call {
             None,
             1,
             ExpectedCallType::NonCount,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectCall_3Call {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
+        self.apply_call_expectation(&mut state.expected_calls).unwrap()
+    }
+    fn apply_call_expectation(&self, calls: &mut ExpectedCallTracker) -> Option<Result> {
         let Self { callee, msgValue, data, count } = self;
-        expect_call(
-            state,
+        Some(expect_call(
+            calls,
             callee,
             data,
             Some(msgValue),
@@ -258,15 +289,18 @@ impl Cheatcode for expectCall_3Call {
             None,
             *count,
             ExpectedCallType::Count,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectCall_4Call {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
+        self.apply_call_expectation(&mut state.expected_calls).unwrap()
+    }
+    fn apply_call_expectation(&self, calls: &mut ExpectedCallTracker) -> Option<Result> {
         let Self { callee, msgValue, gas, data } = self;
-        expect_call(
-            state,
+        Some(expect_call(
+            calls,
             callee,
             data,
             Some(msgValue),
@@ -275,15 +309,18 @@ impl Cheatcode for expectCall_4Call {
             None,
             1,
             ExpectedCallType::NonCount,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectCall_5Call {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
+        self.apply_call_expectation(&mut state.expected_calls).unwrap()
+    }
+    fn apply_call_expectation(&self, calls: &mut ExpectedCallTracker) -> Option<Result> {
         let Self { callee, msgValue, gas, data, count } = self;
-        expect_call(
-            state,
+        Some(expect_call(
+            calls,
             callee,
             data,
             Some(msgValue),
@@ -292,15 +329,18 @@ impl Cheatcode for expectCall_5Call {
             None,
             *count,
             ExpectedCallType::Count,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectDelegateCallCall {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
+        self.apply_call_expectation(&mut state.expected_calls).unwrap()
+    }
+    fn apply_call_expectation(&self, calls: &mut ExpectedCallTracker) -> Option<Result> {
         let Self { callee, data } = self;
-        expect_call(
-            state,
+        Some(expect_call(
+            calls,
             callee,
             data,
             None,
@@ -309,15 +349,18 @@ impl Cheatcode for expectDelegateCallCall {
             Some(CallScheme::DelegateCall),
             1,
             ExpectedCallType::NonCount,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectCallMinGas_0Call {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
+        self.apply_call_expectation(&mut state.expected_calls).unwrap()
+    }
+    fn apply_call_expectation(&self, calls: &mut ExpectedCallTracker) -> Option<Result> {
         let Self { callee, msgValue, minGas, data } = self;
-        expect_call(
-            state,
+        Some(expect_call(
+            calls,
             callee,
             data,
             Some(msgValue),
@@ -326,15 +369,18 @@ impl Cheatcode for expectCallMinGas_0Call {
             None,
             1,
             ExpectedCallType::NonCount,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectCallMinGas_1Call {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
+        self.apply_call_expectation(&mut state.expected_calls).unwrap()
+    }
+    fn apply_call_expectation(&self, calls: &mut ExpectedCallTracker) -> Option<Result> {
         let Self { callee, msgValue, minGas, data, count } = self;
-        expect_call(
-            state,
+        Some(expect_call(
+            calls,
             callee,
             data,
             Some(msgValue),
@@ -343,147 +389,253 @@ impl Cheatcode for expectCallMinGas_1Call {
             None,
             *count,
             ExpectedCallType::Count,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectEmit_0Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { checkTopic1, checkTopic2, checkTopic3, checkData } = *self;
-        expect_emit(
-            ccx.state,
-            ccx.ecx.journal().depth(),
+        Some(expect_emit(
+            emits,
+            depth,
             [true, checkTopic1, checkTopic2, checkTopic3, checkData],
             None,
             false,
             1,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectEmit_1Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { checkTopic1, checkTopic2, checkTopic3, checkData, emitter } = *self;
-        expect_emit(
-            ccx.state,
-            ccx.ecx.journal().depth(),
+        Some(expect_emit(
+            emits,
+            depth,
             [true, checkTopic1, checkTopic2, checkTopic3, checkData],
             Some(emitter),
             false,
             1,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectEmit_2Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self {} = self;
-        expect_emit(ccx.state, ccx.ecx.journal().depth(), [true; 5], None, false, 1)
+        Some(expect_emit(emits, depth, [true; 5], None, false, 1))
     }
 }
 
 impl Cheatcode for expectEmit_3Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { emitter } = *self;
-        expect_emit(ccx.state, ccx.ecx.journal().depth(), [true; 5], Some(emitter), false, 1)
+        Some(expect_emit(emits, depth, [true; 5], Some(emitter), false, 1))
     }
 }
 
 impl Cheatcode for expectEmit_4Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { checkTopic1, checkTopic2, checkTopic3, checkData, count } = *self;
-        expect_emit(
-            ccx.state,
-            ccx.ecx.journal().depth(),
+        Some(expect_emit(
+            emits,
+            depth,
             [true, checkTopic1, checkTopic2, checkTopic3, checkData],
             None,
             false,
             count,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectEmit_5Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { checkTopic1, checkTopic2, checkTopic3, checkData, emitter, count } = *self;
-        expect_emit(
-            ccx.state,
-            ccx.ecx.journal().depth(),
+        Some(expect_emit(
+            emits,
+            depth,
             [true, checkTopic1, checkTopic2, checkTopic3, checkData],
             Some(emitter),
             false,
             count,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectEmit_6Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { count } = *self;
-        expect_emit(ccx.state, ccx.ecx.journal().depth(), [true; 5], None, false, count)
+        Some(expect_emit(emits, depth, [true; 5], None, false, count))
     }
 }
 
 impl Cheatcode for expectEmit_7Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { emitter, count } = *self;
-        expect_emit(ccx.state, ccx.ecx.journal().depth(), [true; 5], Some(emitter), false, count)
+        Some(expect_emit(emits, depth, [true; 5], Some(emitter), false, count))
     }
 }
 
 impl Cheatcode for expectEmitAnonymous_0Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { checkTopic0, checkTopic1, checkTopic2, checkTopic3, checkData } = *self;
-        expect_emit(
-            ccx.state,
-            ccx.ecx.journal().depth(),
+        Some(expect_emit(
+            emits,
+            depth,
             [checkTopic0, checkTopic1, checkTopic2, checkTopic3, checkData],
             None,
             true,
             1,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectEmitAnonymous_1Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { checkTopic0, checkTopic1, checkTopic2, checkTopic3, checkData, emitter } = *self;
-        expect_emit(
-            ccx.state,
-            ccx.ecx.journal().depth(),
+        Some(expect_emit(
+            emits,
+            depth,
             [checkTopic0, checkTopic1, checkTopic2, checkTopic3, checkData],
             Some(emitter),
             true,
             1,
-        )
+        ))
     }
 }
 
 impl Cheatcode for expectEmitAnonymous_2Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self {} = self;
-        expect_emit(ccx.state, ccx.ecx.journal().depth(), [true; 5], None, true, 1)
+        Some(expect_emit(emits, depth, [true; 5], None, true, 1))
     }
 }
 
 impl Cheatcode for expectEmitAnonymous_3Call {
     fn apply_stateful<FEN: FoundryEvmNetwork>(&self, ccx: &mut CheatsCtxt<'_, '_, FEN>) -> Result {
+        self.apply_emit_expectation(&mut ccx.state.expected_emits, ccx.ecx.journal().depth())
+            .unwrap()
+    }
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
         let Self { emitter } = *self;
-        expect_emit(ccx.state, ccx.ecx.journal().depth(), [true; 5], Some(emitter), true, 1)
+        Some(expect_emit(emits, depth, [true; 5], Some(emitter), true, 1))
     }
 }
 
 impl Cheatcode for expectCreateCall {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
         let Self { bytecode, deployer } = self;
-        expect_create(state, bytecode.clone(), *deployer, CreateScheme::Create)
+        expect_create(
+            &mut state.expected_creates,
+            bytecode.clone(),
+            *deployer,
+            CreateScheme::Create,
+        )
     }
 }
 
 impl Cheatcode for expectCreate2Call {
     fn apply<FEN: FoundryEvmNetwork>(&self, state: &mut Cheatcodes<FEN>) -> Result {
         let Self { bytecode, deployer } = self;
-        expect_create(state, bytecode.clone(), *deployer, CreateScheme::Create2)
+        expect_create(
+            &mut state.expected_creates,
+            bytecode.clone(),
+            *deployer,
+            CreateScheme::Create2,
+        )
     }
 }
 
@@ -529,7 +681,7 @@ fn expect_keychain_verified<FEN: FoundryEvmNetwork>(
         ISignatureVerifier::verifyKeychainCall { account, hash: digest, signature }.abi_encode()
     };
     expect_call(
-        state,
+        &mut state.expected_calls,
         &SIGNATURE_VERIFIER_ADDRESS,
         &Bytes::from(calldata),
         None,
@@ -903,8 +1055,8 @@ impl RevertParameters for ExpectedRevert {
 ///   address(0xc4f3) and selector `0xd34db33f` to be made at least once. If the amount of calls is
 ///   0, the test will fail. If the call is made more than once, the test will pass.
 #[expect(clippy::too_many_arguments)] // It is what it is
-fn expect_call<FEN: FoundryEvmNetwork>(
-    state: &mut Cheatcodes<FEN>,
+fn expect_call(
+    calls: &mut ExpectedCallTracker,
     target: &Address,
     calldata: &Bytes,
     value: Option<&U256>,
@@ -914,7 +1066,7 @@ fn expect_call<FEN: FoundryEvmNetwork>(
     count: u64,
     call_type: ExpectedCallType,
 ) -> Result {
-    let expecteds = state.expected_calls.entry(*target).or_default();
+    let expecteds = calls.entry(*target).or_default();
 
     if let Some(val) = value
         && *val > U256::ZERO
@@ -969,8 +1121,45 @@ fn expect_call<FEN: FoundryEvmNetwork>(
     Ok(Default::default())
 }
 
-fn expect_emit<FEN: FoundryEvmNetwork>(
-    state: &mut Cheatcodes<FEN>,
+/// Verifies registered calls when the root frame terminates.
+pub(crate) fn verify_calls(calls: &ExpectedCallTracker, success: bool) -> Result<()> {
+    for (address, calls) in calls {
+        for ((data, scheme), (expected, actual)) in calls {
+            let failed = match expected.call_type {
+                ExpectedCallType::Count => expected.count != *actual,
+                ExpectedCallType::NonCount => expected.count > *actual,
+            };
+            if !failed {
+                continue;
+            }
+            let values = [
+                Some(format!("data {}", alloy_primitives::hex::encode_prefixed(data))),
+                expected.value.map(|v| format!("value {v}")),
+                expected.gas.map(|v| format!("gas {v}")),
+                expected.min_gas.map(|v| format!("minimum gas {v}")),
+                scheme.map(|v| format!("call type {v:?}")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(", ");
+            let but = if success {
+                format!("was called {actual} time{}", if *actual == 1 { "" } else { "s" })
+            } else {
+                "the call reverted instead; ensure you're testing the happy path when using `expectCall`".into()
+            };
+            bail!(
+                "expected call to {address} with {values} to be called {} time{}, but {but}",
+                expected.count,
+                if expected.count == 1 { "" } else { "s" }
+            );
+        }
+    }
+    Ok(())
+}
+
+fn expect_emit(
+    emits: &mut ExpectedEmitTracker,
     depth: usize,
     checks: [bool; 5],
     address: Option<Address>,
@@ -987,13 +1176,13 @@ fn expect_emit<FEN: FoundryEvmNetwork>(
         count,
         mismatch_error: None,
     };
-    if let Some(found_emit_pos) = state.expected_emits.iter().position(|(emit, _)| emit.found) {
+    if let Some(found_emit_pos) = emits.iter().position(|(emit, _)| emit.found) {
         // The order of emits already found (back of queue) should not be modified, hence push any
         // new emit before first found emit.
-        state.expected_emits.insert(found_emit_pos, (expected_emit, Default::default()));
+        emits.insert(found_emit_pos, (expected_emit, Default::default()));
     } else {
         // If no expected emits then push new one at the back of queue.
-        state.expected_emits.push_back((expected_emit, Default::default()));
+        emits.push_back((expected_emit, Default::default()));
     }
 
     Ok(Default::default())
@@ -1002,7 +1191,24 @@ fn expect_emit<FEN: FoundryEvmNetwork>(
 pub(crate) fn handle_expect_emit<FEN: FoundryEvmNetwork>(
     state: &mut Cheatcodes<FEN>,
     log: &alloy_primitives::Log,
-    mut interpreter: Option<&mut Interpreter>,
+    interpreter: Option<&mut Interpreter>,
+) -> Option<&'static str> {
+    let error = observe_emit(&mut state.expected_emits, log)?;
+    if let Some(interpreter) = interpreter {
+        interpreter.bytecode.set_action(InterpreterAction::new_return(
+            InstructionResult::Revert,
+            Error::encode(error),
+            interpreter.gas,
+        ));
+        None
+    } else {
+        Some(error)
+    }
+}
+
+pub(crate) fn observe_emit(
+    emits: &mut ExpectedEmitTracker,
+    log: &alloy_primitives::Log,
 ) -> Option<&'static str> {
     // This function returns an optional string indicating a failure reason.
     // If the string is `Some`, it indicates that the expectation failed with the provided reason.
@@ -1018,12 +1224,12 @@ pub(crate) fn handle_expect_emit<FEN: FoundryEvmNetwork>(
     // First, we can return early if all events have been matched.
     // This allows a contract to arbitrarily emit more events than expected (additive behavior),
     // as long as all the previous events were matched in the order they were expected to be.
-    if state.expected_emits.iter().all(|(expected, _)| expected.found) {
+    if emits.iter().all(|(expected, _)| expected.found) {
         return failure_reason;
     }
 
     // Check count=0 expectations against this log - fail immediately if violated
-    for (expected_emit, _) in &state.expected_emits {
+    for (expected_emit, _) in &*emits {
         if expected_emit.count == 0
             && !expected_emit.found
             && let Some(expected_log) = &expected_emit.log
@@ -1031,50 +1237,31 @@ pub(crate) fn handle_expect_emit<FEN: FoundryEvmNetwork>(
             // Check revert address 
             && (expected_emit.address.is_none_or(|address| address == log.address))
         {
-            if let Some(interpreter) = &mut interpreter {
-                // This event was emitted but we expected it NOT to be (count=0)
-                // Fail immediately
-                interpreter.bytecode.set_action(InterpreterAction::new_return(
-                    InstructionResult::Revert,
-                    Error::encode("log emitted but expected 0 times"),
-                    interpreter.gas,
-                ));
-            } else {
-                failure_reason = Some("log emitted but expected 0 times");
-            }
+            failure_reason = Some("log emitted but expected 0 times");
 
             return failure_reason;
         }
     }
 
-    let should_fill_logs = state.expected_emits.iter().any(|(expected, _)| expected.log.is_none());
+    let should_fill_logs = emits.iter().any(|(expected, _)| expected.log.is_none());
     let index_to_fill_or_check = if should_fill_logs {
         // If there's anything to fill, we start with the last event to match in the queue
         // (without taking into account events already matched).
-        state
-            .expected_emits
-            .iter()
-            .position(|(emit, _)| emit.found)
-            .unwrap_or(state.expected_emits.len())
-            .saturating_sub(1)
+        emits.iter().position(|(emit, _)| emit.found).unwrap_or(emits.len()).saturating_sub(1)
     } else {
         // if all expected logs are filled, check any unmatched event
         // in the declared order, so we start from the front (like a queue).
         // Skip count=0 expectations as they are handled separately above
-        state.expected_emits.iter().position(|(emit, _)| !emit.found && emit.count > 0).unwrap_or(0)
+        emits.iter().position(|(emit, _)| !emit.found && emit.count > 0).unwrap_or(0)
     };
 
     // If there are only count=0 expectations left, we can return early
-    if !should_fill_logs
-        && state.expected_emits.iter().all(|(emit, _)| emit.found || emit.count == 0)
-    {
+    if !should_fill_logs && emits.iter().all(|(emit, _)| emit.found || emit.count == 0) {
         return failure_reason;
     }
 
-    let (mut event_to_fill_or_check, mut count_map) = state
-        .expected_emits
-        .remove(index_to_fill_or_check)
-        .expect("we should have an emit to fill or check");
+    let (mut event_to_fill_or_check, mut count_map) =
+        emits.remove(index_to_fill_or_check).expect("we should have an emit to fill or check");
 
     let Some(expected) = &event_to_fill_or_check.log else {
         // Unless the caller is trying to match an anonymous event, the first topic must be
@@ -1082,15 +1269,7 @@ pub(crate) fn handle_expect_emit<FEN: FoundryEvmNetwork>(
         if event_to_fill_or_check.anonymous || !log.topics().is_empty() {
             event_to_fill_or_check.log = Some(log.data.clone());
             // If we only filled the expected log then we put it back at the same position.
-            state
-                .expected_emits
-                .insert(index_to_fill_or_check, (event_to_fill_or_check, count_map));
-        } else if let Some(interpreter) = &mut interpreter {
-            interpreter.bytecode.set_action(InterpreterAction::new_return(
-                InstructionResult::Revert,
-                Error::encode("use vm.expectEmitAnonymous to match anonymous events"),
-                interpreter.gas,
-            ));
+            emits.insert(index_to_fill_or_check, (event_to_fill_or_check, count_map));
         } else {
             failure_reason = Some("use vm.expectEmitAnonymous to match anonymous events");
         }
@@ -1144,14 +1323,110 @@ pub(crate) fn handle_expect_emit<FEN: FoundryEvmNetwork>(
     // If we found the event, we can push it to the back of the queue
     // and begin expecting the next event.
     if event_to_fill_or_check.found {
-        state.expected_emits.push_back((event_to_fill_or_check, count_map));
+        emits.push_back((event_to_fill_or_check, count_map));
     } else {
         // We did not match this event, so we need to keep waiting for the right one to
         // appear.
-        state.expected_emits.push_front((event_to_fill_or_check, count_map));
+        emits.push_front((event_to_fill_or_check, count_map));
     }
 
     failure_reason
+}
+
+/// Checks event counts and matching at the registration depth. True clears the queue.
+pub(crate) fn verify_emits<'a>(
+    emits: &ExpectedEmitTracker,
+    depth: usize,
+    is_static: bool,
+    success: bool,
+    identifier: impl FnOnce() -> Option<&'a foundry_evm_traces::identifier::SignaturesIdentifier>,
+) -> std::result::Result<bool, Bytes> {
+    let should_check_emits = emits
+            .iter()
+            .any(|(expected, _)| {
+                let curr_depth = depth;
+                expected.depth == curr_depth
+            }) &&
+            // Ignore staticcalls
+            !is_static;
+    if should_check_emits {
+        let expected_counts = emits
+            .iter()
+            .filter_map(|(expected, count_map)| {
+                let count = match expected.address {
+                    Some(emitter) => match count_map.get(&emitter) {
+                        Some(log_count) => expected
+                            .log
+                            .as_ref()
+                            .map(|l| log_count.count(l))
+                            .unwrap_or_else(|| log_count.count_unchecked()),
+                        None => 0,
+                    },
+                    None => match &expected.log {
+                        Some(log) => count_map.values().map(|logs| logs.count(log)).sum(),
+                        None => count_map.values().map(|logs| logs.count_unchecked()).sum(),
+                    },
+                };
+
+                (count != expected.count).then_some((expected, count))
+            })
+            .collect::<Vec<_>>();
+
+        // Revert if not all emits expected were matched.
+        if let Some((expected, _)) =
+            emits.iter().find(|(expected, _)| !expected.found && expected.count > 0)
+        {
+            let mismatch_error = expected.mismatch_error.clone();
+            let expected_log = expected.log.clone();
+            let checks = expected.checks;
+            let anonymous = expected.anonymous;
+            let error_msg = mismatch_error
+                .as_ref()
+                .map(|mismatch| {
+                    mismatch.to_error_msg(identifier(), checks, expected_log.as_ref(), anonymous)
+                })
+                .unwrap_or_else(|| "log != expected log".to_string());
+            return Err(error_msg.abi_encode().into());
+        }
+
+        if !expected_counts.is_empty() {
+            let msg = if success {
+                let (expected, count) = expected_counts.first().unwrap();
+                format!("log emitted {count} times, expected {}", expected.count)
+            } else {
+                "expected an emit, but the call reverted instead. \
+                     ensure you're testing the happy path when using `expectEmit`"
+                    .to_string()
+            };
+
+            return Err(Error::encode(msg));
+        }
+
+        // All emits were found, we're good.
+        // Clear the queue, as we expect the user to declare more events for the next call
+        // if they wanna match further events.
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+/// Checks event expectations remaining when the root call completes.
+pub(crate) fn verify_root_emits(emits: &mut ExpectedEmitTracker, success: bool) -> Result<()> {
+    for (expected, _) in emits.iter_mut() {
+        if expected.count == 0 && !expected.found {
+            expected.found = true;
+        }
+    }
+    emits.retain(|(expected, _)| !expected.found);
+    if !emits.is_empty() {
+        bail!(if success {
+            "expected an emit, but no logs were emitted afterwards. you might have mismatched events or not enough events were emitted"
+        } else {
+            "expected an emit, but the call reverted instead. ensure you're testing the happy path when using `expectEmit`"
+        });
+    }
+    Ok(())
 }
 
 /// Handles expected emits specified by the `expectEmit` cheatcodes.
@@ -1217,16 +1492,45 @@ impl LogCountMap {
     }
 }
 
-fn expect_create<FEN: FoundryEvmNetwork>(
-    state: &mut Cheatcodes<FEN>,
+pub(crate) fn expect_create(
+    creates: &mut Vec<ExpectedCreate>,
     bytecode: Bytes,
     deployer: Address,
     create_scheme: CreateScheme,
 ) -> Result {
     let expected_create = ExpectedCreate { bytecode, deployer, create_scheme };
-    state.expected_creates.push(expected_create);
+    creates.push(expected_create);
 
     Ok(Default::default())
+}
+
+/// Reports the first unmatched creation at root completion.
+pub(crate) fn verify_creates(creates: &[ExpectedCreate]) -> Result<()> {
+    if let Some(expected) = creates.first() {
+        bail!(
+            "expected {} call by address {} for bytecode {} but not found",
+            expected.create_scheme,
+            hex::encode_prefixed(expected.deployer),
+            hex::encode_prefixed(&expected.bytecode)
+        );
+    }
+    Ok(())
+}
+
+/// Consumes one matching creation, preserving the reference swap-remove ordering.
+pub(crate) fn match_create(
+    creates: &mut Vec<ExpectedCreate>,
+    deployer: Address,
+    scheme: CreateScheme,
+    bytecode: &[u8],
+) {
+    if let Some(index) = creates.iter().position(|expected| {
+        expected.deployer == deployer
+            && expected.create_scheme.eq(scheme.clone())
+            && expected.bytecode.as_ref() == bytecode
+    }) {
+        creates.swap_remove(index);
+    }
 }
 
 fn expect_revert(

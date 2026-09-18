@@ -1,7 +1,7 @@
 //! Implementations of [`Toml`](spec::Group::Toml) cheatcodes.
 
 use crate::{
-    Cheatcode, Cheatcodes, Result,
+    Cheatcode, Cheatcodes, Result, StatelessCheatcode,
     Vm::*,
     json::{
         check_json_key_exists, parse_json, parse_json_coerce, parse_json_coerce_default,
@@ -16,8 +16,8 @@ use foundry_evm_core::evm::FoundryEvmNetwork;
 use serde_json::Value as JsonValue;
 use toml::Value as TomlValue;
 
-impl Cheatcode for keyExistsTomlCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for keyExistsTomlCall {
+    fn apply(&self) -> Result {
         let Self { toml, key } = self;
         check_json_key_exists(&toml_to_json_string(toml)?, key)
     }
@@ -47,15 +47,15 @@ impl Cheatcode for parseToml_1Call {
 
 macro_rules! impl_parse_toml {
     ($call:ident, $call_with_default:ident, $ty:expr) => {
-        impl Cheatcode for $call {
-            fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+        impl StatelessCheatcode for $call {
+            fn apply(&self) -> Result {
                 let Self { toml, key } = self;
                 parse_toml_coerce(toml, key, &$ty)
             }
         }
 
-        impl Cheatcode for $call_with_default {
-            fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+        impl StatelessCheatcode for $call_with_default {
+            fn apply(&self) -> Result {
                 let Self { toml, key, defaultValue } = self;
                 parse_toml_coerce_default(toml, key, &$ty, defaultValue)
             }
@@ -147,8 +147,8 @@ impl Cheatcode for parseTomlTypeArrayCall {
     }
 }
 
-impl Cheatcode for parseTomlKeysCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for parseTomlKeysCall {
+    fn apply(&self) -> Result {
         let Self { toml, key } = self;
         parse_toml_keys(toml, key)
     }

@@ -1,6 +1,6 @@
 //! Implementations of [`Json`](spec::Group::Json) cheatcodes.
 
-use crate::{Cheatcode, Cheatcodes, Result, Vm::*, string};
+use crate::{Cheatcode, Cheatcodes, Result, StatelessCheatcode, Vm::*, string};
 use alloy_dyn_abi::{DynSolType, DynSolValue, Resolver, eip712_parser::EncodeType};
 use alloy_primitives::{Address, B256, I256, U256, hex};
 use alloy_sol_types::SolValue;
@@ -13,15 +13,15 @@ use std::{
     collections::{BTreeMap, BTreeSet},
 };
 
-impl Cheatcode for keyExistsCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for keyExistsCall {
+    fn apply(&self) -> Result {
         let Self { json, key } = self;
         check_json_key_exists(json, key)
     }
 }
 
-impl Cheatcode for keyExistsJsonCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for keyExistsJsonCall {
+    fn apply(&self) -> Result {
         let Self { json, key } = self;
         check_json_key_exists(json, key)
     }
@@ -43,15 +43,15 @@ impl Cheatcode for parseJson_1Call {
 
 macro_rules! impl_parse_json {
     ($call:ident, $call_with_default:ident, $ty:expr) => {
-        impl Cheatcode for $call {
-            fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+        impl StatelessCheatcode for $call {
+            fn apply(&self) -> Result {
                 let Self { json, key } = self;
                 parse_json_coerce(json, key, &$ty)
             }
         }
 
-        impl Cheatcode for $call_with_default {
-            fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+        impl StatelessCheatcode for $call_with_default {
+            fn apply(&self) -> Result {
                 let Self { json, key, defaultValue } = self;
                 parse_json_coerce_default(json, key, &$ty, defaultValue)
             }
@@ -90,8 +90,8 @@ impl_parse_json!(
     DynSolType::Array(Box::new(DynSolType::String))
 );
 
-impl Cheatcode for parseJsonArrayLengthCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for parseJsonArrayLengthCall {
+    fn apply(&self) -> Result {
         let Self { json, key } = self;
         parse_json_array_length(json, key)
     }
@@ -134,8 +134,8 @@ impl Cheatcode for parseJsonTypeArrayCall {
     }
 }
 
-impl Cheatcode for parseJsonKeysCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for parseJsonKeysCall {
+    fn apply(&self) -> Result {
         let Self { json, key } = self;
         parse_json_keys(json, key)
     }

@@ -1,6 +1,6 @@
 //! Implementations of [`Crypto`](spec::Group::Crypto) Cheatcodes.
 
-use crate::{Cheatcode, Cheatcodes, Result, Vm::*};
+use crate::{Cheatcode, Cheatcodes, Result, StatelessCheatcode, Vm::*};
 use alloy_primitives::{Address, B256, U256, keccak256};
 use alloy_signer::{Signer, SignerSync};
 use alloy_signer_local::{
@@ -59,16 +59,16 @@ impl Cheatcode for createWallet_2Call {
     }
 }
 
-impl Cheatcode for sign_0Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for sign_0Call {
+    fn apply(&self) -> Result {
         let Self { wallet, digest } = self;
         let sig = sign(&wallet.privateKey, digest)?;
         Ok(encode_full_sig(sig))
     }
 }
 
-impl Cheatcode for signWithNonceUnsafeCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for signWithNonceUnsafeCall {
+    fn apply(&self) -> Result {
         let pk: U256 = self.privateKey;
         let digest: B256 = self.digest;
         let nonce: U256 = self.nonce;
@@ -91,37 +91,37 @@ impl Cheatcode for signKeychainAdminCall {
     }
 }
 
-impl Cheatcode for signCompact_0Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for signCompact_0Call {
+    fn apply(&self) -> Result {
         let Self { wallet, digest } = self;
         let sig = sign(&wallet.privateKey, digest)?;
         Ok(encode_compact_sig(sig))
     }
 }
 
-impl Cheatcode for deriveKey_0Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for deriveKey_0Call {
+    fn apply(&self) -> Result {
         let Self { mnemonic, index } = self;
         derive_key::<English>(mnemonic, DEFAULT_DERIVATION_PATH_PREFIX, *index)
     }
 }
 
-impl Cheatcode for deriveKey_1Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for deriveKey_1Call {
+    fn apply(&self) -> Result {
         let Self { mnemonic, derivationPath, index } = self;
         derive_key::<English>(mnemonic, derivationPath, *index)
     }
 }
 
-impl Cheatcode for deriveKey_2Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for deriveKey_2Call {
+    fn apply(&self) -> Result {
         let Self { mnemonic, index, language } = self;
         derive_key_str(mnemonic, DEFAULT_DERIVATION_PATH_PREFIX, *index, language)
     }
 }
 
-impl Cheatcode for deriveKey_3Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for deriveKey_3Call {
+    fn apply(&self) -> Result {
         let Self { mnemonic, derivationPath, index, language } = self;
         derive_key_str(mnemonic, derivationPath, *index, language)
     }
@@ -221,15 +221,15 @@ impl Cheatcode for signCompact_3Call {
     }
 }
 
-impl Cheatcode for signP256Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for signP256Call {
+    fn apply(&self) -> Result {
         let Self { privateKey, digest } = self;
         sign_p256(privateKey, digest)
     }
 }
 
-impl Cheatcode for publicKeyP256Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for publicKeyP256Call {
+    fn apply(&self) -> Result {
         let Self { privateKey } = self;
         let pub_key =
             parse_private_key_p256(privateKey)?.verifying_key().as_affine().to_encoded_point(false);
@@ -240,24 +240,24 @@ impl Cheatcode for publicKeyP256Call {
     }
 }
 
-impl Cheatcode for ecAffineToProjectiveCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for ecAffineToProjectiveCall {
+    fn apply(&self) -> Result {
         let Self { pointX, pointY } = self;
         let point = parse_affine_point(pointX, pointY, "point")?;
         encode_projective_point(ProjectivePoint::from(point))
     }
 }
 
-impl Cheatcode for ecProjectiveToAffineCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for ecProjectiveToAffineCall {
+    fn apply(&self) -> Result {
         let Self { pointX, pointY, pointZ } = self;
         let point = parse_projective_point(pointX, pointY, pointZ, "point")?;
         encode_affine_point(point)
     }
 }
 
-impl Cheatcode for ecAddAffineCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for ecAddAffineCall {
+    fn apply(&self) -> Result {
         let Self { pointX1, pointY1, pointX2, pointY2 } = self;
         let lhs = parse_affine_point(pointX1, pointY1, "first point")?;
         let rhs = parse_affine_point(pointX2, pointY2, "second point")?;
@@ -265,8 +265,8 @@ impl Cheatcode for ecAddAffineCall {
     }
 }
 
-impl Cheatcode for ecAddProjectiveCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for ecAddProjectiveCall {
+    fn apply(&self) -> Result {
         let Self { pointX1, pointY1, pointZ1, pointX2, pointY2, pointZ2 } = self;
         let lhs = parse_projective_point(pointX1, pointY1, pointZ1, "first point")?;
         let rhs = parse_projective_point(pointX2, pointY2, pointZ2, "second point")?;
@@ -274,8 +274,8 @@ impl Cheatcode for ecAddProjectiveCall {
     }
 }
 
-impl Cheatcode for ecMulAffineCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for ecMulAffineCall {
+    fn apply(&self) -> Result {
         let Self { pointX, pointY, scalar } = self;
         let point = parse_affine_point(pointX, pointY, "point")?;
         let scalar = reduce_ec_scalar(scalar);
@@ -283,8 +283,8 @@ impl Cheatcode for ecMulAffineCall {
     }
 }
 
-impl Cheatcode for ecMulProjectiveCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for ecMulProjectiveCall {
+    fn apply(&self) -> Result {
         let Self { pointX, pointY, pointZ, scalar } = self;
         let point = parse_projective_point(pointX, pointY, pointZ, "point")?;
         let scalar = reduce_ec_scalar(scalar);
@@ -292,29 +292,29 @@ impl Cheatcode for ecMulProjectiveCall {
     }
 }
 
-impl Cheatcode for createEd25519KeyCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for createEd25519KeyCall {
+    fn apply(&self) -> Result {
         let Self { salt } = self;
         create_ed25519_key(salt)
     }
 }
 
-impl Cheatcode for publicKeyEd25519Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for publicKeyEd25519Call {
+    fn apply(&self) -> Result {
         let Self { privateKey } = self;
         public_key_ed25519(privateKey)
     }
 }
 
-impl Cheatcode for signEd25519Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for signEd25519Call {
+    fn apply(&self) -> Result {
         let Self { namespace, message, privateKey } = self;
         sign_ed25519(namespace, message, privateKey)
     }
 }
 
-impl Cheatcode for verifyEd25519Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for verifyEd25519Call {
+    fn apply(&self) -> Result {
         let Self { signature, namespace, message, publicKey } = self;
         verify_ed25519(signature, namespace, message, publicKey)
     }

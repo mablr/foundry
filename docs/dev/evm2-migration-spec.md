@@ -833,26 +833,38 @@ are shared. The existing backend/result/session boundary is retained temporarily
 | Setup environment/storage/code → test | Warp, coinbase, fee, prevrandao, block/chain getters, load/store, etch, getNonce; setup mutations persist and tests begin independently. | Roll only before Prague; EIP-2935 history updates and etching the history-storage address are unsupported. Live cfg/tx mutation is not ported. |
 | Child state mutation → revert | Storage/code return to prior values; timestamp changes survive. Malformed etch preserves code; precompile writes return catchable errors. | This does not prove all warmth/refund/state-gas transitions. |
 | Assertion → failure reporting | Revert-mode assertions reuse predicates/formatters. Legacy mode emits a diagnostic and writes `GLOBAL_FAIL_SLOT`. | All overloads/fuzz cases are not certified; nested legacy rollback and snapshot sticky failure evidence remain open. |
-| Expected CALL/CREATE/CREATE2 failure → parent resumes | All 17 revert-expectation registration overloads share registration. Native callbacks handle counts, depth/reverter tracking, cheatcode suppression and shared matching/error formatting after native settlement. | This is not `expectCall`/`expectEmit`/`expectCreate` support. Failure paths without captured raw gas remain unsupported. |
+| Expected CALL/CREATE/CREATE2 failure → parent resumes | All 17 revert-expectation registration overloads share registration. Native callbacks handle counts, depth/reverter tracking, cheatcode suppression and shared matching/error formatting after native settlement. | This is distinct from call/event/creation expectations. Failure paths without captured raw gas remain unsupported. |
 | Expected failure → gas accounting | `step_end` retains terminal failed-frame gas/depth for the following end callback. Restores unused exceptional gas and failure refunds when rewriting the result. | E2-08: precompile and CREATE preparation/code-deposit failures need further coverage/API assessment. No Amsterdam acceptance. |
 | Console call → diagnostics | Existing Hardhat decoder/collector, including live-log mode, is wired into native callbacks. | Full observer/debugger/trace parity remains M4 work. |
 | Prank registration → child → cleanup | Sender-only and `(address,bool)` delegate overloads, stopPrank/readCallers; skip cheatcode/console application; clean up before expected-revert rewriting; persist configuration through setup. CREATE destinations are recomputed for the new caller. | Origin-changing overloads fail explicitly (E2-07). Not every prank edge case/hardfork is certified. |
 | Descendant deal/nonce override → revert | Reference-only obligation: overridden balance/nonce 99/8 survive child revert rather than returning to 11/7. | Native calls are rejected pending the controlled override policy, E2-06. |
+| Call registration → invocation → root completion | Shared registration/verification for all nine call/delegate/min-gas expectation overloads; match before prank/mock handling. Count, prefix, value/stipend and gas checks; earlier root revert preserved. | EIP-7702 delegated identities are guarded (E2-09). Full scheme/overload cross-product remains unverified. |
+| Mock registration → intercepted execution | Return/revert, calldata/value priority, response queues, code injection, clear and setup persistence. Native checkpointed value transfer; failed transfer preserves queue; enclosing revert rolls back injected code but retains mock registration. | `mockFunction` is not ported. Synthetic recipient overflow is guarded (E2-10); Amsterdam state gas is not accepted. |
+| recordLogs → emit/revert → getRecordedLogs | Retains reverted-frame logs; retrieval drains and continues recording. | JSON log retrieval and broader observers remain unported. |
+| Creation registration → settled code → root verification | Native CREATE/CREATE2 registration, shared matching/diagnostics and constructor-entry identity tracking. | Deposit/halt/early-failure matrix and setup/other-inspector interactions remain open. Counted/nested reverter identity is now covered by focused reference-matching probes. |
+| Event registration → log → frame/root verification | All 12 overloads share matching and verification; native LOG failures stop before settlement and preserve payloads for expectations. | Non-opcode logs, combined inspector/configuration lifetimes and full hardfork matrix remain open. |
+| Stateless argument → result | 114 existing string/base64/version/crypto/utility/typed-parser overloads share a context-free implementation through `StatelessCheatcode`. | Dispatch is implemented; complete overload and error-path acceptance remains open. |
 | Unmigrated cheatcode → caught Solidity revert | Native executor still fails the test explicitly. | No fallback or silent omission of behavior. |
 
 ### Evidence and reproduction
 
-All differential results below use preserved REVM, Solc 0.8.35, Cancun,
-`--no-isolate` and the checked-in optimizer configuration.
+Differential results below use preserved REVM, Solc 0.8.35, `--no-isolate` and
+the checked-in optimizer configuration. Positive gas comparisons use Cancun;
+the delegated-identity obligation explicitly uses Prague.
 
 | Fixture | Result and assertions |
 | --- | --- |
 | [Cheatcodes.t.sol](../../crates/forge/tests/fixtures/evm2/Cheatcodes.t.sol) | 9 positive tests match reported gas: setup/independence, storage/code rollback, environment, assertions, malformed code and precompile writes. One legacy assertion matches failure diagnostic/gas. |
 | [Expectations.t.sol](../../crates/forge/tests/fixtures/evm2/Expectations.t.sol) | 11 positive tests match gas: any/string/partial/address/count matching, cheatcode errors, console interposition, CREATE/CREATE2, INVALID and storage-clear/refund rollback. Four intentional failures match reasons/gas: wrong reason, dangling expectation, missing count and successful unexpected call. |
 | [Pranks.t.sol](../../crates/forge/tests/fixtures/evm2/Pranks.t.sol) | 11 positive tests match gas: one-shot/persistent/nested, revert cleanup, CREATE/CREATE2 identity/nonce, delegate context, EOA rejection, overwrite rejection, introspection and setup persistence. A caught origin override intentionally fails the native host gate. |
+| [Calls.t.sol](../../crates/forge/tests/fixtures/evm2/Calls.t.sol) | 16 positive Cancun cases match reported gas: call matching/count/gas/value, mocks/queue/rollback/setup and log recording. Three intentional call-expectation failures match reasons/gas. A Prague delegated-identity probe passes on REVM and intentionally fails the native guard. |
+| [Stateless.t.sol](../../crates/forge/tests/fixtures/evm2/Stateless.t.sol) | Six positive cases match reported gas, including malformed arguments and exact unknown-selector error encoding. Separately, 41 unchanged deterministic helper cases match reference gas; reproduction in fixture README. |
+| [Parsers.t.sol](../../crates/forge/tests/fixtures/evm2/Parsers.t.sol) | 17 cases match reported gas; scalar/array typed parsers and defaults exercise all 62 newly routed overloads. CLI also checks setup-time deprecation warning. Stateful/schema/write helpers remain unported. |
+| [Creates.t.sol](../../crates/forge/tests/fixtures/evm2/Creates.t.sol) | Eight positive creation cases match reference gas: CREATE/CREATE2, nesting/order, duplicates, prank deployer, enclosing rollback, failed-constructor identity and counted/nested revert identities. Four creation-matching failures plus one wrong-second-reverter failure match diagnostics/gas: missing, wrong scheme, collision, original revert and reverter mismatch. |
+| [Emits.t.sol](../../crates/forge/tests/fixtures/evm2/Emits.t.sol) | Eight positive cases and six failures match reference gas/diagnostics. Includes immediate rollback versus caught end-mismatch settled state, all overloads and event decoding. Separately, 22 unchanged deterministic ExpectEmit cases match gas; two fuzz tests explicitly excluded. |
 | [AccountMutation.t.sol](../../crates/forge/tests/fixtures/evm2/AccountMutation.t.sol) | Reference-only passing obligation; not a passing native acceptance test. Retained to specify E2-06. |
 
-Current checks: **11 native CLI regressions and 3 executor unit tests pass**;
+Current checks: **25 native CLI regressions, 3 executor unit tests and the mock-overflow guard test pass**;
 nightly formatting and strict all-feature/all-target workspace Clippy pass.
 [Fixture README](../../crates/forge/tests/fixtures/evm2/README.md) owns commands and
 expected exits. Counts overlap with the Solidity cases; do not add them as independent
@@ -865,9 +877,20 @@ fuzz assertions are unsupported. The expectation helper itself is now migrated.
 
 ### Remaining M2 work
 
-Origin-changing pranks; call/emit/create expectations; mocks; recordings/storage hooks;
+The [static inventory and acceptance checklist](evm2-m2/README.md) assign all 609 ABI
+overloads (564 to M2), enumerate 68 inspector state fields, and define the finite
+capability families plus non-ABI lifecycle gates. Route presence is not acceptance.
+
+Origin-changing pranks; remaining emit/create lifecycle combinations; mockFunction; storage/access recordings and hooks;
 gas controls/snapshots; remaining state/environment and utility calls; callback and
-cancellation lifecycle coverage. [E2-06–08](evm2-upstream-requirements.md#native-cheatcode-follow-up-assessment)
+cancellation lifecycle coverage. [E2-06–10](evm2-upstream-requirements.md#native-cheatcode-follow-up-assessment)
 record engine-facing requirements separately from ordinary Foundry porting work.
 M3 additionally needs setup/test snapshot lifetime, backing-state and companion-state
 coordination; the separate engine patch rejects cross-transaction restoration.
+
+Function-mock checkpoint: `MockFunctions.t.sol` passes eight cases with matching
+REVM reported gas; nine unchanged `MockFunction.t.sol` cases also match (isolated
+Cancun/optimizer project, Solc 0.8.35, `--no-isolate`). Exact calldata precedes the
+four-byte selector; redirection precedes expectations/pranks/response mocks and
+preserves destination storage. Registrations survive setup and child revert;
+clearMockedCalls leaves them intact. E2-09 delegated identity remains guarded.

@@ -205,6 +205,8 @@ consensus bugs or proof that engine changes are the only implementation option**
 | E2-06 | Controlled account overrides with Foundry's rollback policy, distinct from ordinary journaled balance/nonce writes. | The retained `AccountMutation.t.sol` probe passes on preserved REVM: parent sets balance/nonce to 11/7, child overrides to 99/8 then reverts, parent still reads 99/8. Native journaled setters would undo the overrides. Decide an explicit override API or adapter policy; test ancestor rollback, prior ordinary writes, top-level failure, deal cleanup and snapshots before enabling. |
 | E2-07 | Callback-time changes to selected configuration/transaction fields, visible to continued execution with defined persistence. | Source assessment: chainId mutates Foundry cfg and txGasPrice mutates live tx state; native version/config mutation is guarded during execution and transaction context is borrowed. Block replacement already works for the implemented subset. Assess a narrow supported mutation surface; runtime parity for cfg/tx overrides has not been demonstrated. |
 | E2-08 | Preserve access to pre-settlement gas when an inspector rewrites failure to success. | Terminal interpreter counters are captured in Foundry for tested cases. Failures before interpreter entry have no such capture; assess a raw outcome or supported settlement/rewrite hook. See the detailed boundary below. |
+| E2-09 | Preserve the original call operand separately from storage context and EIP-7702-resolved code identity. | Prague reference probe matches an expectation on the delegated-call operand. Native message loses that operand for DELEGATECALL/CALLCODE; guarded pending an identity-preserving hook/adapter. |
+| E2-10 | Checked transfer behavior for synthetic balances, including recipient overflow. | Native `State::transfer` saturates recipient addition; REVM reports `OverflowPayment`. Mock path rejects before mutation. Assess checked adapter logic before requesting an engine API change. |
 
 E2-06 evidence is a Cancun REVM run, not native acceptance. In particular, it does
 not justify making all account mutations irreversible: store/etch have tested normal
@@ -270,3 +272,76 @@ For E2-06, `AccountHandle::get_or_insert` is not an unjournaled escape hatch: it
 The controlled override policy remains unresolved. E2-08 also remains open for
 failures without captured interpreter counters; the prank port introduces no new
 requirement to change snapshot APIs E2-01 through E2-05.
+
+
+### E2-09: original operand lost during EIP-7702 resolution
+
+At `2c8b67f`, `interpreter/instructions/system.rs::load_acc_and_calc_gas` resolves
+EIP-7702 code and returns `resolved_code_address`. `prepare_call` constructs the
+message with that address. For DELEGATECALL/CALLCODE, `destination` is the parent's
+storage context, so neither field retains the original `to` operand. In contrast,
+Foundry's inspector matches expectations/mocks using REVM `CallInputs.bytecode_address`.
+
+`Calls.t.sol::DelegatedCallIdentityTest::testDelegatedOperandIdentity` etches a
+designation on authority A pointing to implementation B, registers
+`expectDelegateCall(A, data)`, and delegatecalls A. It passes on preserved REVM
+at Prague. Native Foundry explicitly fails with a delegated-identity capability
+error; the regression locks down this guard, not native parity.
+
+Reproduce using either binary with `test --root crates/forge/tests/fixtures/evm2
+--use 0.8.35 --no-isolate --evm-version prague --match-contract
+'^DelegatedCallIdentityTest$'`. Inspected source, reference result and native guard
+are the evidence; this is not a consensus-execution bug. For ordinary CALL/STATICCALL,
+`destination` can recover the operand; the general hook still needs all three
+identities. Request/assess an original-target field or earlier hook; avoid reconstructing
+it from already-consumed parent stack operands. Include CALL, STATICCALL, DELEGATECALL,
+CALLCODE, prank interaction and delegated precompile targets in acceptance tests.
+
+### E2-10: recipient balance overflow in synthetic transfers
+
+At the same pin, `evm/state/mod.rs::State::transfer` subtracts the sender balance
+then uses `saturating_add` for the recipient. REVM's `JournalInner::transfer_loaded`
+uses checked addition and returns `TransferError::OverflowPayment`. The native stop
+enum contains `OverflowPayment`, but the state helper returns only a success boolean
+(or database error). Do not infer matching rollback semantics from similar signatures.
+
+Such balances are unreachable with Ethereum's real supply but relevant to unrestricted
+Foundry account overrides. The native mock adapter rejects overflow before transfer;
+`native::tests::overflowing_mock_transfer_is_rejected_before_mutation` asserts both
+balances and queue length are unchanged. This proves the adapter guard, not a complete
+differential overflow contract. A source-level semantic mismatch is established;
+reference post-error warmth/touch/rollback and ancestor behavior still need probes.
+Checked adapter code may suffice: this is not yet a mandatory upstream patch request.
+
+### Boundaries resolved by the call/mock adapter
+
+Ordinary call expectations need no new API: match before prank/mock interception and
+verify counts at root completion, preserving earlier revert diagnostics. Mock overrides
+skip engine execution, so the adapter performs native checkpointed value transfer and
+reverts it on mocked failure; unsuccessful transfer does not consume the response queue.
+Mocked outcomes already carry their original gas and can satisfy expectRevert without
+an interpreter. E2-08 remains open for other uncaptured failure paths. Log recording
+retains diagnostics through enclosing rollback without changing journal logs.
+
+### Creation-expectation adapter assessment
+
+The pinned engine clears `MessageResult.created_address` on constructor failure
+(`Evm::finish_create`). Reference Foundry can match an empty-code creation after a
+constructor revert, but not after a pre-frame CREATE2 collision. The native adapter
+now tracks constructor entry by depth and uses `Message.destination` for an entered
+failed constructor; this does not require a new engine API. `Creates.t.sol` contains
+the constructor-revert obligation and collision negative probe. Code-deposit/halt
+and other early-rejection combinations remain to be validated. Do not infer their
+acceptance from the successful-address field or turn this solved identity slice
+into an upstream blocker. E2-08 raw-gas requirements remain independent.
+
+### Event-expectation adapter assessment
+
+The native log hook has no interpreter argument. For opcode LOG0–LOG4, the adapter
+identifies the emitting depth during step, records an immediate matching error at
+log, stops the frame with Revert during step_end and supplies the error bytes at
+frame end. This preserves native rollback and raw gas without adding an engine API.
+`Emits.t.sol` checks caught count-zero rollback and expected-revert handling. A
+separate caught end-mismatch probe confirms reference behavior retains already
+settled child state. Non-opcode/system/precompile logging is not certified by these
+probes; the reference log-only callback also cannot immediately stop an interpreter.

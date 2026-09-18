@@ -13,8 +13,8 @@ use crate::{
     test::{
         assume::AssumeNoRevert,
         expect::{
-            self, ExpectedCallData, ExpectedCallTracker, ExpectedCallType, ExpectedCreate,
-            ExpectedEmitTracker, ExpectedRevert, ExpectedRevertKind,
+            self, ExpectedCallTracker, ExpectedCreate, ExpectedEmitTracker, ExpectedRevert,
+            ExpectedRevertKind,
         },
         revert_handlers,
     },
@@ -28,7 +28,7 @@ use alloy_primitives::{
 };
 use alloy_rpc_types::AccessList;
 use alloy_signer_local::PrivateKeySigner;
-use alloy_sol_types::{SolCall, SolInterface, SolValue};
+use alloy_sol_types::SolCall;
 use foundry_common::{
     FoundryTransactionBuilder, SELECTOR_LEN, TransactionMaybeSigned,
     mapping_slots::{
@@ -1286,17 +1286,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
         executor: &mut dyn CheatcodesExecutor<FEN>,
     ) -> Result {
         // decode the cheatcode call
-        let decoded = Vm::VmCalls::abi_decode(&call.input.bytes(ecx)).map_err(|e| {
-            if let alloy_sol_types::Error::UnknownSelector { name: _, selector } = e {
-                let msg = format!(
-                    "unknown cheatcode with selector {selector}; \
-                     you may have a mismatch between the `Vm` interface (likely in `forge-std`) \
-                     and the `forge` version"
-                );
-                return alloy_sol_types::Error::Other(std::borrow::Cow::Owned(msg));
-            }
-            e
-        })?;
+        let decoded = crate::decode_cheatcode(&call.input.bytes(ecx))?;
 
         let caller = call.caller;
 
@@ -2691,79 +2681,20 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcode
         // events will not be matched)
 
         // First, check that we're at the call depth where the emits were declared from.
-        let should_check_emits = self
-            .expected_emits
-            .iter()
-            .any(|(expected, _)| {
-                let curr_depth = ecx.journal().depth();
-                expected.depth == curr_depth
-            }) &&
-            // Ignore staticcalls
-            !call.is_static;
-        if should_check_emits {
-            let expected_counts = self
-                .expected_emits
-                .iter()
-                .filter_map(|(expected, count_map)| {
-                    let count = match expected.address {
-                        Some(emitter) => match count_map.get(&emitter) {
-                            Some(log_count) => expected
-                                .log
-                                .as_ref()
-                                .map(|l| log_count.count(l))
-                                .unwrap_or_else(|| log_count.count_unchecked()),
-                            None => 0,
-                        },
-                        None => match &expected.log {
-                            Some(log) => count_map.values().map(|logs| logs.count(log)).sum(),
-                            None => count_map.values().map(|logs| logs.count_unchecked()).sum(),
-                        },
-                    };
-
-                    (count != expected.count).then_some((expected, count))
-                })
-                .collect::<Vec<_>>();
-
-            // Revert if not all emits expected were matched.
-            if let Some((expected, _)) = self
-                .expected_emits
-                .iter()
-                .find(|(expected, _)| !expected.found && expected.count > 0)
-            {
+        match expect::verify_emits(
+            &self.expected_emits,
+            ecx.journal().depth(),
+            call.is_static,
+            outcome.result.is_ok(),
+            || self.signatures_identifier(),
+        ) {
+            Ok(true) => self.expected_emits.clear(),
+            Ok(false) => {}
+            Err(output) => {
                 outcome.result.result = InstructionResult::Revert;
-                let mismatch_error = expected.mismatch_error.clone();
-                let expected_log = expected.log.clone();
-                let checks = expected.checks;
-                let anonymous = expected.anonymous;
-                let error_msg = mismatch_error
-                    .as_ref()
-                    .map(|mismatch| {
-                        mismatch.to_error_msg(self, checks, expected_log.as_ref(), anonymous)
-                    })
-                    .unwrap_or_else(|| "log != expected log".to_string());
-                outcome.result.output = error_msg.abi_encode().into();
+                outcome.result.output = output;
                 return;
             }
-
-            if !expected_counts.is_empty() {
-                let msg = if outcome.result.is_ok() {
-                    let (expected, count) = expected_counts.first().unwrap();
-                    format!("log emitted {count} times, expected {}", expected.count)
-                } else {
-                    "expected an emit, but the call reverted instead. \
-                     ensure you're testing the happy path when using `expectEmit`"
-                        .to_string()
-                };
-
-                outcome.result.result = InstructionResult::Revert;
-                outcome.result.output = Error::encode(msg);
-                return;
-            }
-
-            // All emits were found, we're good.
-            // Clear the queue, as we expect the user to declare more events for the next call
-            // if they wanna match further events.
-            self.expected_emits.clear()
         }
 
         // try to diagnose reverts in multi-fork mode where a call is made to an address that does
@@ -2792,89 +2723,24 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcode
             // If there's not a revert, we can continue on to run the last logic for expect*
             // cheatcodes.
 
-            // Match expected calls
-            for (address, calldatas) in &self.expected_calls {
-                // Loop over each address, and for each address, loop over each calldata it expects.
-                for ((calldata, scheme), (expected, actual_count)) in calldatas {
-                    // Grab the values we expect to see
-                    let ExpectedCallData { gas, min_gas, value, count, call_type } = expected;
-
-                    let failed = match call_type {
-                        // If the cheatcode was called with a `count` argument,
-                        // we must check that the EVM performed a CALL with this calldata exactly
-                        // `count` times.
-                        ExpectedCallType::Count => *count != *actual_count,
-                        // If the cheatcode was called without a `count` argument,
-                        // we must check that the EVM performed a CALL with this calldata at least
-                        // `count` times. The amount of times to check was
-                        // the amount of time the cheatcode was called.
-                        ExpectedCallType::NonCount => *count > *actual_count,
-                    };
-                    if failed {
-                        let expected_values = [
-                            Some(format!("data {}", hex::encode_prefixed(calldata))),
-                            value.as_ref().map(|v| format!("value {v}")),
-                            gas.map(|g| format!("gas {g}")),
-                            min_gas.map(|g| format!("minimum gas {g}")),
-                            scheme.map(|scheme| format!("call type {scheme:?}")),
-                        ]
-                        .into_iter()
-                        .flatten()
-                        .join(", ");
-                        let but = if outcome.result.is_ok() {
-                            let s = if *actual_count == 1 { "" } else { "s" };
-                            format!("was called {actual_count} time{s}")
-                        } else {
-                            "the call reverted instead; \
-                             ensure you're testing the happy path when using `expectCall`"
-                                .to_string()
-                        };
-                        let s = if *count == 1 { "" } else { "s" };
-                        let msg = format!(
-                            "expected call to {address} with {expected_values} \
-                             to be called {count} time{s}, but {but}"
-                        );
-                        outcome.result.result = InstructionResult::Revert;
-                        outcome.result.output = Error::encode(msg);
-
-                        return;
-                    }
-                }
-            }
-
-            // Check if we have any leftover expected emits
-            // First, if any emits were found at the root call, then we its ok and we remove them.
-            // For count=0 expectations, NOT being found is success, so mark them as found
-            for (expected, _) in &mut self.expected_emits {
-                if expected.count == 0 && !expected.found {
-                    expected.found = true;
-                }
-            }
-            self.expected_emits.retain(|(expected, _)| !expected.found);
-            // If not empty, we got mismatched emits
-            if !self.expected_emits.is_empty() {
-                let msg = if outcome.result.is_ok() {
-                    "expected an emit, but no logs were emitted afterwards. \
-                     you might have mismatched events or not enough events were emitted"
-                } else {
-                    "expected an emit, but the call reverted instead. \
-                     ensure you're testing the happy path when using `expectEmit`"
-                };
+            if let Err(error) = expect::verify_calls(&self.expected_calls, outcome.result.is_ok()) {
                 outcome.result.result = InstructionResult::Revert;
-                outcome.result.output = Error::encode(msg);
+                outcome.result.output = Error::encode(error);
+                return;
+            }
+
+            if let Err(error) =
+                expect::verify_root_emits(&mut self.expected_emits, outcome.result.is_ok())
+            {
+                outcome.result.result = InstructionResult::Revert;
+                outcome.result.output = Error::encode(error);
                 return;
             }
 
             // Check for leftover expected creates
-            if let Some(expected_create) = self.expected_creates.first() {
-                let msg = format!(
-                    "expected {} call by address {} for bytecode {} but not found",
-                    expected_create.create_scheme,
-                    hex::encode_prefixed(expected_create.deployer),
-                    hex::encode_prefixed(&expected_create.bytecode),
-                );
+            if let Err(error) = expect::verify_creates(&self.expected_creates) {
                 outcome.result.result = InstructionResult::Revert;
-                outcome.result.output = Error::encode(msg);
+                outcome.result.output = Error::encode(error);
             }
         }
     }
@@ -3181,15 +3047,12 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcode
             && let Ok(created_acc) = ecx.journal_mut().load_account(address)
         {
             let bytecode = created_acc.data.info.code.clone().unwrap_or_default().original_bytes();
-            if let Some((index, _)) =
-                self.expected_creates.iter().find_position(|expected_create| {
-                    expected_create.deployer == call.caller()
-                        && expected_create.create_scheme.eq(call.scheme().into())
-                        && expected_create.bytecode == bytecode
-                })
-            {
-                self.expected_creates.swap_remove(index);
-            }
+            expect::match_create(
+                &mut self.expected_creates,
+                call.caller(),
+                call.scheme().into(),
+                &bytecode,
+            );
         }
     }
 }

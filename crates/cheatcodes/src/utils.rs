@@ -1,6 +1,8 @@
 //! Implementations of [`Utilities`](spec::Group::Utilities) cheatcodes.
 
-use crate::{Cheatcode, Cheatcodes, CheatcodesExecutor, CheatsCtxt, Result, Vm::*};
+use crate::{
+    Cheatcode, Cheatcodes, CheatcodesExecutor, CheatsCtxt, Result, StatelessCheatcode, Vm::*,
+};
 use alloy_dyn_abi::{DynSolType, DynSolValue, Resolver, TypedData, eip712_parser::EncodeType};
 use alloy_ens::namehash;
 use alloy_primitives::{B64, Bytes, I256, U256, aliases::B32, keccak256, map::HashMap};
@@ -47,30 +49,30 @@ impl Cheatcode for getLabelCall {
     }
 }
 
-impl Cheatcode for computeCreateAddressCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for computeCreateAddressCall {
+    fn apply(&self) -> Result {
         let Self { nonce, deployer } = self;
         ensure!(*nonce <= U256::from(u64::MAX), "nonce must be less than 2^64");
         Ok(deployer.create(nonce.to()).abi_encode())
     }
 }
 
-impl Cheatcode for computeCreate2Address_0Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for computeCreate2Address_0Call {
+    fn apply(&self) -> Result {
         let Self { salt, initCodeHash, deployer } = self;
         Ok(deployer.create2(salt, initCodeHash).abi_encode())
     }
 }
 
-impl Cheatcode for computeCreate2Address_1Call {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for computeCreate2Address_1Call {
+    fn apply(&self) -> Result {
         let Self { salt, initCodeHash } = self;
         Ok(DEFAULT_CREATE2_DEPLOYER.create2(salt, initCodeHash).abi_encode())
     }
 }
 
-impl Cheatcode for ensNamehashCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for ensNamehashCall {
+    fn apply(&self) -> Result {
         let Self { name } = self;
         Ok(namehash(name).abi_encode())
     }
@@ -270,8 +272,8 @@ impl Cheatcode for copyStorageCall {
     }
 }
 
-impl Cheatcode for sortCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for sortCall {
+    fn apply(&self) -> Result {
         let Self { array } = self;
 
         let mut sorted_values = array.clone();
@@ -393,8 +395,8 @@ impl Cheatcode for eip712HashStruct_1Call {
     }
 }
 
-impl Cheatcode for eip712HashTypedDataCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for eip712HashTypedDataCall {
+    fn apply(&self) -> Result {
         let Self { jsonData } = self;
         let typed_data: TypedData = serde_json::from_str(jsonData)?;
         let digest = typed_data.eip712_signing_hash()?;
@@ -495,8 +497,8 @@ fn get_struct_hash(primary: &str, type_def: &String, abi_encoded_data: &Bytes) -
     Ok(keccak256(&bytes_to_hash).to_vec())
 }
 
-impl Cheatcode for toRlpCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for toRlpCall {
+    fn apply(&self) -> Result {
         let Self { data } = self;
 
         let mut buf = Vec::new();
@@ -506,8 +508,8 @@ impl Cheatcode for toRlpCall {
     }
 }
 
-impl Cheatcode for fromRlpCall {
-    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+impl StatelessCheatcode for fromRlpCall {
+    fn apply(&self) -> Result {
         let Self { rlp } = self;
 
         let decoded: Vec<Bytes> = Vec::<Bytes>::decode(&mut rlp.as_ref())

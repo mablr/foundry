@@ -16,6 +16,7 @@ pub extern crate foundry_cheatcodes_spec as spec;
 extern crate tracing;
 
 use alloy_primitives::Address;
+use alloy_sol_types::SolInterface;
 use foundry_evm_core::{
     backend::DatabaseExt,
     evm::{FoundryContextFor, FoundryEvmNetwork},
@@ -73,8 +74,44 @@ mod toml;
 
 mod utils;
 
+/// Decodes a cheatcode while preserving the reference unknown-selector diagnostic.
+pub fn decode_cheatcode(input: &[u8]) -> Result<Vm::VmCalls> {
+    Ok(Vm::VmCalls::abi_decode(input).map_err(|e| {
+        if let alloy_sol_types::Error::UnknownSelector { name: _, selector } = e {
+            let msg = format!(
+                "unknown cheatcode with selector {selector}; \
+                     you may have a mismatch between the `Vm` interface (likely in `forge-std`) \
+                     and the `forge` version"
+            );
+            return alloy_sol_types::Error::Other(std::borrow::Cow::Owned(msg));
+        }
+        e
+    })?)
+}
+
+/// A cheatcode whose result depends only on its arguments and immutable process data.
+/// No execution context or mutable session is required.
+pub(crate) trait StatelessCheatcode: CheatcodeDef {
+    fn apply(&self) -> Result;
+}
+
+impl<C: StatelessCheatcode> Cheatcode for C {
+    fn apply_stateless(&self) -> Option<Result> {
+        Some(StatelessCheatcode::apply(self))
+    }
+
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+        StatelessCheatcode::apply(self)
+    }
+}
+
 /// Cheatcode implementation.
 pub(crate) trait Cheatcode: CheatcodeDef {
+    /// Evaluates an explicitly stateless implementation.
+    fn apply_stateless(&self) -> Option<Result> {
+        None
+    }
+
     /// Evaluates an assertion without accessing execution state.
     fn assertion_result(&self) -> Option<Result> {
         None
@@ -87,6 +124,25 @@ pub(crate) trait Cheatcode: CheatcodeDef {
         depth: usize,
     ) -> Option<Result> {
         let _ = (expected, depth);
+        None
+    }
+
+    /// Registers an event expectation independently of an execution engine.
+    fn apply_emit_expectation(
+        &self,
+        emits: &mut test::expect::ExpectedEmitTracker,
+        depth: usize,
+    ) -> Option<Result> {
+        let _ = (emits, depth);
+        None
+    }
+
+    /// Registers a call expectation independently of an execution engine.
+    fn apply_call_expectation(
+        &self,
+        calls: &mut test::expect::ExpectedCallTracker,
+    ) -> Option<Result> {
+        let _ = calls;
         None
     }
 
