@@ -27,7 +27,8 @@ to move into evm2.
 
 Inspected evm2 revision: `2c8b67f03fb0c86c0c2502d840d2e529bdf4b1a8`.
 Foundry reference base: `295647678`, with the experiment's reference example added.
-Results apply to those revisions; newer upstream APIs have not been assessed here.
+These historical failure results apply to those revisions; the adapted local branch
+and its newer-base validation are recorded below.
 
 Relevant evm2 symbols at that pin:
 
@@ -157,25 +158,37 @@ The immediate upstream discussion is E2-01 through E2-04, centered on E2-02's
 settlement contract. The snapshot gate blocks adoption of the tested mechanism;
 it does not demonstrate that the wider evm2 migration is infeasible.
 
-## Local checkpoint prototype update (2026-09-18)
+## Local implementation branch (2026-09-18)
 
-A separately owned local patch at
-`/Volumes/Stockage/dev-cache/evm2-live-state-agent/evm2-live-state-checkpoints.patch`
-prototypes E2-02 with registered active-frame identities. Snapshot restoration
-preserves captured ancestor undo boundaries and rebases newer frames to the
-restored state boundary; returned frames are not resurrected. Ordinary frame entry
-and settlement do not copy full state. Capture/restore still copy native state and
-perform O(depth) checkpoint bookkeeping; no performance measurement was made.
+The fix is prepared in `~/sources/evm2` on `mablr/live-state-snapshots`, commit
+`04179271d782f6189809c70d8e6a9b1d6782cf6c`, based on `main` at `0a5314e`.
+It is committed locally; nothing has been pushed or submitted. Foundry still uses
+its original unpatched dependency pin.
 
-The prototype reports 45/54 exact matches (all six candidate panics eliminated,
-all prior matches retained), three additional divergent-history matches, and
-506 passing evm2 library tests. Nine known reference account-loading divergences
-remain failures. Package strict Clippy passes; workspace Clippy is blocked by
-missing LLVM tooling. Its adjacent README records commands and evidence.
+The branch adapts the isolated prototype to the newer storage-pooling code. Registered
+active-frame identities preserve captured ancestor undo boundaries and rebase newer
+frames to the restored boundary; returned frames are not resurrected. Ordinary
+entry/settlement performs no full-state copy. Explicit capture/restore copies native
+state plus O(depth) frame bookkeeping; there is no measured performance claim.
 
-This is a reviewable local attempt, not the selected upstream API or a change to
-Foundry's pinned dependency. Cross-state/transaction restoration is deliberately
-rejected; custom handlers retaining raw checkpoints are still outside the protocol.
-Forks, isolated transactions, setup/test snapshot lifetime, refund/state-gas effects
-and performance remain unvalidated. E2-02 therefore remains open, with a concrete
-candidate mechanism rather than an unresolved panic alone.
+Validation on this branch: 508 library tests passed; the final nine snapshot tests
+passed after test-helper cleanup; package all-feature/all-target strict Clippy,
+formatting and warning-clean rustdoc passed. The current-head differential run gives
+45/54 exact matches and no candidate panics. The nine known reference account-loading
+differences remain failures. Full-workspace Clippy is blocked by missing LLVM 22.
+The checkout's `docs/live-state-snapshots.md` documents semantics and API limits.
+
+Snapshots belong to one state and transaction lifecycle. Cross-state/transaction
+restoration is rejected before mutation. Restoration invalidates public raw
+checkpoints; only engine-managed CALL/CREATE/precompile scopes coordinate automatically.
+`StateCheckpoint::new` becomes crate-private: callers obtain generation-bound tokens
+through `State::checkpoint`. Custom-handler scopes still need a public coordinated
+API. The base EIP-7702 handler's raw checkpoint is only rolled back before message
+execution, so it does not span a restoration callback.
+
+This is a review-ready bounded implementation, not full Foundry snapshot acceptance.
+Setup/test snapshot lifetime, fork/backend replacement, isolation, refund/state-gas
+behavior and performance remain open. E2-02 has a tested candidate mechanism;
+upstream API agreement and Foundry integration have not been completed. The earlier
+prototype/report remain separately archived under
+`/Volumes/Stockage/dev-cache/evm2-live-state-agent/`.

@@ -20,5 +20,6 @@ directory; the active tree retains only this note and historical evidence.
 
 The newer replacement-aware checkpoint prototype and its independent runner live at
 `/Volumes/Stockage/dev-cache/evm2-live-state-agent/`. It reported 45/54 matches and no
-candidate panics. See [requirements](../../docs/dev/evm2-upstream-requirements.md) for
+candidate panics; the adapted fix is now committed in `~/sources/evm2` on
+`mablr/live-state-snapshots` at `04179271`, with the same differential result. See [requirements](../../docs/dev/evm2-upstream-requirements.md) for
 remaining limitations. Foundry continues to depend on the unpatched evm2 pin.

@@ -61,14 +61,16 @@ an integration decision.
 
 ## evm2 workstream
 
-The isolated checkpoint prototype achieved 45/54 differential matches with no
-candidate panics, retained all previous matches, and passed 506 engine tests plus
-three divergent-history comparisons. Nine known reference account-loading
-mismatches remain. This proves a candidate mechanism, not Forge snapshot parity.
+Local evm2 branch `mablr/live-state-snapshots` in `~/sources/evm2` is prepared for
+review at `04179271` (base `0a5314e`). It achieved 45/54 differential matches with
+no candidate panics and passed 508 library tests, the final nine snapshot tests,
+package strict Clippy, formatting and warning-clean rustdoc. Nine known reference
+account-loading mismatches remain; workspace Clippy is blocked by missing LLVM 22.
 
-A PR-ready local branch is being prepared in `~/sources/evm2`; it is **not** part of
-Foundry's pinned dependency. Cross-transaction snapshots, custom-handler raw
-checkpoints, forks/isolation, refunds/state gas and performance remain unvalidated
-or unsupported. The [requirements document](docs/dev/evm2-upstream-requirements.md)
-tracks the exact boundary. Historical harness sources are archived outside Foundry;
-[retained evidence](experiments/evm2-live-state/README.md) records their provenance.
+The branch is committed locally, not pushed or adopted by Foundry's pinned dependency.
+It supports same-transaction snapshots with coordinated engine frame settlement;
+cross-transaction snapshots and custom-handler scopes remain unsupported. Forks,
+isolation, refund/state-gas effects and performance remain unvalidated. The
+[requirements document](docs/dev/evm2-upstream-requirements.md) records the API boundary.
+[Historical evidence](experiments/evm2-live-state/README.md) retains provenance;
+obsolete harness sources are archived outside Foundry.
