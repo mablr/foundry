@@ -369,6 +369,7 @@ Error: Transaction failed.
 
 // tests that cast call --trace selects TempoEvmNetwork when Tempo is inferred from
 // the fork RPC, or when a Tempo chain ID is provided explicitly via --chain.
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(cast_call_trace_selects_tempo_network, async |_prj, cmd| {
     let (_, tempo_handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let (_, eth_handle) = anvil::spawn(NodeConfig::test()).await;
@@ -390,6 +391,7 @@ casttest!(cast_call_trace_selects_tempo_network, async |_prj, cmd| {
         );
     }
 });
+*/
 
 // tests that `cast call --trace` executes the call with the configured gas limit or the limit given
 // via `--gas-limit` rather than running with an unbounded gas limit.

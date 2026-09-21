@@ -29,7 +29,13 @@ alloy-network.workspace = true
 alloy-primitives.workspace = true
 
 [features]
-default = ["optimism"]
-monad = ["foundry-common/monad", "foundry-config/monad"]
-base = ["foundry-common/base"]
-optimism = ["foundry-common/optimism"]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = ["foundry-common/monad", "foundry-config/monad"]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = ["foundry-common/base"]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = ["foundry-common/optimism"]
+optimism = []

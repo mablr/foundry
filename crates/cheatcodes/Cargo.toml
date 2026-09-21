@@ -58,7 +58,7 @@ p256 = "0.13"
 ed25519-consensus = "2.1"
 ecdsa = "0.16"
 rand.workspace = true
-monad-revm = { workspace = true, optional = true }
+# monad-revm = { workspace = true, optional = true }
 revm.workspace = true
 revm-inspectors.workspace = true
 semver.workspace = true
@@ -70,34 +70,40 @@ walkdir.workspace = true
 proptest.workspace = true
 serde.workspace = true
 
-tempo-hardfork.workspace = true
+# tempo-hardfork.workspace = true
 tempo-contracts.workspace = true
-tempo-precompiles.workspace = true
+# tempo-precompiles.workspace = true
 tempo-primitives.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-tempo-precompiles = { workspace = true, features = ["test-utils"] }
+# tempo-precompiles = { workspace = true, features = ["test-utils"] }
 
 [features]
-default = ["optimism"]
-monad = [
-    "dep:monad-revm",
-    "foundry-config/monad",
-    "foundry-evm-core/monad",
-    "foundry-evm-fuzz/monad",
-    "foundry-evm-traces/monad",
-]
-base = [
-    "foundry-common/base",
-    "foundry-evm-core/base",
-    "foundry-evm-fuzz/base",
-    "foundry-evm-traces/base",
-]
-optimism = [
-    "foundry-common/optimism",
-    "foundry-evm-core/optimism",
-    "foundry-evm-fuzz/optimism",
-    "foundry-evm-traces/optimism",
-    "forge-script-sequence/optimism",
-]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = [
+#     "dep:monad-revm",
+#     "foundry-config/monad",
+#     "foundry-evm-core/monad",
+#     "foundry-evm-fuzz/monad",
+#     "foundry-evm-traces/monad",
+# ]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "foundry-common/base",
+#     "foundry-evm-core/base",
+#     "foundry-evm-fuzz/base",
+#     "foundry-evm-traces/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "foundry-common/optimism",
+#     "foundry-evm-core/optimism",
+#     "foundry-evm-fuzz/optimism",
+#     "foundry-evm-traces/optimism",
+#     "forge-script-sequence/optimism",
+# ]
+optimism = []

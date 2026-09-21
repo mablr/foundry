@@ -648,6 +648,7 @@ Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
 
 // TIP20 calls made in an inline Tempo pass should use the token name loaded from Tempo state in
 // rendered traces.
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest!(tempo_pass_traces_tip20_name, |prj, cmd| {
     prj.add_test(
         "inline.sol",
@@ -688,3 +689,4 @@ Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
 "#]],
     );
 });
+*/

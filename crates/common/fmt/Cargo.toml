@@ -20,10 +20,10 @@ eyre.workspace = true
 
 # ui
 alloy-consensus.workspace = true
-op-alloy-consensus = { workspace = true, optional = true }
+# op-alloy-consensus = { workspace = true, optional = true }
 alloy-network.workspace = true
 alloy-rpc-types = { workspace = true, features = ["eth"] }
-op-alloy-rpc-types = { workspace = true, optional = true }
+# op-alloy-rpc-types = { workspace = true, optional = true }
 alloy-serde.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -33,8 +33,8 @@ yansi.workspace = true
 comfy-table.workspace = true
 
 # Base
-base-common-consensus = { workspace = true, optional = true, features = ["std"] }
-base-common-rpc-types = { workspace = true, optional = true, features = ["std"] }
+# base-common-consensus = { workspace = true, optional = true, features = ["std"] }
+# base-common-rpc-types = { workspace = true, optional = true, features = ["std"] }
 
 # Tempo
 tempo-alloy.workspace = true
@@ -45,6 +45,10 @@ similar-asserts.workspace = true
 proptest.workspace = true
 
 [features]
-default = ["optimism"]
-base = ["dep:base-common-consensus", "dep:base-common-rpc-types"]
-optimism = ["dep:op-alloy-consensus", "dep:op-alloy-rpc-types"]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = ["dep:base-common-consensus", "dep:base-common-rpc-types"]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = ["dep:op-alloy-consensus", "dep:op-alloy-rpc-types"]
+optimism = []

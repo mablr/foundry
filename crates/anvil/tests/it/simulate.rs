@@ -520,6 +520,7 @@ async fn test_simulate_v1_rejects_precompile_moves_on_tempo_rpc() {
     assert_eq!(response["error"]["code"], -32000, "{response}");
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_simulate_v1_rejects_precompile_moves_on_monad_rpc() {
@@ -537,7 +538,9 @@ async fn test_simulate_v1_rejects_precompile_moves_on_monad_rpc() {
 
     assert_eq!(response["error"]["code"], -32000, "{response}");
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_simulate_v1_rejects_precompile_moves_on_optimism_rpc() {
@@ -555,6 +558,7 @@ async fn test_simulate_v1_rejects_precompile_moves_on_optimism_rpc() {
 
     assert_eq!(response["error"]["code"], -32000, "{response}");
 }
+*/
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_fork_simulate_normalizes_delegated_block_sequence_rpc() {

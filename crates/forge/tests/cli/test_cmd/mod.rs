@@ -16,8 +16,10 @@ use std::{io::Write, path::PathBuf, str::FromStr};
 #[cfg(unix)]
 use std::fs;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 mod base;
+*/
 mod brutalize;
 mod core;
 mod exact_fork;
@@ -162,12 +164,14 @@ forgetest!(testdata, |_prj, cmd| {
     orig_assert.success();
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest!(monad_testdata, |_prj, cmd| {
     setup_testdata_cmd(&mut cmd);
     cmd.args(["test", "--network", "monad", "--mc=(MonadStakingTest|MonadReserveBalanceTest)"])
         .assert_success();
 });
+*/
 
 // Run flaky testdata contracts excluded from the main `testdata` test above.
 // Picked up by the nightly `test-flaky` workflow via `cargo nextest run --profile flaky`.
@@ -179,6 +183,7 @@ forgetest!(flaky_testdata, |_prj, cmd| {
 
 // Ensures `vm.deployCode` works with the optimism network family active, covering the OP EVM's
 // nested frame execution path which is only reachable through this cheatcode.
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_init!(deploy_code_cheatcode_on_optimism_network, |prj, cmd| {
     prj.update_config(|config| {
         config.networks = foundry_evm_networks::NetworkConfigs::with_optimism();
@@ -233,6 +238,7 @@ Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
 "#
     ]]);
 });
+*/
 
 // tests that test filters are handled correctly
 forgetest!(can_set_filter_values, |prj, cmd| {
@@ -4270,6 +4276,7 @@ contract PrecompileDebugTest {
     );
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest!(debug_dump_marks_tempo_precompile_call_steps, |prj, cmd| {
     prj.update_config(|config| {
         config.networks = foundry_evm_networks::NetworkConfigs::with_tempo();
@@ -4315,6 +4322,7 @@ contract TempoPrecompileDebugTest {
         "missing decoded Tempo precompile line in debugger dump: {lines:?}"
     );
 });
+*/
 
 forgetest!(debug_dump_disambiguates_overloaded_internal_functions, |prj, cmd| {
     prj.add_source(

@@ -326,6 +326,7 @@ forgetest_async!(create_rejects_invalid_eip1559_fees_before_access_list, |prj, c
     );
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_async!(create_resolves_tempo_expires_before_broadcast, |prj, cmd| {
     foundry_test_utils::util::initialize(prj.root());
     prj.initialize_default_contracts();
@@ -362,7 +363,9 @@ forgetest_async!(create_resolves_tempo_expires_before_broadcast, |prj, cmd| {
     );
     assert!(stdout.contains("Deployed to:"), "{stdout}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_async!(create_broadcasts_with_local_tempo_sponsor, |prj, cmd| {
     foundry_test_utils::util::initialize(prj.root());
     prj.initialize_default_contracts();
@@ -402,7 +405,9 @@ forgetest_async!(create_broadcasts_with_local_tempo_sponsor, |prj, cmd| {
     assert!(stdout.contains("Deployed to:"), "{stdout}");
     assert!(stderr.to_ascii_lowercase().contains(&format!("tempo sponsor: {sponsor}")), "{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_async!(create_rejects_tempo_access_key_before_broadcast, |prj, cmd| {
     foundry_test_utils::util::initialize(prj.root());
     prj.initialize_default_contracts();
@@ -430,6 +435,7 @@ forgetest_async!(create_rejects_tempo_access_key_before_broadcast, |prj, cmd| {
 
     assert!(stderr.contains("Tempo access-key transactions cannot use CREATE"), "{stderr}");
 });
+*/
 
 // tests that we can deploy the template contract
 forgetest_async!(can_create_using_unlocked, |prj, cmd| {

@@ -15,24 +15,36 @@ use tempo_primitives::{
     transaction::{Call, SignedKeyAuthorization, TempoSignedAuthorization},
 };
 
-#[cfg(all(feature = "base", not(feature = "optimism")))]
+#[cfg(all(any(), not(any())))]
 use op_alloy_consensus::{DEPOSIT_TX_TYPE_ID, TxDeposit};
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(any(feature = "base", feature = "optimism"))]
 use super::get_deposit_tx_parts;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(any(feature = "base", feature = "optimism"))]
 use op_revm::transaction::deposit::DepositTransactionParts;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(any(test, feature = "base", feature = "optimism"))]
 use alloy_serde::OtherFields;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_evm::EIP8130_TRANSACTION_TYPE;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_rpc_types::BaseTransactionRequest;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_consensus::{DEPOSIT_TX_TYPE_ID, POST_EXEC_TX_TYPE_ID, TxDeposit};
+*/
 
 pub use tempo_alloy::rpc::TempoTransactionRequest;
 
@@ -49,10 +61,14 @@ pub use tempo_alloy::rpc::TempoTransactionRequest;
 #[allow(clippy::large_enum_variant)]
 pub enum FoundryTransactionRequest {
     Ethereum(TransactionRequest),
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     Base(BaseTransactionRequest),
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(any(feature = "base", feature = "optimism"))]
     Op(WithOtherFields<TransactionRequest>),
+    */
     Tempo(Box<TempoTransactionRequest>),
 }
 
@@ -76,12 +92,15 @@ impl FoundryTransactionRequest {
         matches!(self, Self::Ethereum(_))
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is a Base EIP-8130 request.
     #[cfg(feature = "base")]
     pub const fn is_base(&self) -> bool {
         matches!(self, Self::Base(_))
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the native Base request.
     #[cfg(feature = "base")]
     pub const fn as_base(&self) -> Option<&BaseTransactionRequest> {
@@ -90,12 +109,15 @@ impl FoundryTransactionRequest {
             _ => None,
         }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is an OP stack transaction request.
     #[cfg(any(feature = "base", feature = "optimism"))]
     pub const fn is_op(&self) -> bool {
         matches!(self, Self::Op(_))
     }
+    */
 
     /// Returns `true` if this is a Tempo transaction request.
     pub const fn is_tempo(&self) -> bool {
@@ -113,14 +135,19 @@ impl FoundryTransactionRequest {
     pub fn into_inner(self) -> TransactionRequest {
         match self {
             Self::Ethereum(tx) => tx,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(tx) => tx.into(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             Self::Op(tx) => tx.inner,
+            */
             Self::Tempo(tx) => tx.inner,
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Get the deposit transaction parts from the request, calling [`get_deposit_tx_parts`] helper
     /// with OtherFields.
     ///
@@ -136,20 +163,27 @@ impl FoundryTransactionRequest {
             _ => Err(vec!["sourceHash", "mint", "isSystemTx"]),
         }
     }
+    */
 
     /// Returns the minimal transaction type this request can be converted into based on the fields
     /// that are set. See [`TransactionRequest::preferred_type`].
     pub fn preferred_type(&self) -> FoundryTxType {
         match self {
             Self::Ethereum(tx) => tx.preferred_type().into(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(_) => FoundryTxType::Eip8130,
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Op(tx) if tx.inner.transaction_type == Some(POST_EXEC_TX_TYPE_ID) => {
                 FoundryTxType::PostExec
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             Self::Op(_) => FoundryTxType::Deposit,
+            */
             Self::Tempo(_) => FoundryTxType::Tempo,
         }
     }
@@ -170,12 +204,14 @@ impl FoundryTransactionRequest {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Check if all necessary keys are present to build a Deposit transaction, returning a list of
     /// keys that are missing.
     #[cfg(any(feature = "base", feature = "optimism"))]
     pub fn complete_deposit(&self) -> Result<(), Vec<&'static str>> {
         self.get_deposit_tx_parts().map(|_| ())
     }
+    */
 
     /// Check if all necessary keys are present to build a Tempo transaction, returning a list of
     /// keys that are missing.
@@ -194,14 +230,20 @@ impl FoundryTransactionRequest {
             FoundryTxType::Eip1559 => self.as_ref().complete_1559(),
             FoundryTxType::Eip4844 => self.as_ref().complete_4844(),
             FoundryTxType::Eip7702 => self.as_ref().complete_7702(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             FoundryTxType::Deposit => self.complete_deposit(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             FoundryTxType::PostExec => Err(vec!["not implemented for post-exec tx"]),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             FoundryTxType::Eip8130 => {
                 Err(vec!["EIP-8130 requires a signed raw transaction envelope"])
             }
+            */
             FoundryTxType::Tempo => self.complete_tempo(),
         }
     }
@@ -223,10 +265,13 @@ impl FoundryTransactionRequest {
     /// Converts the request into a `FoundryTypedTx`, handling all Ethereum and OP-stack transaction
     /// types.
     pub fn build_typed_tx(self) -> Result<FoundryTypedTx, Self> {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             return Err(self);
         }
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(any(feature = "base", feature = "optimism"))]
         if let Ok(deposit_tx_parts) = self.get_deposit_tx_parts() {
             // Build deposit transaction
@@ -241,6 +286,7 @@ impl FoundryTransactionRequest {
                 input: self.input().cloned().unwrap_or_default(),
             }));
         }
+        */
         if self.complete_tempo().is_ok()
             && let Self::Tempo(tx_req) = self
         {
@@ -283,10 +329,14 @@ impl Serialize for FoundryTransactionRequest {
     {
         match self {
             Self::Ethereum(tx) => tx.serialize(serializer),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(tx) => tx.serialize(serializer),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             Self::Op(tx) => tx.serialize(serializer),
+            */
             Self::Tempo(tx) => tx.serialize(serializer),
         }
     }
@@ -307,10 +357,14 @@ impl AsRef<TransactionRequest> for FoundryTransactionRequest {
     fn as_ref(&self) -> &TransactionRequest {
         match self {
             Self::Ethereum(tx) => tx,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(tx) => tx.as_ref(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             Self::Op(tx) => tx,
+            */
             Self::Tempo(tx) => tx.as_ref(),
         }
     }
@@ -320,10 +374,14 @@ impl AsMut<TransactionRequest> for FoundryTransactionRequest {
     fn as_mut(&mut self) -> &mut TransactionRequest {
         match self {
             Self::Ethereum(tx) => tx,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(tx) => tx.as_mut(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             Self::Op(tx) => tx,
+            */
             Self::Tempo(tx) => tx.as_mut(),
         }
     }
@@ -341,6 +399,7 @@ impl TryFrom<WithOtherFields<TransactionRequest>> for FoundryTransactionRequest 
             Option<NonZeroU64>,
         );
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         {
             let present = |field: &str| tx.other.get(field).is_some_and(|value| !value.is_null());
@@ -374,6 +433,7 @@ impl TryFrom<WithOtherFields<TransactionRequest>> for FoundryTransactionRequest 
                 return Ok(Self::Base(base));
             }
         }
+        */
 
         if tx.transaction_type == Some(TEMPO_TX_TYPE_ID)
             || TEMPO_REQUEST_FIELDS.iter().any(|field| {
@@ -429,12 +489,13 @@ impl TryFrom<WithOtherFields<TransactionRequest>> for FoundryTransactionRequest 
                 tx.other.get_deserialized::<Option<_>>("feePayerSignature").transpose()?.flatten();
             return Ok(Self::Tempo(Box::new(tempo_tx_req)));
         }
-        #[cfg(all(feature = "base", not(feature = "optimism")))]
+        #[cfg(all(any(), not(any())))]
         if tx.transaction_type == Some(DEPOSIT_TX_TYPE_ID)
             || get_deposit_tx_parts(&tx.other).is_ok()
         {
             return Ok(Self::Op(tx));
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if tx.transaction_type == Some(DEPOSIT_TX_TYPE_ID)
             || tx.transaction_type == Some(POST_EXEC_TX_TYPE_ID)
@@ -442,6 +503,7 @@ impl TryFrom<WithOtherFields<TransactionRequest>> for FoundryTransactionRequest 
         {
             return Ok(Self::Op(tx));
         }
+        */
         Ok(Self::Ethereum(tx.into_inner()))
     }
 }
@@ -460,6 +522,7 @@ impl From<FoundryTypedTx> for FoundryTransactionRequest {
             FoundryTypedTx::Eip1559(tx) => Self::Ethereum(Into::<TransactionRequest>::into(tx)),
             FoundryTypedTx::Eip4844(tx) => Self::Ethereum(Into::<TransactionRequest>::into(tx)),
             FoundryTypedTx::Eip7702(tx) => Self::Ethereum(Into::<TransactionRequest>::into(tx)),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             FoundryTypedTx::Deposit(tx) => {
                 let other = OtherFields::from_iter([
@@ -471,6 +534,8 @@ impl From<FoundryTypedTx> for FoundryTransactionRequest {
                     .try_into()
                     .expect("valid deposit transaction request")
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             FoundryTypedTx::PostExec(tx) => WithOtherFields {
                 inner: Into::<TransactionRequest>::into(tx),
@@ -478,10 +543,13 @@ impl From<FoundryTypedTx> for FoundryTransactionRequest {
             }
             .try_into()
             .expect("valid OP post-exec transaction request"),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             FoundryTypedTx::Eip8130(tx) => {
                 Self::Base(super::base::simulation_request(tx, None, None, None))
             }
+            */
             FoundryTypedTx::Tempo(tx) => Self::Tempo(Box::new(tx.into())),
         }
     }
@@ -489,6 +557,7 @@ impl From<FoundryTypedTx> for FoundryTransactionRequest {
 
 impl From<FoundryTxEnvelope> for FoundryTransactionRequest {
     fn from(tx: FoundryTxEnvelope) -> Self {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if let FoundryTxEnvelope::Eip8130(tx) = tx {
             let from = tx.recover_sender().ok();
@@ -501,11 +570,12 @@ impl From<FoundryTxEnvelope> for FoundryTransactionRequest {
                 payer_auth,
             ));
         }
+        */
         FoundryTypedTx::from(tx).into()
     }
 }
 
-#[cfg(not(feature = "optimism"))]
+// EVM2 migration: unconditional Ethereum fallback.
 impl From<alloy_rpc_types_eth::Transaction<FoundryTxEnvelope>> for FoundryTransactionRequest {
     fn from(tx: alloy_rpc_types_eth::Transaction<FoundryTxEnvelope>) -> Self {
         tx.inner.into_inner().into()
@@ -638,17 +708,21 @@ impl NetworkTransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {
     }
 
     fn can_build(&self) -> bool {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             return false;
         }
+        */
         if self.as_ref().can_build() || self.complete_tempo().is_ok() {
             return true;
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(any(feature = "base", feature = "optimism"))]
         if self.complete_deposit().is_ok() {
             return true;
         }
+        */
         false
     }
 
@@ -665,20 +739,24 @@ impl NetworkTransactionBuilder<FoundryNetwork> for FoundryTransactionRequest {
     /// Prepares [`FoundryTransactionRequest`] by trimming conflicting fields, and filling with
     /// default values the mandatory fields.
     fn prep_for_submission(&mut self) {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             return;
         }
+        */
         let preferred_type = self.preferred_type();
         let inner = self.as_mut();
         inner.transaction_type = Some(preferred_type as u8);
         inner.gas.is_none().then(|| inner.set_gas_limit(Default::default()));
         let is_deposit = {
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             {
                 preferred_type.is_deposit()
             }
-            #[cfg(not(any(feature = "base", feature = "optimism")))]
+            */
+            #[cfg(not(any(any(), any())))]
             {
                 false
             }
@@ -754,6 +832,7 @@ impl TransactionBuilder4844 for FoundryTransactionRequest {
 mod tests {
     use super::*;
     use alloy_primitives::{B256, Bytes, Signature};
+    use alloy_serde::OtherFields;
     use tempo_primitives::{
         TempoSignature, TempoTransaction,
         transaction::{Authorization, KeyAuthorization, PrimitiveSignature},
@@ -779,6 +858,7 @@ mod tests {
         assert!(tempo.is_tempo());
         assert!(!tempo.is_ethereum());
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(any(feature = "base", feature = "optimism"))]
         {
             let op = FoundryTransactionRequest::Op(WithOtherFields::default());
@@ -786,6 +866,7 @@ mod tests {
             assert!(!op.is_ethereum());
             assert!(!op.is_tempo());
         }
+        */
     }
 
     #[test]
@@ -810,6 +891,7 @@ mod tests {
         assert!(matches!(req.build_unsigned(), Ok(FoundryTypedTx::Tempo(_))));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn base_and_tempo_request_routing() {
@@ -851,6 +933,7 @@ mod tests {
             );
         }
     }
+    */
 
     #[test]
     fn test_routing_serialized_non_aa_tempo_request_to_ethereum() {
@@ -866,6 +949,7 @@ mod tests {
         assert!(matches!(request.build_unsigned(), Ok(FoundryTypedTx::Eip1559(_))));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(any(feature = "base", feature = "optimism"))]
     fn test_routing_op_by_deposit_fields() {
@@ -881,6 +965,7 @@ mod tests {
         assert!(req.is_op());
         assert!(matches!(req.build_unsigned(), Ok(FoundryTypedTx::Deposit(_))));
     }
+    */
 
     #[test]
     fn test_op_incomplete_routes_to_ethereum() {
@@ -921,6 +1006,7 @@ mod tests {
         assert!(deserialized.is_ethereum());
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(any(feature = "base", feature = "optimism"))]
     fn test_serialization_op() {
@@ -938,6 +1024,7 @@ mod tests {
 
         assert!(deserialized.is_op());
     }
+    */
 
     #[test]
     fn test_serialization_tempo() {
@@ -1058,6 +1145,7 @@ mod tests {
         assert_eq!(rebuilt, FoundryTypedTx::Tempo(tx));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(any(feature = "base", feature = "optimism"))]
     fn test_deposit_typed_tx_roundtrip() {
@@ -1081,4 +1169,5 @@ mod tests {
         assert_eq!(parts.mint, Some(deposit_tx.mint));
         assert_eq!(parts.is_system_transaction, deposit_tx.is_system_transaction);
     }
+    */
 }

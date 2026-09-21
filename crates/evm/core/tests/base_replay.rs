@@ -1,3 +1,6 @@
+// Disabled for the Ethereum-only EVM2 migration.
+#![cfg(any())]
+
 use alloy_consensus::{
     Sealable,
     transaction::{Recovered, SignerRecoverable},

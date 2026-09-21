@@ -65,9 +65,7 @@ use foundry_config::{
 };
 use foundry_debugger::{Debugger, DebuggerLayout};
 use foundry_evm::{
-    core::evm::{
-        BlockEnvFor, EthEvmNetwork, FoundryEvmNetwork, SpecFor, TempoEvmNetwork, TxEnvFor,
-    },
+    core::evm::{BlockEnvFor, EthEvmNetwork, FoundryEvmNetwork, SpecFor, TxEnvFor},
     executors::{ExecutorBuilder, ShowmapDomain},
     fork::ResolvedFork,
     fuzz::{BaseCounterExample, BasicTxDetails, CounterExample},
@@ -93,14 +91,20 @@ use std::{
 use tempfile::TempDir;
 use yansi::Paint;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm::core::evm::BaseEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use foundry_evm::core::evm::MonadEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::core::evm::OpEvmNetwork;
+*/
 
 mod evm_profile_server;
 mod filter;
@@ -221,25 +225,34 @@ fn count_fuzz_minimize_targets<FEN: FoundryEvmNetwork>(
 macro_rules! dispatch_network {
     ($evm_opts:expr, | $fen:ident | $body:expr) => {
         match $evm_opts.networks.execution_network() {
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             NetworkVariant::Base => {
                 type $fen = BaseEvmNetwork;
                 $body
             }
+            */
             NetworkVariant::Tempo => {
-                type $fen = TempoEvmNetwork;
-                $body
+                // type $fen = TempoEvmNetwork;
+                // $body
+                eyre::bail!(
+                    "Tempo execution is disabled on the Ethereum-only EVM2 migration branch"
+                )
             }
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             NetworkVariant::Monad => {
                 type $fen = MonadEvmNetwork;
                 $body
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             NetworkVariant::Optimism => {
                 type $fen = OpEvmNetwork;
                 $body
             }
+            */
             NetworkVariant::Ethereum => {
                 type $fen = EthEvmNetwork;
                 $body

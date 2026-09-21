@@ -42,10 +42,14 @@ rand.workspace = true
 thiserror.workspace = true
 
 [features]
-default = ["optimism"]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = []
 base = []
-optimism = [
-    "foundry-primitives/optimism",
-    "foundry-common/optimism",
-    "foundry-evm/optimism",
-]
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "foundry-primitives/optimism",
+#     "foundry-common/optimism",
+#     "foundry-evm/optimism",
+# ]
+optimism = []

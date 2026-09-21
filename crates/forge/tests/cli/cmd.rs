@@ -976,6 +976,7 @@ Installing forge-std in [..] (url: https://github.com/foundry-rs/forge-std, tag:
 });
 
 // checks that `forge init --network tempo` works.
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest!(can_init_tempo_project, |prj, cmd| {
     prj.wipe();
 
@@ -1029,8 +1030,10 @@ Installing tempo-std in [..] (url: https://github.com/tempoxyz/tempo-std, tag: N
 
     assert!(prj.root().join("README.md").exists());
 });
+*/
 
 // checks that `forge init --network tempo` correctly setup network key in config
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest!(can_execute_test_and_script_with_default_tempo_config, |prj, cmd| {
     prj.wipe();
 
@@ -1050,8 +1053,10 @@ forgetest!(can_execute_test_and_script_with_default_tempo_config, |prj, cmd| {
         .arg(prj.root())
         .assert_success();
 });
+*/
 
 // checks that `forge test --tempo` and `forge test -n tempo` are equivalent
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest!(network_flag_tempo_equivalent_to_legacy_tempo, |prj, cmd| {
     prj.wipe();
     cmd.args(["init", "--network", "tempo"]).arg(prj.root()).assert_success();
@@ -1069,6 +1074,7 @@ forgetest!(network_flag_tempo_equivalent_to_legacy_tempo, |prj, cmd| {
     // --tempo (legacy flag)
     cmd.forge_fuse().args(["test", "--tempo"]).arg("--root").arg(prj.root()).assert_success();
 });
+*/
 
 // checks that clone works with raw src containing `node_modules`
 // <https://github.com/foundry-rs/foundry/issues/10115>

@@ -62,5 +62,9 @@ figment = { workspace = true, features = ["test"] }
 tempfile.workspace = true
 
 [features]
-monad = ["foundry-evm-hardforks/monad", "foundry-evm-networks/monad"]
-base = ["foundry-evm-hardforks/base", "foundry-evm-networks/base"]
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = ["foundry-evm-hardforks/monad", "foundry-evm-networks/monad"]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = ["foundry-evm-hardforks/base", "foundry-evm-networks/base"]
+base = []

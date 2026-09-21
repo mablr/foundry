@@ -575,6 +575,7 @@ casttest!(erc20_curl_total_supply, |_prj, cmd| {
     assert!(output.contains(rpc));
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(erc20_transfer_help_includes_tempo_expires, |_prj, cmd| {
     let output =
         cmd.args(["erc20", "transfer", "--help"]).assert_success().get_output().stdout_lossy();
@@ -584,7 +585,9 @@ casttest!(erc20_transfer_help_includes_tempo_expires, |_prj, cmd| {
         "expected erc20 transfer help to expose --tempo.expires, got:\n{output}",
     );
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_async!(erc20_transfer_prints_tempo_sponsor_hash, |_prj, cmd| {
     let (_, _handle) = anvil::spawn(NodeConfig::test()).await;
     let rpc = _handle.http_endpoint();
@@ -618,6 +621,7 @@ forgetest_async!(erc20_transfer_prints_tempo_sponsor_hash, |_prj, cmd| {
     let hash = output.trim();
     assert!(hash.starts_with("0x") && hash.len() == 66, "expected sponsor hash, got:\n{output}",);
 });
+*/
 
 // tests that `balance` command works correctly with --json flag
 forgetest_async!(erc20_balance_json, |prj, cmd| {

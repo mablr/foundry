@@ -1,7 +1,7 @@
 use super::{
     Cheatcodes, CheatsConfig, ChiselState, CmpOperands, CustomPrintTracer, EdgeCovConfig,
     EdgeCovInspector, EdgeCoverage, Fuzzer, LineCoverageCollector, LogCollector, RevertDiagnostic,
-    ScriptExecutionInspector, TempoLabels, TracingInspector,
+    ScriptExecutionInspector, TracingInspector,
 };
 use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256, keccak256,
@@ -93,7 +93,7 @@ pub struct InspectorStackBuilder<BLOCK: Clone> {
     // configuration. This is independent of the Monad lifecycle migration.
     pub networks: NetworkConfigs,
     /// Concrete Tempo label inspector selected by the Tempo executor builder.
-    tempo_labels: Option<Box<TempoLabels>>,
+    //     tempo_labels: Option<Box<TempoLabels>>,
     /// Explicitly resolved additional cheatcode addresses.
     pub extra_cheatcode_addresses: &'static [Address],
     /// The wallets to set in the cheatcodes context.
@@ -117,7 +117,7 @@ impl<BLOCK: Clone> Default for InspectorStackBuilder<BLOCK> {
             chisel_state: None,
             enable_isolation: false,
             networks: NetworkConfigs::default(),
-            tempo_labels: None,
+            //             tempo_labels: None,
             extra_cheatcode_addresses: &[],
             wallets: None,
             create2_deployer: Default::default(),
@@ -227,12 +227,14 @@ impl<BLOCK: Clone> InspectorStackBuilder<BLOCK> {
         self
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Installs the Tempo label inspector.
-    #[inline]
-    pub(crate) fn tempo_labels(mut self, inspector: TempoLabels) -> Self {
-        self.tempo_labels = Some(Box::new(inspector));
-        self
-    }
+        #[inline]
+    //     pub(crate) fn tempo_labels(mut self, inspector: TempoLabels) -> Self {
+    //         self.tempo_labels = Some(Box::new(inspector));
+            self
+        }
+    */
 
     /// Sets explicitly resolved additional cheatcode addresses.
     #[inline]
@@ -264,7 +266,7 @@ impl<BLOCK: Clone> InspectorStackBuilder<BLOCK> {
             chisel_state,
             enable_isolation,
             networks,
-            tempo_labels,
+            //             tempo_labels,
             extra_cheatcode_addresses,
             wallets,
             create2_deployer,
@@ -299,7 +301,7 @@ impl<BLOCK: Clone> InspectorStackBuilder<BLOCK> {
 
         stack.enable_isolation(enable_isolation);
         stack.networks(networks);
-        stack.inner.tempo_labels = tempo_labels;
+        //         stack.inner.tempo_labels = tempo_labels;
         stack.set_extra_cheatcode_addresses(extra_cheatcode_addresses);
         stack.set_create2_deployer(create2_deployer);
 
@@ -440,7 +442,7 @@ pub struct InspectorStackInner {
     pub printer: Option<Box<CustomPrintTracer>>,
     pub revert_diag: Option<Box<RevertDiagnostic>>,
     pub script_execution_inspector: Option<Box<ScriptExecutionInspector>>,
-    pub tempo_labels: Option<Box<TempoLabels>>,
+    //     pub tempo_labels: Option<Box<TempoLabels>>,
     pub tracer: Option<Box<TracingInspector>>,
 
     // FoundryInspectorExt and other internal data.
@@ -808,7 +810,7 @@ impl<FEN: FoundryEvmNetwork> InspectorStack<FEN> {
                     line_coverage,
                     edge_coverage,
                     log_collector,
-                    tempo_labels,
+                    //                     tempo_labels,
                     tracer,
                     revert_diag,
                     reverter,
@@ -847,10 +849,12 @@ impl<FEN: FoundryEvmNetwork> InspectorStack<FEN> {
         InspectorData {
             logs: log_collector.and_then(|logs| logs.into_captured_logs()).unwrap_or_default(),
             labels: {
-                let mut labels = cheatcodes.as_ref().map(|c| c.labels.clone()).unwrap_or_default();
-                if let Some(tempo_labels) = tempo_labels {
-                    labels.extend(tempo_labels.labels);
-                }
+                let labels = cheatcodes.as_ref().map(|c| c.labels.clone()).unwrap_or_default();
+                /* EVM2 migration: disabled non-Ethereum execution.
+                // if let Some(tempo_labels) = tempo_labels {
+                //                     labels.extend(tempo_labels.labels);
+                                }
+                */
                 labels
             },
             traces,
@@ -1050,10 +1054,14 @@ impl<FEN: FoundryEvmNetwork> InspectorStackRefMut<'_, FEN> {
 
         let isolated_state = prepare_child_state(ecx.journal_inner());
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let state = foundry_evm_core::FoundryJournal::capture_reserve_balance(ecx.journal());
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let mut reserve_balance = None;
+        */
         let mut nested_chain_context = None;
         let res = self.with_inspector(|mut inspector| {
             let (res, nested_env) = {
@@ -1061,6 +1069,7 @@ impl<FEN: FoundryEvmNetwork> InspectorStackRefMut<'_, FEN> {
                 let mut evm = factory.create_nested_evm_with_inspector(db, evm_env, &mut inspector);
                 *evm.chain_mut() = chain_context;
                 evm.journal_inner_mut().state = isolated_state;
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 {
                     foundry_evm_core::FoundryJournal::restore_reserve_balance(
@@ -1073,10 +1082,12 @@ impl<FEN: FoundryEvmNetwork> InspectorStackRefMut<'_, FEN> {
                         true,
                     );
                 }
+                */
                 // Set depth to 1 to make sure traces are collected correctly.
                 evm.journal_inner_mut().depth = 1;
                 let res = evm.transact_raw(tx_env);
                 nested_chain_context = Some(evm.chain_mut().clone());
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 {
                     reserve_balance =
@@ -1084,6 +1095,7 @@ impl<FEN: FoundryEvmNetwork> InspectorStackRefMut<'_, FEN> {
                             evm.journal_mut(),
                         ));
                 }
+                */
                 (res, evm.to_evm_env())
             };
 
@@ -1112,11 +1124,13 @@ impl<FEN: FoundryEvmNetwork> InspectorStackRefMut<'_, FEN> {
         let was_precompile_called = self.isolated_call_was_precompile.take().unwrap_or(false);
 
         let Ok(res) = res else {
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             foundry_evm_core::FoundryJournal::restore_reserve_balance(
                 ecx.journal_mut(),
                 reserve_balance.expect("isolated transaction state was captured"),
             );
+            */
             refresh_chain_journal(ecx);
             // Should we match, encode and propagate error as a revert reason?
             let result =
@@ -1142,11 +1156,13 @@ impl<FEN: FoundryEvmNetwork> InspectorStackRefMut<'_, FEN> {
         let rolled_back = !res.result.is_success();
 
         merge_child_state(ecx.journal_mut().evm_state_mut(), res.state);
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         foundry_evm_core::FoundryJournal::restore_reserve_balance(
             ecx.journal_mut(),
             reserve_balance.expect("isolated transaction state was captured"),
         );
+        */
         refresh_chain_journal(ecx);
 
         let (result, address, output) = match res.result {
@@ -1592,7 +1608,7 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>>
                 &mut self.log_collector,
                 &mut self.printer,
                 &mut self.revert_diag,
-                &mut self.tempo_labels
+                //                 &mut self.tempo_labels
             ],
             |inspector| inspector.call(ecx, call).map(Some),
         );

@@ -12,7 +12,6 @@ use anvil::{NodeConfig, spawn};
 use axum::{Router, body::Bytes as BodyBytes};
 use forge_script_sequence::ScriptSequence;
 use foundry_compilers::artifacts::EvmVersion;
-use foundry_evm::constants::CALLER;
 use foundry_test_utils::{
     ScriptOutcome, ScriptTester,
     rpc::{self, next_http_archive_rpc_url},
@@ -138,6 +137,7 @@ contract DebugRemote {{
     assert_debug_dump_identifies_contract(&dump_path, &deployed, "ScriptForkDebugTarget");
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest_async!(monad_simulation_advances_transaction_context, |prj, cmd| {
     let (api, handle) = spawn(NodeConfig::test()).await;
@@ -208,7 +208,9 @@ contract SequentialMonadContextScript {
     // sender is outside Monad's parent/grandparent window and may dip again.
     cmd.forge_fuse().args(common).arg("--slow").assert_success();
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest_async!(monad_multi_rpc_sequence_uses_per_fork_decoder, |prj, cmd| {
     let (monad_eight_api, monad_eight) =
@@ -291,6 +293,7 @@ contract PerForkMetadataScript {
     cmd.forge_fuse().args(common).arg("--skip-simulation").assert_success();
     assert_metadata();
 });
+*/
 
 // Tests that the `run` command works correctly
 forgetest!(can_execute_script_command2, |prj, cmd| {
@@ -5027,6 +5030,7 @@ Error: --sponsor-url is not supported by forge script; use --tempo.sponsor with 
 "#]]);
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_async!(script_batch_rejects_non_tempo_network, |prj, cmd| {
     foundry_test_utils::util::initialize(prj.root());
 
@@ -5061,6 +5065,7 @@ Error: --batch mode is only supported on Tempo networks
 
 "#]]);
 });
+*/
 
 /// Asserts that the dry-run sequence under `root` rewrote every CREATE to a unique CREATE2
 /// call targeting the Arachnid factory.
@@ -5085,6 +5090,7 @@ fn assert_create2_rewrite_dry_run(root: &std::path::Path) {
 }
 
 // Dry-run against a local anvil to verify CREATE→CREATE2 rewriting.
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_async!(script_batch_rewrites_creates_to_create2, |prj, cmd| {
     foundry_test_utils::util::initialize(prj.root());
 
@@ -5109,6 +5115,7 @@ forgetest_async!(script_batch_rewrites_creates_to_create2, |prj, cmd| {
 
     assert_create2_rewrite_dry_run(prj.root());
 });
+*/
 
 // Same dry-run assertions against the live Moderato testnet.
 forgetest_async!(
@@ -5137,6 +5144,7 @@ forgetest_async!(
 // Tests that `forge script` works in Tempo mode without CreateCollision.
 // Tempo genesis pre-deploys the Arachnid CREATE2 factory at the same address as the default
 // CREATE2 deployer, so `deploy_create2_deployer` must be skipped to avoid a collision.
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest!(can_execute_script_command_with_tempo, |prj, cmd| {
     prj.wipe();
 
@@ -5153,7 +5161,9 @@ forgetest!(can_execute_script_command_with_tempo, |prj, cmd| {
         .arg(prj.root())
         .assert_success();
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_async!(tempo_script_runs_with_zero_fee_token_balance, |prj, cmd| {
     foundry_test_utils::util::initialize(prj.root());
     let script = prj.add_script(
@@ -5201,7 +5211,9 @@ contract TempoScript is Script {
     ]);
     cmd.assert_success();
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_async!(tempo_aa_script_broadcast_deploys_with_fee_token, |prj, cmd| {
     foundry_test_utils::util::initialize(prj.root());
     prj.add_source(
@@ -5264,7 +5276,9 @@ contract DeployTempoAA is Script {
         assert_eq!(transaction["transaction"]["feeToken"], alpha_usd.to_string().to_lowercase());
     }
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_async!(tempo_aa_script_broadcasts_with_local_sponsor, |prj, cmd| {
     foundry_test_utils::util::initialize(prj.root());
     let script = prj.add_script(
@@ -5319,6 +5333,7 @@ contract DeploySponsoredTempoAA is Script {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.to_ascii_lowercase().contains(&format!("tempo sponsor: {sponsor}")), "{stderr}");
 });
+*/
 
 // Helper: write a script that deploys `LargeRuntime` with runtime > default limit via
 // `vm.startBroadcast`.
@@ -5385,6 +5400,7 @@ forgetest_async!(script_check_contract_sizes_uses_amsterdam_code_size_limit, |pr
     assert!(!stderr.contains("above the contract size limit"), "{stderr}");
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_async!(script_check_contract_sizes_uses_network_specific_spec, |prj, cmd| {
     foundry_test_utils::util::initialize(prj.root());
     write_large_runtime_deploy_script(&prj, 50_000);
@@ -5429,6 +5445,7 @@ forgetest_async!(script_check_contract_sizes_uses_network_specific_spec, |prj, c
         );
     }
 });
+*/
 
 // Tests that `forge script` honors `code_size_limit` configured via foundry.toml
 // (the bug fix: previously only the CLI flag was honored).

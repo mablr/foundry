@@ -35,26 +35,40 @@ use revm::{
 use serde::{Deserialize, Serialize};
 use std::{fmt::Debug, ops::DerefMut};
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 pub mod base;
+*/
 pub mod eth;
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 pub mod monad;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 pub mod op;
-pub mod tempo;
+*/
+// Disabled for the Ethereum-only EVM2 migration.
+// pub mod tempo;
 
 pub use eth::*;
-pub use tempo::*;
+// Disabled for the Ethereum-only EVM2 migration.
+// pub use tempo::*;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 pub use base::*;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 pub use monad::*;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 pub use op::*;
+*/
 
 /// Foundry's compatibility trait associating a [`Network`] with a [`FoundryEvmFactory`].
 pub trait FoundryEvmNetwork: Copy + Debug + Default + 'static {
@@ -269,31 +283,39 @@ where
 {
     let evm_env = ecx.evm_clone();
     let chain_context = ecx.chain().clone();
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     let mut reserve_balance = FoundryJournal::capture_reserve_balance(ecx.journal());
+    */
     let (evm_env, journaled_state, chain_context) = {
         let (db, journaled_state) = ecx.db_journal_inner_mut();
         let journaled_state = journaled_state.clone();
         let mut evm = F::default().create_nested_evm_with_inspector(db, evm_env, inspector);
         *evm.chain_mut() = chain_context;
         *evm.journal_inner_mut() = journaled_state;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         {
             FoundryJournal::restore_reserve_balance(evm.journal_mut(), reserve_balance);
             refresh_nested_chain_journal(&mut *evm);
         }
+        */
         f(&mut *evm)?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         {
             reserve_balance = FoundryJournal::capture_reserve_balance(evm.journal_mut());
         }
+        */
         (evm.to_evm_env(), evm.journal_inner_mut().clone(), evm.chain_mut().clone())
     };
     ecx.set_journal_inner(journaled_state);
     ecx.set_evm(evm_env);
     *ecx.chain_mut() = chain_context;
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     FoundryJournal::restore_reserve_balance(ecx.journal_mut(), reserve_balance);
+    */
     refresh_chain_journal(ecx);
     Ok(())
 }
@@ -405,12 +427,18 @@ mod tests {
         state::{Account, AccountInfo, EvmStorageSlot, TransactionId},
     };
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     use alloy_monad_evm::MonadEvmFactory;
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     use monad_revm::{MonadHardfork, MonadJournalTr, reserve_balance::tracker::ReserveBalanceInit};
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     use revm::context::{BlockEnv, CfgEnv};
+    */
 
     #[test]
     fn inherited_journal_publishes_only_after_success() {
@@ -452,6 +480,7 @@ mod tests {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[test]
     fn inherited_monad_tracker_and_chain_publish_together() {
@@ -501,6 +530,7 @@ mod tests {
             }
         }
     }
+    */
 
     #[test]
     fn preparation_preserves_creation_and_protocol_warmth() {

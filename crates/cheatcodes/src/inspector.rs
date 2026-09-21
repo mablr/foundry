@@ -147,12 +147,12 @@ pub(crate) fn exec_create<FEN: FoundryEvmNetwork>(
     inputs: CreateInputs,
     ccx: &mut CheatsCtxt<'_, '_, FEN>,
 ) -> std::result::Result<CreateOutcome, EVMError<DatabaseError>> {
-    let fee_token = ccx.ecx.tx().fee_token();
+    //     let fee_token = ccx.ecx.tx().fee_token();
     let tx_origin = ccx.ecx.tx().caller();
     let mut inputs = Some(inputs);
     let mut outcome = None;
     executor.with_nested_evm(ccx.state, ccx.ecx, &mut |evm| {
-        evm.tx_mut().set_fee_token(fee_token);
+        //         evm.tx_mut().set_fee_token(fee_token);
         evm.tx_mut().set_caller(tx_origin);
         let inputs = inputs.take().unwrap();
         evm.journal_inner_mut().depth += 1;
@@ -904,12 +904,13 @@ pub struct Cheatcodes<FEN: FoundryEvmNetwork = EthEvmNetwork> {
     /// Per-state-snapshot copies of [`Self::fork_block_number_override`].
     pub fork_block_number_override_snapshots: HashMap<U256, Option<u64>>,
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Transaction-position context and Monad's reserve-balance-tracker state captured atomically
     /// alongside state snapshots.
     #[cfg(feature = "monad")]
     pub context_snapshots:
         HashMap<U256, (ChainFor<FEN>, monad_revm::reserve_balance::tracker::ReserveBalanceTracker)>,
-
+    */
     /// Whether we are currently executing inside an isolation context, i.e.
     /// the synthetic inner transaction wrapped by
     /// `InspectorStackRefMut::transact_inner` (used by `--gas-report` and
@@ -1001,8 +1002,10 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
             env_overrides: Default::default(),
             env_overrides_snapshots: Default::default(),
             fork_block_number_override_snapshots: Default::default(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             context_snapshots: Default::default(),
+            */
             in_isolation_context: false,
         }
     }
@@ -1312,6 +1315,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
         )
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Decodes the input data and applies Monad-specific cheatcodes.
     #[cfg(feature = "monad")]
     fn apply_monad_cheatcode(
@@ -1331,6 +1335,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
             &input,
         )
     }
+    */
 
     /// Grants cheat code access for new contracts if the caller also has
     /// cheatcode access or the new contract is created in top most call.
@@ -1468,6 +1473,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
             };
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if crate::monad::is_monad_cheatcode_call(
             self.extra_cheatcode_addresses,
@@ -1505,6 +1511,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
                 }
             };
         }
+        */
 
         if call.target_address == HARDHAT_CONSOLE_ADDRESS {
             return None;
@@ -1697,7 +1704,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
                     let input = call.input.bytes(ecx);
                     let chain_id = ecx.cfg().chain_id();
                     let rpc = ecx.db().active_fork_url();
-                    let fee_token = ecx.tx().fee_token();
+                    //                     let fee_token = ecx.tx().fee_token();
                     let account =
                         ecx.journal_mut().evm_state_mut().get_mut(&broadcast.new_origin).unwrap();
 
@@ -1747,9 +1754,11 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
                         }
                         tx_req.set_authorization_list(active_delegations);
                     }
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     if let Some(fee_token) = fee_token {
                         tx_req.set_fee_token(fee_token);
                     }
+                    */
                     self.broadcastable_transactions.push_back(BroadcastableTransaction {
                         rpc,
                         transaction: TransactionMaybeSigned::new(tx_req),
@@ -2428,12 +2437,14 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcode
 
         let cheatcode_call = call.target_address == CHEATCODE_ADDRESS
             || call.target_address == HARDHAT_CONSOLE_ADDRESS;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let cheatcode_call = cheatcode_call
             || crate::monad::is_monad_cheatcode_call(
                 self.extra_cheatcode_addresses,
                 call.target_address,
             );
+        */
         let curr_depth = ecx.journal().depth();
 
         self.finish_created_accounts_frame(
@@ -2972,17 +2983,19 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcode
                 input.set_caller(broadcast.new_origin);
 
                 let rpc = ecx.db().active_fork_url();
-                let fee_token = ecx.tx().fee_token();
+                //                 let fee_token = ecx.tx().fee_token();
                 let account = &ecx.journal().evm_state()[&broadcast.new_origin];
-                let mut tx_req = TransactionRequestFor::<FEN>::default()
+                let tx_req = TransactionRequestFor::<FEN>::default()
                     .with_from(broadcast.new_origin)
                     .with_kind(TxKind::Create)
                     .with_value(input.value())
                     .with_input(input.init_code())
                     .with_nonce(account.info.nonce);
+                /* EVM2 migration: disabled non-Ethereum execution.
                 if let Some(fee_token) = fee_token {
                     tx_req.set_fee_token(fee_token);
                 }
+                */
                 self.broadcastable_transactions.push_back(BroadcastableTransaction {
                     rpc,
                     transaction: TransactionMaybeSigned::new(tx_req),

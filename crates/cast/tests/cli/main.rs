@@ -1,7 +1,6 @@
 //! Contains various tests for checking cast commands
 
 use alloy_chains::NamedChain;
-use alloy_eips::Decodable2718;
 use alloy_hardforks::EthereumHardfork;
 use alloy_network::{ReceiptResponse, TransactionBuilder, TransactionResponse};
 use alloy_primitives::{Address, B256, Bytes, I256, U256, address, b256, hex, keccak256};
@@ -14,7 +13,6 @@ use alloy_signer::Signer;
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::SolValue;
 use anvil::NodeConfig;
-use foundry_evm::core::tempo::PATH_USD_ADDRESS;
 use foundry_test_utils::{
     rpc::{
         next_etherscan_api_key, next_http_archive_rpc_url, next_http_rpc_endpoint,
@@ -26,10 +24,6 @@ use foundry_test_utils::{
 };
 use serde_json::json;
 use std::{fs, io::ErrorKind, net::TcpListener, path::Path, process::Command, str::FromStr};
-use tempo_primitives::{
-    TempoTxEnvelope,
-    transaction::{KeychainVersion, TempoSignature},
-};
 
 #[cfg(unix)]
 use rexpect::{Encoding, process::wait::WaitStatus, reader::Options, spawn_with_options};
@@ -46,7 +40,7 @@ mod run_bal;
 mod run_networks;
 mod safe;
 mod selectors;
-mod tempo;
+// mod tempo;
 
 const PRESIGNED_EIP7702_AUTH: &str = "0xf85c827a6994f39fd6e51aad88f6f4ce6ab8827279cfffb922668001a03e1a66234e71242afcc7bc46c8950c3b2997b102db257774865f1232d2e7bf48a045e252dad189b27b2306792047745eba86bff0dd18aca813dbf3fba8c4e94576";
 
@@ -114,8 +108,10 @@ mod abi;
 mod access_list;
 mod address;
 mod bal;
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 mod base;
+*/
 mod bytecode;
 mod call;
 mod call_trace;
@@ -126,8 +122,10 @@ mod estimate;
 mod help;
 mod logs;
 mod mktx;
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 mod monad;
+*/
 mod receipt;
 mod rpc;
 mod run;

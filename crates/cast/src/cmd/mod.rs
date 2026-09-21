@@ -121,8 +121,10 @@ pub mod call_overrides;
 pub mod constructor_args;
 pub mod create2;
 pub mod creation_code;
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(any(feature = "base", feature = "optimism"))]
 pub mod da_estimate;
+*/
 pub mod erc20;
 pub mod erc4626;
 pub mod estimate;
@@ -193,6 +195,7 @@ pub(crate) fn disassemble(code: &[u8]) -> Result<String> {
     Ok(output)
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Rejects blob options before Base's transaction builder can discard them.
 #[cfg(feature = "base")]
 pub(crate) fn validate_base_transaction_options(
@@ -204,15 +207,20 @@ pub(crate) fn validate_base_transaction_options(
     );
     Ok(())
 }
+*/
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use alloy_chains::NamedChain;
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_config::Chain;
+    */
 
     #[tokio::test]
     async fn transaction_network_respects_explicit_selection() {
@@ -250,6 +258,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[test]
     fn normalized_hardfork_network_is_applied_to_evm_opts() {
@@ -259,7 +268,9 @@ mod tests {
         assert!(config.networks.is_monad());
         assert!(evm_opts.networks.is_monad());
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[tokio::test]
     async fn resolve_network_preserves_explicit_base() {
@@ -273,7 +284,9 @@ mod tests {
             "Tempo transaction options conflict with configured network `base`"
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[tokio::test]
     async fn resolve_network_infers_base_from_chain_id() {
@@ -284,8 +297,9 @@ mod tests {
             NetworkVariant::Base
         );
     }
+    */
 
-    #[cfg(all(any(feature = "base", feature = "optimism"), not(feature = "monad")))]
+    #[cfg(all(any(any(), any()), not(any())))]
     #[tokio::test]
     async fn resolve_network_allows_rpc_without_local_evm() {
         let config = Config {
@@ -298,6 +312,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[tokio::test]
     async fn resolve_network_preserves_config_over_chain_in_curl_mode() {
@@ -321,8 +336,9 @@ mod tests {
             NetworkVariant::Ethereum
         );
     }
+    */
 
-    #[cfg(all(feature = "base", not(feature = "optimism")))]
+    #[cfg(all(any(), not(any())))]
     #[tokio::test]
     async fn resolve_network_allows_rpc_without_optimism() {
         let config =
@@ -333,6 +349,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(any(feature = "base", feature = "optimism"))]
     #[tokio::test]
     async fn resolve_network_still_defaults_unknown_chain_ids_to_ethereum() {
@@ -343,4 +360,5 @@ mod tests {
             NetworkVariant::Ethereum
         );
     }
+    */
 }

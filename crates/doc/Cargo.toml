@@ -30,5 +30,7 @@ serde_json.workspace = true
 tracing.workspace = true
 
 [features]
-default = ["optimism"]
-optimism = ["foundry-common/optimism"]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = ["foundry-common/optimism"]
+optimism = []

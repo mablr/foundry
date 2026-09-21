@@ -2,16 +2,15 @@ use crate::{CallTrace, DecodedCallData};
 use alloy_primitives::{Address, B256, U256, hex};
 use alloy_sol_types::{SolCall, abi, sol};
 use foundry_config::{Chain, NamedChain};
-use foundry_evm_core::{
-    precompiles::{
-        BLAKE_2F, BLS12_G1ADD, BLS12_G1MSM, BLS12_G2ADD, BLS12_G2MSM, BLS12_MAP_FP_TO_G1,
-        BLS12_MAP_FP2_TO_G2, BLS12_PAIRING_CHECK, CELO_TRANSFER, EC_ADD, EC_MUL, EC_PAIRING,
-        EC_RECOVER, IDENTITY, MOD_EXP, P256_VERIFY, POINT_EVALUATION, RIPEMD_160, SHA_256,
-    },
-    tempo::{TEMPO_PRECOMPILE_ADDRESSES, TEMPO_TIP20_TOKENS, active_tempo_precompile_addresses},
+use foundry_evm_core::precompiles::{
+    BLAKE_2F, BLS12_G1ADD, BLS12_G1MSM, BLS12_G2ADD, BLS12_G2MSM, BLS12_MAP_FP_TO_G1,
+    BLS12_MAP_FP2_TO_G2, BLS12_PAIRING_CHECK, CELO_TRANSFER, EC_ADD, EC_MUL, EC_PAIRING,
+    EC_RECOVER, IDENTITY, MOD_EXP, P256_VERIFY, POINT_EVALUATION, RIPEMD_160, SHA_256,
 };
 use foundry_evm_hardforks::{ExecutionSpec, FoundryHardfork, TempoHardfork};
-use foundry_evm_networks::NetworkConfigs;
+use foundry_evm_networks::{
+    NetworkConfigs, TEMPO_PRECOMPILE_ADDRESSES, active_tempo_precompile_addresses,
+};
 use itertools::Itertools;
 use revm_inspectors::tracing::types::DecodedCallTrace;
 
@@ -519,10 +518,13 @@ pub(crate) fn is_known_precompile(
         },
         |networks| networks.is_tempo(),
     );
-    if is_tempo_context && (is_tempo_precompile || TEMPO_TIP20_TOKENS.contains(&address)) {
+    if is_tempo_context
+        && (is_tempo_precompile || address == foundry_common::tempo::PATH_USD_ADDRESS)
+    {
         return true;
     }
     // Monad precompiles (only on a Monad chain or in an explicitly configured Monad context).
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     {
         let monad_hardfork =
@@ -551,7 +553,9 @@ pub(crate) fn is_known_precompile(
             }
         }
     }
+    */
     // Base precompiles (only on a Base chain or in an explicitly configured Base context).
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     {
         let base_upgrade = hardfork
@@ -576,6 +580,7 @@ pub(crate) fn is_known_precompile(
             return true;
         }
     }
+    */
     // Celo transfer precompile (only on Celo chains).
     let is_celo_context = networks.map_or_else(
         || {
@@ -649,10 +654,15 @@ mod tests {
     use super::*;
     use alloy_primitives::{address, hex};
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use base_common_precompiles::ActivationRegistryStorage;
-    #[cfg(feature = "base")]
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
+    #[cfg(any())]
+        use foundry_evm_networks::{TEMPO_PRECOMPILE_ADDRESSES, active_tempo_precompile_addresses};
     use foundry_evm_hardforks::BaseUpgrade;
+    */
 
     #[test]
     fn known_precompile_boundaries() {
@@ -671,6 +681,7 @@ mod tests {
         ));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn base_precompiles_require_a_known_upgrade() {
@@ -683,6 +694,7 @@ mod tests {
             Some(FoundryHardfork::Base(BaseUpgrade::Beryl))
         ));
     }
+    */
 
     #[test]
     fn decodes_only_confirmed_p256_precompile_calls() {

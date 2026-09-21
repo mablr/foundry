@@ -140,6 +140,7 @@ pub(crate) async fn handle_traces(
     Ok(())
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(all(test, feature = "monad"))]
 mod tests {
     use super::*;
@@ -164,3 +165,4 @@ mod tests {
         );
     }
 }
+*/

@@ -20,10 +20,14 @@ use serde::Serialize;
 use tempo_revm::TempoInvalidTransaction;
 use tokio::time::Duration;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 mod base;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 mod optimism;
+*/
 
 pub(crate) type Result<T> = std::result::Result<T, BlockchainError>;
 
@@ -139,9 +143,11 @@ pub enum BlockchainError {
         "tempo transaction received but is not supported.\n\nYou can use it by running anvil with '--tempo'."
     )]
     TempoTransactionUnsupported,
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[error("Base transactions require native Base execution; run Anvil with --network base")]
     BaseTransactionUnsupported,
+    */
     #[error("Unknown transaction type not supported")]
     UnknownTransactionType,
     #[error("Excess blob gas not set.")]
@@ -157,9 +163,11 @@ pub enum BlockchainError {
     },
     #[error("Invalid transaction request: {0}")]
     InvalidTransactionRequest(String),
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[error("EIP-8130 transaction rejected: {0}")]
     Eip8130TransactionRejected(String),
+    */
     #[error("filter not found")]
     FilterNotFound,
 }
@@ -369,10 +377,12 @@ pub enum InvalidTransactionError {
     /// Missing enveloped transaction
     #[error("missing enveloped transaction")]
     MissingEnvelopedTx,
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// EIP-8130 transaction failed block-inclusion validation.
     #[cfg(feature = "base")]
     #[error("EIP-8130 transaction rejected: {0}")]
     Eip8130(String),
+    */
     /// Native ETH value transfers are not allowed in Tempo mode
     #[error("native value transfer not allowed in Tempo mode")]
     TempoNativeValueTransfer,
@@ -579,12 +589,14 @@ impl<T: Serialize> ToRpcResponseResult for Result<T> {
                     message: err.to_string().into(),
                     data: None,
                 },
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "base")]
                 err @ BlockchainError::Eip8130TransactionRejected(_) => RpcError {
                     code: ErrorCode::TransactionRejected,
                     message: err.to_string().into(),
                     data: None,
                 },
+                */
                 err @ BlockchainError::EvmOverrideError(_) => {
                     RpcError::invalid_params(err.to_string())
                 }
@@ -638,10 +650,12 @@ impl<T: Serialize> ToRpcResponseResult for Result<T> {
                 err @ BlockchainError::DepositTransactionUnsupported => {
                     RpcError::invalid_params(err.to_string())
                 }
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "base")]
                 err @ BlockchainError::BaseTransactionUnsupported => {
                     RpcError::invalid_params(err.to_string())
                 }
+                */
                 err @ BlockchainError::TempoTransactionUnsupported => {
                     RpcError::invalid_params(err.to_string())
                 }

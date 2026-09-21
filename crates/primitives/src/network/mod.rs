@@ -1,8 +1,10 @@
 use alloy_network::Network;
 
 mod header;
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(any(feature = "base", feature = "optimism"))]
 mod optimism;
+*/
 mod receipt;
 
 use alloy_provider::fillers::{
@@ -12,11 +14,13 @@ use alloy_provider::fillers::{
 pub use header::*;
 pub use receipt::*;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 pub use optimism::FoundryTransactionResponse;
+*/
 
 /// Default JSON-RPC transaction response when the `optimism` feature is disabled.
-#[cfg(not(feature = "optimism"))]
+// EVM2 migration: unconditional Ethereum fallback.
 pub type FoundryTransactionResponse = alloy_rpc_types_eth::Transaction<crate::FoundryTxEnvelope>;
 
 /// Foundry network type.

@@ -636,13 +636,15 @@ mod tests {
     use crate::source::SessionSourceConfig;
     use foundry_compilers::{error::SolcError, solc::Solc};
     use foundry_config::Config;
-    use foundry_evm::{core::evm::EthEvmNetwork, executors::ExecutorBuilder, opts::EvmOpts};
+    use foundry_evm::{core::evm::EthEvmNetwork, opts::EvmOpts};
     use foundry_evm_networks::{NetworkConfigs, celo::transfer::CELO_TRANSFER_ADDRESS};
     use solar::sema::Compiler;
     use std::sync::Mutex;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     use foundry_evm::core::{constants::MONAD_CHEATCODE_ADDRESS, evm::MonadEvmNetwork};
+    */
 
     type TestSessionSource = SessionSource<EthEvmNetwork>;
 
@@ -689,6 +691,7 @@ mod tests {
         assert_celo_transfer_precompile(restored).await;
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[tokio::test(flavor = "multi_thread")]
     async fn chisel_runner_uses_dispatched_monad_tooling() {
@@ -707,6 +710,7 @@ mod tests {
             &[MONAD_CHEATCODE_ADDRESS]
         );
     }
+    */
 
     #[test]
     fn test_expressions() {

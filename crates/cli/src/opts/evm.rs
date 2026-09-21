@@ -365,6 +365,7 @@ mod tests {
         assert_eq!(env.chain, Some(NamedChain::Goerli.into()));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn can_parse_namespaced_base_hardfork() {
@@ -375,6 +376,7 @@ mod tests {
         assert!(config.networks.is_base());
         assert_eq!(config.hardfork.map(String::from).as_deref(), Some("base:Beryl"));
     }
+    */
 
     #[test]
     fn hardfork_arg_selects_network() {

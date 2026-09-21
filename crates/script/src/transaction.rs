@@ -243,6 +243,7 @@ mod tests {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(all(test, feature = "monad"))]
 mod monad_tests {
     use super::*;
@@ -310,3 +311,4 @@ mod monad_tests {
         assert_eq!(reserve.arguments, Some(Vec::new()));
     }
 }
+*/

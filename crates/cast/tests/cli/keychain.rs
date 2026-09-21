@@ -1,34 +1,20 @@
 //! CLI tests for `cast keychain` subcommands.
 
-use alloy_consensus::{TxEnvelope, transaction::SignerRecoverable};
-use alloy_eips::{Decodable2718, Encodable2718};
-use alloy_primitives::{Address, U256, hex};
-use alloy_rlp::{Header, PayloadView};
+use alloy_primitives::{U256, hex};
 use alloy_rpc_types::Authorization;
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
-use anvil::NodeConfig;
-use foundry_evm::core::tempo::PATH_USD_ADDRESS;
+use foundry_common::tempo::PATH_USD_ADDRESS;
 use foundry_test_utils::{TestCommand, str, util::OutputExt};
-use path_slash::PathExt;
-use std::{
-    fs,
-    io::{Read, Write},
-    net::TcpListener,
-    path::Path,
-    thread,
-    time::Duration,
-};
-use tempo_alloy::accounts::TempoAccountsStore;
-use tempo_contracts::precompiles::TIP20_FACTORY_ADDRESS;
-use tempo_hardfork::TempoHardfork;
-use tempo_primitives::TempoTxEnvelope;
+use std::{fs, path::Path};
 
 /// Anvil test accounts (standard mnemonic).
 mod accounts {
     pub const PK1: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
     pub const PK2: &str = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+    /* EVM2 migration: disabled non-Ethereum execution.
     pub const PK3: &str = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a";
+    */
     pub const ADDR1: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
     pub const ADDR2: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
     pub const ADDR3: &str = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
@@ -75,6 +61,7 @@ fn write_accounts_store(tempo_home: &Path, chain_id: u64) {
     .expect("write Tempo Accounts store");
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 fn spawn_fee_payer_service(
     fee_payer: PrivateKeySigner,
     fee_token: Address,
@@ -178,12 +165,17 @@ fn spawn_fee_payer_service(
     });
     (format!("http://{address}"), handle)
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 const ADDRESS_REGISTRY: &str = "0xFDC0000000000000000000000000000000000000";
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 fn tip20_factory() -> String {
     TIP20_FACTORY_ADDRESS.to_string()
 }
+*/
 
 const MISSING_SESSION_ID: &str =
     "0x5555555555555555555555555555555555555555555555555555555555555555";
@@ -192,14 +184,19 @@ fn batch_send_transfer_call(path_usd: &str) -> String {
     format!("{path_usd}::transfer(address,uint256):{},0", accounts::ADDR3)
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 const PRECOMPUTED_VADDR_SALT_FOR_ADDR1: &str =
     "0x00000000000000000000000000000000000000000000000000000000abf52baf";
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 fn assert_wrong_chain_error(stderr: &str) {
     assert!(stderr.contains("is for chain 31338"), "unexpected stderr:\n{stderr}");
     assert!(stderr.contains("command is using chain 31337"), "unexpected stderr:\n{stderr}");
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 fn cast_send_session_script(path_usd: &str) -> String {
     format!(
         r#"#!/bin/sh
@@ -212,6 +209,7 @@ printf '%s\n' "$tx_hash"
         recipient = accounts::ADDR3,
     )
 }
+*/
 
 fn create_session(cmd: &mut TestCommand, tempo_home: &Path, chain_id: &str) -> (String, String) {
     create_session_with_scope(cmd, tempo_home, chain_id, &path_usd())
@@ -270,6 +268,7 @@ fn assert_accounts_store_key_retired(tempo_home: &Path, context: &str) {
     assert!(!tempo_home.join("wallet/sessions.toml").exists());
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 fn assert_accounts_store_key_signable(tempo_home: &Path, context: &str) {
     let store_file = tempo_home.join("wallet/store.json");
     let contents = fs::read_to_string(&store_file).expect("store.json exists");
@@ -282,14 +281,18 @@ fn assert_accounts_store_key_signable(tempo_home: &Path, context: &str) {
     );
     assert!(!tempo_home.join("wallet/sessions.toml").exists());
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 fn assert_async_tx_hash(stdout: &str, command: &str) {
     assert!(
         stdout.trim().starts_with("0x"),
         "expected {command} --async to print a tx hash, got:\n{stdout}"
     );
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 fn assert_contains_tx_hash(stdout: &str, command: &str) {
     assert!(
         stdout.lines().any(|line| {
@@ -301,7 +304,9 @@ fn assert_contains_tx_hash(stdout: &str, command: &str) {
         "expected {command} to print a tx hash, got:\n{stdout}"
     );
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 fn assert_session_cleanup_failure(stderr: &str) {
     assert!(
         stderr.contains("failed to clean up Tempo session after inner command"),
@@ -312,8 +317,10 @@ fn assert_session_cleanup_failure(stderr: &str) {
         "unexpected stderr:\n{stderr}"
     );
 }
+*/
 
 // `cast keychain rl --json` must emit `{"remaining":"<value>"}`, not a bare string.
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(keychain_rl_json_is_object, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -346,9 +353,11 @@ casttest!(keychain_rl_json_is_object, async |_prj, cmd| {
     // Must not be a bare string (old bug: `"0"`)
     assert!(!parsed.is_string(), "JSON output must not be a bare string, got: {output}");
 });
+*/
 
 // `cast keychain authorize --tempo.print-sponsor-hash --json` must emit
 // `{"sponsor_hash":"0x..."}`, not a raw hex string.
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(keychain_authorize_sponsor_hash_json_is_object, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -379,7 +388,9 @@ casttest!(keychain_authorize_sponsor_hash_json_is_object, async |_prj, cmd| {
     assert!(hash.starts_with("0x"), "sponsor_hash should be 0x-prefixed, got: {hash}");
     assert_eq!(hash.len(), 66, "sponsor_hash should be 32-byte hex (66 chars), got: {hash}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(keychain_rejects_remote_sponsor_instead_of_ignoring_it, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -403,6 +414,7 @@ casttest!(keychain_rejects_remote_sponsor_instead_of_ignoring_it, async |_prj, c
 
     assert!(stderr.contains("--sponsor-url is not supported by cast keychain"), "{stderr}");
 });
+*/
 
 // TODO: remove this check once browser supports T5/T6 KeyAuthorization fields
 casttest!(key_authorization_sign_rejects_browser_witness_before_browser_run, |_prj, cmd| {
@@ -572,6 +584,7 @@ casttest!(key_authorization_inspect_account_mismatch_rejected, |_prj, cmd| {
 });
 
 // On-chain (T6): authorize an admin key, then confirm it via `keychain is-admin --json`.
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(keychain_authorize_admin_then_is_admin, async |_prj, cmd| {
     use tempo_hardfork::TempoHardfork;
     let (_, handle) =
@@ -611,9 +624,11 @@ casttest!(keychain_authorize_admin_then_is_admin, async |_prj, cmd| {
     assert!(parsed.is_object(), "expected JSON object, got: {output}");
     assert_eq!(parsed["is_admin"], serde_json::Value::Bool(true), "got: {output}");
 });
+*/
 
 // On-chain: authorize a regular access key, then use the real `cast send` binary to sign,
 // broadcast, and mine an account transaction with it.
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(send_with_authorized_access_key_succeeds, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -658,8 +673,10 @@ casttest!(send_with_authorized_access_key_succeeds, async |_prj, cmd| {
     assert!(receipt["transactionHash"].is_string(), "unexpected receipt: {output}");
     assert_eq!(receipt["status"], "0x1", "unexpected receipt: {output}");
 });
+*/
 
 // On-chain: key authorization and `keychain set-scope` keep the tuple ABI through T13.
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(keychain_set_scope_succeeds_through_t13, async |_prj, cmd| {
     for hardfork in [TempoHardfork::T10, TempoHardfork::T11, TempoHardfork::T12, TempoHardfork::T13]
     {
@@ -716,7 +733,9 @@ casttest!(keychain_set_scope_succeeds_through_t13, async |_prj, cmd| {
         );
     }
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(send_with_local_sponsor_reports_sponsor_as_fee_payer, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -763,7 +782,9 @@ casttest!(send_with_local_sponsor_reports_sponsor_as_fee_payer, async |_prj, cmd
         "unexpected receipt: {output}"
     );
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(send_uses_access_key_from_accounts_store, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -808,7 +829,9 @@ casttest!(send_uses_access_key_from_accounts_store, async |_prj, cmd| {
         serde_json::from_str(output.trim()).expect("cast send emits a JSON receipt");
     assert_eq!(receipt["status"], "0x1", "unexpected receipt: {output}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(send_with_accounts_store_and_remote_sponsor_sync_succeeds, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -867,7 +890,9 @@ casttest!(send_with_accounts_store_and_remote_sponsor_sync_succeeds, async |_prj
         "unexpected receipt: {output}"
     );
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tempo_unlocked_send_does_not_require_accounts_store_entry, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -901,7 +926,9 @@ casttest!(tempo_unlocked_send_does_not_require_accounts_store_entry, async |_prj
         serde_json::from_str(output.trim()).expect("cast send emits a JSON receipt");
     assert_eq!(receipt["status"], "0x1", "unexpected receipt: {output}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tempo_accounts_store_does_not_change_ethereum_send_or_mktx, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test()).await;
     let rpc = handle.http_endpoint();
@@ -950,7 +977,9 @@ casttest!(tempo_accounts_store_does_not_change_ethereum_send_or_mktx, async |_pr
     let raw = alloy_primitives::hex::decode(output.trim()).expect("decode raw transaction");
     TxEnvelope::decode_2718(&mut raw.as_slice()).expect("decode Ethereum transaction");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(corrupt_tempo_store_does_not_break_ethereum_unlocked_send, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test()).await;
     let rpc = handle.http_endpoint();
@@ -980,8 +1009,10 @@ casttest!(corrupt_tempo_store_does_not_break_ethereum_unlocked_send, async |_prj
         .assert_success()
         .stdout_eq("0x\n");
 });
+*/
 
 // On-chain (T6): a keychain signature from an authorized admin key passes `verify-admin`.
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(keychain_verify_admin_accepts_admin_signature, async |_prj, cmd| {
     use alloy_primitives::{Address, B256, hex};
     use alloy_signer::SignerSync;
@@ -1040,8 +1071,10 @@ casttest!(keychain_verify_admin_accepts_admin_signature, async |_prj, cmd| {
         .expect("cast keychain verify-admin --json should emit valid JSON");
     assert_eq!(parsed["valid"], serde_json::Value::Bool(true), "got: {output}");
 });
+*/
 
 // On-chain (T6): `keychain authorize --admin` rejects spending limits before submitting.
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(keychain_authorize_admin_rejects_limits, async |_prj, cmd| {
     use tempo_hardfork::TempoHardfork;
     let (_, handle) =
@@ -1066,10 +1099,12 @@ casttest!(keychain_authorize_admin_rejects_limits, async |_prj, cmd| {
 
     assert!(stderr.contains("spending limits"), "unexpected stderr:\n{stderr}");
 });
+*/
 
 // An access-key signer is rejected for admin-gated keychain mutators even when it is an active
 // admin key, because submitting the mutator as access-key-signed calldata reverts on-chain with
 // `UnauthorizedCaller()` on the pinned Tempo build.
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(keychain_access_key_cannot_submit_admin_mutator, async |_prj, cmd| {
     use tempo_hardfork::TempoHardfork;
     let (_, handle) =
@@ -1113,6 +1148,7 @@ casttest!(keychain_access_key_cannot_submit_admin_mutator, async |_prj, cmd| {
         "unexpected stderr:\n{stderr}"
     );
 });
+*/
 
 // Offline (T6): an admin access key signing a child authorization binds the authorization to the
 // root account it manages, not to the signing admin key. This covers the delegated admin-signing
@@ -1153,6 +1189,7 @@ casttest!(key_authorization_sign_admin_access_key_binds_root_account, |_prj, cmd
     );
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tempo_import_access_key_writes_accounts_store, |prj, cmd| {
     let tempo_home = prj.root().join("tempo-home");
     let authorization = cmd
@@ -1197,6 +1234,7 @@ casttest!(tempo_import_access_key_writes_accounts_store, |prj, cmd| {
     assert!(keys[0].key_authorization().is_some());
     assert!(keys[0].is_locally_signable());
 });
+*/
 
 casttest!(keychain_doctor_json_keeps_report_schema_version, async |_prj, cmd| {
     let output = cmd
@@ -1288,6 +1326,7 @@ Continue anyway? [y/N] Aborted.
     assert!(stderr.contains("error sending request"), "unexpected stderr:\n{stderr}");
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(keychain_eip7702_address_auth_uses_wallet_signer, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1317,7 +1356,9 @@ casttest!(keychain_eip7702_address_auth_uses_wallet_signer, async |_prj, cmd| {
         serde_json::from_str(output.trim()).expect("keychain check emits JSON");
     assert_eq!(checked["data"]["provisioned"], true);
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(wallet_session_revoke_revokes_provisioned_key_on_chain, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1390,7 +1431,9 @@ Continue anyway? [y/N] Aborted.
 
     assert_accounts_store_key_retired(tempo_home.path(), "revoked");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(wallet_session_revoke_sponsor_hash_does_not_mark_revoked, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1445,7 +1488,9 @@ casttest!(wallet_session_revoke_sponsor_hash_does_not_mark_revoked, async |_prj,
 
     assert_accounts_store_key_signable(tempo_home.path(), "active");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(wallet_session_revoke_marks_unprovisioned_key_revoked_locally, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1488,6 +1533,7 @@ casttest!(wallet_session_revoke_marks_unprovisioned_key_revoked_locally, async |
 
     assert_accounts_store_key_retired(tempo_home.path(), "revoked");
 });
+*/
 
 casttest!(wallet_session_revoke_local_cleans_key_without_rpc, async |_prj, cmd| {
     let tempo_home = tempfile::tempdir().unwrap();
@@ -1547,6 +1593,7 @@ casttest!(wallet_session_store_preserves_existing_access_keys, async |prj, cmd| 
     assert!(!tempo_home.join("wallet/sessions.toml").exists());
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(wallet_session_revoke_wrong_chain_preserves_local_key, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1569,7 +1616,9 @@ casttest!(wallet_session_revoke_wrong_chain_preserves_local_key, async |_prj, cm
 
     assert_accounts_store_key_signable(tempo_home.path(), "active");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(
     wallet_session_run_for_without_key_use_fails_closed_and_cleans_key_material,
     async |_prj, cmd| {
@@ -1634,7 +1683,9 @@ printf '%s\n' "${TEMPO_SESSION_ID}" > "$1"
         assert_accounts_store_key_retired(tempo_home.path(), "revoking");
     }
 );
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(wallet_session_run_for_cast_send_submits_with_session_key, async |prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1675,7 +1726,9 @@ casttest!(wallet_session_run_for_cast_send_submits_with_session_key, async |prj,
     assert_contains_tx_hash(&stdout, "child cast send");
     assert_accounts_store_key_retired(tempo_home.path(), "revoked");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(wallet_session_run_for_batch_send_submits_with_session_key, async |prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1729,7 +1782,9 @@ printf '%s\n' "$tx_hash"
     assert_contains_tx_hash(&stdout, "child cast batch-send");
     assert_accounts_store_key_retired(tempo_home.path(), "revoked");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(wallet_session_run_for_forge_script_submits_with_session_key, async |prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1828,7 +1883,9 @@ contract SessionForgeScript is Script {{
     );
     assert_accounts_store_key_retired(tempo_home.path(), "revoked");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(batch_send_uses_tempo_session_id_env, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1857,7 +1914,9 @@ casttest!(batch_send_uses_tempo_session_id_env, async |_prj, cmd| {
 
     assert_async_tx_hash(&stdout, "cast batch-send");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(batch_mktx_uses_tempo_session_id_env, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1880,7 +1939,9 @@ casttest!(batch_mktx_uses_tempo_session_id_env, async |_prj, cmd| {
         "expected cast batch-mktx to print raw tx hex, got:\n{stdout}"
     );
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(batch_mktx_raw_unsigned_resolves_tempo_access_key_metadata, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1916,7 +1977,9 @@ casttest!(batch_mktx_raw_unsigned_resolves_tempo_access_key_metadata, async |_pr
         "raw unsigned must still resolve Tempo access-key metadata, got:\n{stderr}"
     );
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(vaddr_create_sync_json_uses_tempo_session_id_env, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1953,7 +2016,9 @@ casttest!(vaddr_create_sync_json_uses_tempo_session_id_env, async |_prj, cmd| {
         "expected vaddr create --json to include registration tx hash, got:\n{stdout}"
     );
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tip20_create_uses_tempo_session_id_env, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -1987,7 +2052,9 @@ casttest!(tip20_create_uses_tempo_session_id_env, async |_prj, cmd| {
 
     assert_async_tx_hash(&stdout, "cast tip20 create");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tip20_mine_register_uses_tempo_session_id_env, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2016,7 +2083,9 @@ casttest!(tip20_mine_register_uses_tempo_session_id_env, async |_prj, cmd| {
 
     assert_contains_tx_hash(&stdout, "cast tip20 mine --register");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(erc20_transfer_uses_tempo_session_id_env, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2046,7 +2115,9 @@ casttest!(erc20_transfer_uses_tempo_session_id_env, async |_prj, cmd| {
 
     assert_async_tx_hash(&stdout, "cast erc20 transfer");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(batch_mktx_rejects_session_with_explicit_signer, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2074,7 +2145,9 @@ casttest!(batch_mktx_rejects_session_with_explicit_signer, async |_prj, cmd| {
 
     assert!(stderr.contains("explicit wallet signer"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(erc20_rejects_session_with_explicit_signer, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2103,6 +2176,7 @@ casttest!(erc20_rejects_session_with_explicit_signer, async |_prj, cmd| {
 
     assert!(stderr.contains("explicit wallet signer"), "unexpected stderr:\n{stderr}");
 });
+*/
 
 casttest!(batch_mktx_rejects_session_with_ethsign, |_prj, cmd| {
     let path_usd = path_usd();
@@ -2151,6 +2225,7 @@ casttest!(batch_mktx_rejects_session_with_raw_unsigned, |_prj, cmd| {
     );
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(batch_mktx_rejects_session_on_wrong_chain, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2179,7 +2254,9 @@ casttest!(batch_mktx_rejects_session_on_wrong_chain, async |_prj, cmd| {
 
     assert_wrong_chain_error(&stderr);
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(vaddr_create_rejects_session_with_explicit_signer, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2206,7 +2283,9 @@ casttest!(vaddr_create_rejects_session_with_explicit_signer, async |_prj, cmd| {
 
     assert!(stderr.contains("explicit wallet signer"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(vaddr_create_rejects_session_with_browser, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2232,7 +2311,9 @@ casttest!(vaddr_create_rejects_session_with_browser, async |_prj, cmd| {
 
     assert!(stderr.contains("cannot be combined with --browser"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(vaddr_create_rejects_session_on_wrong_chain, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2261,7 +2342,9 @@ casttest!(vaddr_create_rejects_session_on_wrong_chain, async |_prj, cmd| {
 
     assert_wrong_chain_error(&stderr);
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tip20_create_rejects_session_with_explicit_signer, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2293,7 +2376,9 @@ casttest!(tip20_create_rejects_session_with_explicit_signer, async |_prj, cmd| {
 
     assert!(stderr.contains("explicit wallet signer"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tip20_create_rejects_session_with_browser, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2324,7 +2409,9 @@ casttest!(tip20_create_rejects_session_with_browser, async |_prj, cmd| {
 
     assert!(stderr.contains("cannot be combined with --browser"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tip20_create_rejects_session_on_wrong_chain, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2358,7 +2445,9 @@ casttest!(tip20_create_rejects_session_on_wrong_chain, async |_prj, cmd| {
 
     assert_wrong_chain_error(&stderr);
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tip20_mine_register_rejects_session_with_explicit_signer, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2385,7 +2474,9 @@ casttest!(tip20_mine_register_rejects_session_with_explicit_signer, async |_prj,
 
     assert!(stderr.contains("explicit wallet signer"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tip20_mine_register_rejects_session_with_browser, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2411,7 +2502,9 @@ casttest!(tip20_mine_register_rejects_session_with_browser, async |_prj, cmd| {
 
     assert!(stderr.contains("cannot be combined with --browser"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(tip20_mine_register_rejects_session_on_wrong_chain, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2440,7 +2533,9 @@ casttest!(tip20_mine_register_rejects_session_on_wrong_chain, async |_prj, cmd| 
 
     assert_wrong_chain_error(&stderr);
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(erc20_rejects_session_with_browser, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2468,7 +2563,9 @@ casttest!(erc20_rejects_session_with_browser, async |_prj, cmd| {
 
     assert!(stderr.contains("cannot be combined with --browser"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(erc20_rejects_session_on_wrong_chain, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2498,7 +2595,9 @@ casttest!(erc20_rejects_session_on_wrong_chain, async |_prj, cmd| {
 
     assert_wrong_chain_error(&stderr);
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(wallet_session_run_for_grandchild_cast_send_inherits_session_key, async |prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2553,7 +2652,9 @@ sh "$1"
     assert_contains_tx_hash(&stdout, "grandchild cast send");
     assert_accounts_store_key_retired(tempo_home.path(), "revoked");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(cast_send_rejects_session_with_explicit_signer, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2578,7 +2679,9 @@ casttest!(cast_send_rejects_session_with_explicit_signer, async |_prj, cmd| {
 
     assert!(stderr.contains("explicit wallet signer"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(batch_send_rejects_session_with_explicit_signer, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2606,7 +2709,9 @@ casttest!(batch_send_rejects_session_with_explicit_signer, async |_prj, cmd| {
 
     assert!(stderr.contains("explicit wallet signer"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(batch_send_rejects_session_with_unlocked, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2635,7 +2740,9 @@ casttest!(batch_send_rejects_session_with_unlocked, async |_prj, cmd| {
 
     assert!(stderr.contains("cannot be combined with --unlocked"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(batch_send_rejects_session_on_wrong_chain, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2665,7 +2772,9 @@ casttest!(batch_send_rejects_session_on_wrong_chain, async |_prj, cmd| {
     assert!(stderr.contains("is for chain 31338"), "unexpected stderr:\n{stderr}");
     assert!(stderr.contains("command is using chain 31337"), "unexpected stderr:\n{stderr}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(wallet_session_run_for_cleans_key_material_when_child_fails, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let rpc = handle.http_endpoint();
@@ -2713,7 +2822,9 @@ exit 7
     assert!(stderr.contains("exited with code 7"), "unexpected stderr:\n{stderr}");
     assert_accounts_store_key_retired(tempo_home.path(), "failed");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(
     wallet_session_run_for_retires_local_key_when_revoke_preflight_fails,
     async |_prj, cmd| {
@@ -2763,3 +2874,4 @@ test -n "${TEMPO_SESSION_ID:-}"
         assert_accounts_store_key_retired(tempo_home.path(), "revoking");
     }
 );
+*/

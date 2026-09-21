@@ -48,8 +48,10 @@ use std::{
     time::Instant,
 };
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use crate::evm::monad::BlockContext;
+*/
 
 mod diagnostic;
 pub use diagnostic::RevertDiagnostic;
@@ -77,6 +79,7 @@ type ForkDB<N, B> = CacheDB<SharedBackend<N, B>>;
 /// block` which can be reused by multiple tests, whereas the `LocalForkId` is unique within a test
 pub type LocalForkId = U256;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Transaction-context update required after a fork operation.
 #[cfg(feature = "monad")]
 pub enum ContextUpdate<C> {
@@ -87,14 +90,17 @@ pub enum ContextUpdate<C> {
     /// The outer journal changed while the active chain context remained unchanged.
     Rebase,
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Transaction-context update required after a fork operation, for a given [`FoundryEvmFactory`].
 ///
 /// Only Monad's family-owned chain context needs to observe fork operations; every other network
 /// has no use for this signal, so it collapses to `()` without the `monad` feature.
 #[cfg(feature = "monad")]
 pub type ContextUpdateFor<F> = ContextUpdate<<F as FoundryEvmFactory>::Chain>;
-#[cfg(not(feature = "monad"))]
+*/
+// EVM2 migration: unconditional Ethereum fallback.
 pub type ContextUpdateFor<F> = std::marker::PhantomData<F>;
 
 /// Represents the index of a fork in the created forks vector
@@ -130,10 +136,13 @@ struct TransactionForkTarget {
 #[derive(Clone, Copy)]
 struct TransactionPosition {
     index: usize,
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     count: usize,
+    */
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// A fork roll prepared for atomic publication.
 #[cfg(feature = "monad")]
 struct StagedForkRoll<FEN: FoundryEvmNetwork> {
@@ -142,6 +151,7 @@ struct StagedForkRoll<FEN: FoundryEvmNetwork> {
     fork_index: ForkLookupIndex,
     fork: Fork<AnyNetwork, BlockEnvFor<FEN>>,
 }
+*/
 
 /// Canonical chain position used to reconstruct network-specific transaction context.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +162,7 @@ enum ForkPosition {
     BeforeTransaction { block: BlockNumHash, transaction_index: usize },
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 impl ForkPosition {
     /// Returns the canonical position after committing `transaction_index`, if it immediately
     /// follows this position.
@@ -187,6 +198,7 @@ impl ForkPosition {
         })
     }
 }
+*/
 
 /// All accounts that will have persistent storage across fork swaps.
 const DEFAULT_PERSISTENT_ACCOUNTS: [Address; 3] =
@@ -1155,24 +1167,30 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
             );
             let position = if let BlockTransactions::Full(transactions) = block.transactions() {
                 let index = transactions.iter().position(|tx| tx.tx_hash() == transaction);
+                /* EVM2 migration: disabled non-Ethereum execution.
                 if self.networks.is_monad() && index.is_none() {
                     eyre::bail!(
                         "transaction {transaction:?} is missing from block {}",
                         block.header().number()
                     );
                 }
+                */
                 index.map(|index| TransactionPosition {
                     index,
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     #[cfg(feature = "monad")]
                     count: transactions.len(),
+                    */
                 })
             } else {
+                /* EVM2 migration: disabled non-Ethereum execution.
                 if self.networks.is_monad() {
                     eyre::bail!(
                         "block {} does not contain full transactions",
                         block.header().number()
                     );
                 }
+                */
                 None
             };
 
@@ -1186,11 +1204,13 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
             );
             Ok(TransactionForkTarget { fork_block, transaction: tx, block, mined: true, position })
         } else {
+            /* EVM2 migration: disabled non-Ethereum execution.
             if self.networks.is_monad() {
                 eyre::bail!(
                     "transaction {transaction} is pending and has no canonical block context"
                 );
             }
+            */
             let block = fork.backend().get_full_block(BlockNumberOrTag::Latest)?;
 
             let fork_block = BlockNumHash::new(block.header().number(), block.header().hash);
@@ -1205,6 +1225,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Converts all transactions in a full RPC block into this backend's transaction environment.
     #[cfg(feature = "monad")]
     fn full_block_tx_envs(block: &AnyRpcBlock) -> eyre::Result<Vec<TxEnvFor<FEN>>> {
@@ -1213,21 +1234,25 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         };
         transactions.iter().map(TxEnvFor::<FEN>::from_any_rpc_transaction).collect()
     }
+    */
 
     /// Converts a replayable transaction while preserving the established behavior of skipping
     /// system envelopes that this build cannot decode.
     fn replay_tx_env(tx: &AnyRpcTransaction) -> eyre::Result<Option<TxEnvFor<FEN>>> {
         let is_system = is_known_system_sender(tx.from()) || tx.ty() == SYSTEM_TRANSACTION_TYPE;
         if is_system {
-            #[cfg(not(feature = "monad"))]
+            // EVM2 migration: unconditional Ethereum fallback.
             return Ok(None);
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             return Ok(TxEnvFor::<FEN>::from_any_rpc_transaction(tx).ok());
+            */
         }
 
         TxEnvFor::<FEN>::from_any_rpc_transaction(tx).map(Some)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the transaction environments needed to construct exact block context.
     #[cfg(feature = "monad")]
     fn block_context_inputs_from_backend(
@@ -1281,7 +1306,9 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
 
         Ok(BlockContext::new(grandparent, parent, current))
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the transaction environments needed to construct exact block context for a fork.
     #[cfg(feature = "monad")]
     fn block_context_inputs(
@@ -1292,7 +1319,9 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         let fork = self.inner.get_fork_by_id(id)?;
         Self::block_context_inputs_from_backend(fork.backend(), block)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Builds transaction context for `tx` at a known position in `block_context`.
     #[cfg(feature = "monad")]
     fn context_for_block_position(
@@ -1308,7 +1337,9 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         };
         Ok(cursor.next_transaction(tx))
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Builds context for a synthetic transaction at a fork's current position.
     #[cfg(feature = "monad")]
     fn context_for_fork_synthetic_transaction(
@@ -1335,7 +1366,9 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         let context = Self::block_context_inputs_from_backend(fork.backend(), &block)?;
         Self::context_for_block_position(context, position, tx)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the block cursor matching the active fork's database position.
     #[cfg(feature = "monad")]
     pub fn block_context_for_synthetic_transaction(
@@ -1369,6 +1402,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
             None => Ok(Some(context.into_child())),
         }
     }
+    */
 
     /// Applies replay changes using the targeted fork's chain rather than the active environment.
     fn apply_fork_tx_replay_env_changes(
@@ -1496,6 +1530,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         let block = resolved.block();
         let _affects_active = self.is_active_fork(id);
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let context_update = if _affects_active && let Some(tx) = _tx_env {
             let chain_context = if self.networks.is_monad() {
@@ -1512,7 +1547,8 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         } else {
             ContextUpdate::Unchanged
         };
-        #[cfg(not(feature = "monad"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let context_update = std::marker::PhantomData;
 
         // Update the local mapping only after all context fetches and decoding have succeeded.
@@ -1553,19 +1589,14 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         tx_env: Option<&TxEnvFor<FEN>>,
         journaled_state: &mut JournaledState,
     ) -> eyre::Result<ContextUpdateFor<FEN::EvmFactory>> {
-        if !self.networks.is_monad() {
-            return self.roll_fork_to_transaction_inner(
-                id,
-                transaction,
-                evm_env,
-                tx_env,
-                journaled_state,
-            );
-        }
+        self.roll_fork_to_transaction_inner(id, transaction, evm_env, tx_env, journaled_state)
 
-        #[cfg(not(feature = "monad"))]
+        // EVM2 migration: unconditional Ethereum fallback.
+        /* EVM2 migration: disabled non-Ethereum execution.
         unreachable!("block context is only required when Monad support is enabled");
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         {
             trace!(?id, ?transaction, "roll fork to transaction");
@@ -1666,6 +1697,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
             *journaled_state = staged_journaled_state;
             Ok(context_update)
         }
+        */
     }
 
     /// Performs a transaction-level roll on the provided backend, environment, and journal.
@@ -1683,12 +1715,15 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
 
         let TransactionForkTarget { fork_block, block, mined, position, .. } =
             self.get_block_number_and_block_for_transaction(id, transaction)?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let block_context = if self.networks.is_monad() {
             Some(self.block_context_inputs(id, &block)?)
         } else {
             None
         };
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let context_update = if _affects_active && let Some(tx) = _tx_env {
             let chain_context = if let Some(context) = &block_context {
@@ -1708,7 +1743,8 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         } else {
             ContextUpdate::Rebase
         };
-        #[cfg(not(feature = "monad"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let context_update = std::marker::PhantomData;
 
         // The parent roll must not prepare an intermediate synthetic context.
@@ -1728,8 +1764,10 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
                 fork,
                 ReplayInputs { fork_id, forks, evm_env: replay_env, networks: self.networks },
                 &block,
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 block_context.as_ref(),
+                */
                 transaction,
                 journaled_state,
                 &persistent_accounts,
@@ -1761,18 +1799,22 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         fork: &mut Fork<AnyNetwork, BlockEnvFor<FEN>>,
         replay: ReplayInputs<FEN>,
         full_block: &AnyRpcBlock,
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")] block_context: Option<&BlockContext<FEN>>,
+        */
         tx_hash: B256,
         journaled_state: &mut JournaledState,
         persistent_accounts: &AddressSet,
     ) -> eyre::Result<Option<AnyRpcTransaction>> {
         let ReplayInputs { fork_id, forks, evm_env, networks } = replay;
         trace!(?tx_hash, "replay until transaction");
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         eyre::ensure!(
             !networks.is_monad() || block_context.is_some(),
             "block context is required to replay transactions for this network"
         );
+        */
 
         let BlockTransactions::Full(transactions) = full_block.transactions() else {
             eyre::bail!(
@@ -1783,6 +1825,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         let Some(target_index) = transactions.iter().position(|tx| tx.tx_hash() == tx_hash) else {
             return Ok(None);
         };
+        /* EVM2 migration: disabled non-Ethereum execution.
         if networks.is_monad() {
             eyre::ensure!(
                 fork.position
@@ -1797,6 +1840,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
                 full_block.header().number()
             );
         }
+        */
         let target_tx = transactions[target_index].clone();
         let factory = FEN::EvmFactory::default();
         let mut txs_to_replay = Vec::with_capacity(target_index);
@@ -1822,6 +1866,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
                 networks,
             )?;
 
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             if let Some(context) = block_context {
                 for (index, tx, tx_env, is_system) in &txs_to_replay {
@@ -1838,9 +1883,12 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
                     }
                 }
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             let replay_without_context = block_context.is_none();
-            #[cfg(not(feature = "monad"))]
+            */
+            // EVM2 migration: unconditional Ethereum fallback.
             let replay_without_context = true;
             if replay_without_context {
                 // Keep one Foundry EVM for ordinary transactions. Only system envelopes
@@ -1892,6 +1940,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 fn ensure_block_identity(
     block: &AnyRpcBlock,
@@ -1908,16 +1957,19 @@ fn ensure_block_identity(
     );
     Ok(())
 }
+*/
 
 impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
     fn chain_context_for_synthetic_transaction(
         &self,
         tx: &TxEnvFor<FEN>,
     ) -> eyre::Result<ChainFor<FEN>> {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if let Some(context) = self.block_context_for_synthetic_transaction()? {
             return Ok(context.next_transaction(tx));
         }
+        */
         Ok(ChainFor::<FEN>::for_transaction(tx))
     }
 
@@ -2064,14 +2116,18 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
         trace!(?id, "select fork");
         if self.is_active_fork(id) {
             // nothing to do
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             return Ok(ContextUpdate::Unchanged);
-            #[cfg(not(feature = "monad"))]
+            */
+            // EVM2 migration: unconditional Ethereum fallback.
             return Ok(std::marker::PhantomData);
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let chain_context = self.context_for_fork_synthetic_transaction(id, tx_env)?;
+        */
 
         // Update block number and timestamp of active fork (if any) with current env values,
         // in order to preserve values changed by using `roll` and `warp` cheatcodes.
@@ -2191,9 +2247,11 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
         *evm_env = fork_evm_env;
         evm_env.cfg_env.set_spec_and_mainnet_gas_params(preserved_spec);
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         return Ok(ContextUpdate::Replace(chain_context));
-        #[cfg(not(feature = "monad"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         Ok(std::marker::PhantomData)
     }
 
@@ -2253,7 +2311,7 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
         let TransactionForkTarget {
             transaction: tx,
             block,
-            #[cfg(feature = "monad")]
+            #[cfg(any())]
             position,
             ..
         } = self.get_block_number_and_block_for_transaction(id, transaction)?;
@@ -2262,12 +2320,15 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
         update_env_block::<AnyNetwork, _, _>(&mut evm_env, &block, source_chain_id, self.networks);
         self.apply_fork_tx_replay_env_changes(id, &mut evm_env)?;
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let block_context = if self.networks.is_monad() {
             Some(self.block_context_inputs(id, &block)?)
         } else {
             None
         };
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let chain_context = if let Some(context) = &block_context {
             context.transaction(
@@ -2276,10 +2337,12 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
         } else {
             ChainFor::<FEN>::for_transaction(&tx_env)
         };
+        */
 
-        #[cfg(not(feature = "monad"))]
+        // EVM2 migration: unconditional Ethereum fallback.
         let chain_context = ChainFor::<FEN>::for_transaction(&tx_env);
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let next_position = if block_context.is_some() {
             let position = position.expect("Monad transaction target includes canonical position");
@@ -2303,6 +2366,8 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
         } else {
             None
         };
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let context_update = if _affects_active {
             ContextUpdate::Replace(if let Some(context) = block_context {
@@ -2317,7 +2382,8 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
         } else {
             ContextUpdate::Rebase
         };
-        #[cfg(not(feature = "monad"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let context_update = std::marker::PhantomData;
 
         let fork = self.inner.get_fork_by_id_mut(id)?;
@@ -2335,10 +2401,12 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
             &persistent_accounts,
             inspector,
         )?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if let Some(position) = next_position {
             fork.position = position;
         }
+        */
         Ok(context_update)
     }
 
@@ -3041,6 +3109,7 @@ impl<FEN: FoundryEvmNetwork> BackendInner<FEN> {
         Ok(idx)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Prepares a replacement for one fork without changing its local mapping or database.
     #[cfg(feature = "monad")]
     fn stage_fork_roll(
@@ -3075,7 +3144,9 @@ impl<FEN: FoundryEvmNetwork> BackendInner<FEN> {
             },
         })
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Atomically publishes a previously prepared fork replacement.
     #[cfg(feature = "monad")]
     fn publish_fork_roll(&mut self, staged: StagedForkRoll<FEN>) -> ForkLookupIndex {
@@ -3085,6 +3156,7 @@ impl<FEN: FoundryEvmNetwork> BackendInner<FEN> {
         self.created_forks.insert(fork_id, fork_index);
         fork_index
     }
+    */
 
     /// Inserts a _new_ `ForkDB` and issues a new local fork identifier
     ///
@@ -3428,25 +3500,33 @@ mod tests {
         state::{Account, AccountInfo, EvmState, EvmStorageSlot, TransactionId},
     };
 
-    #[cfg(feature = "base")]
-    use crate::evm::{BaseEvmNetwork, base::base_code_sentinel_addresses};
-    #[cfg(feature = "base")]
-    use base_common_chains::ChainConfig;
-    #[cfg(feature = "base")]
-    use base_common_consensus::Predeploys;
-    #[cfg(feature = "base")]
-    use base_common_evm::{BaseSpecId, BaseUpgrade};
+    /* EVM2 migration: disabled non-Ethereum execution.
+        #[cfg(feature = "base")]
+        use crate::evm::{BaseEvmNetwork, base::base_code_sentinel_addresses};
+        #[cfg(feature = "base")]
+        use base_common_chains::ChainConfig;
+        #[cfg(feature = "base")]
+        use base_common_consensus::Predeploys;
+        #[cfg(feature = "base")]
+        use base_common_evm::{BaseSpecId, BaseUpgrade};
 
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     use super::ensure_block_identity;
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     use crate::evm::monad::BlockContext;
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     use monad_revm::{
         MonadHardfork,
         api::block::syscall_snapshot_calldata,
         staking::{STAKING_ADDRESS, constants::SYSTEM_ADDRESS},
     };
+    */
 
     fn fork_with_closed_backend() -> Fork<AnyNetwork, BlockEnv> {
         let provider =
@@ -3506,6 +3586,7 @@ mod tests {
         }))
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[tokio::test(flavor = "multi_thread")]
     async fn base_fork_prefix_replay_uses_source_chain_activation_admin() {
@@ -3580,6 +3661,7 @@ mod tests {
         }
     }
 
+    */
     #[test]
     fn fork_replay_backend_reuses_manager_on_current_thread_runtime() {
         let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
@@ -3611,8 +3693,10 @@ mod tests {
                     networks: NetworkConfigs::default(),
                 },
                 &block,
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 None,
+                */
                 target,
                 &mut JournalInner::new(),
                 &AddressSet::default(),
@@ -3635,10 +3719,12 @@ mod tests {
         let system = address!("6f49a8f621353f12378d0046e7d7e4b9b249dc9e");
         let target = B256::with_last_byte(4);
 
-        #[cfg(not(feature = "monad"))]
+        // EVM2 migration: unconditional Ethereum fallback.
         let contexts = [false];
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let contexts = [false, true];
+        */
         for _with_context in contexts {
             for invalid_nonce in [false, true] {
                 let mut fork = fork_with_closed_backend();
@@ -3680,12 +3766,16 @@ mod tests {
                     .into(),
                 );
                 let networks = NetworkConfigs::default();
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 let networks = if _with_context { NetworkConfigs::with_monad() } else { networks };
+                */
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 let context = _with_context.then(|| {
                     BlockContext::<EthEvmNetwork>::new(Vec::new(), Vec::new(), Vec::new())
                 });
+                */
                 let result = Backend::<EthEvmNetwork>::replay_until(
                     &mut fork,
                     ReplayInputs {
@@ -3695,8 +3785,10 @@ mod tests {
                         networks,
                     },
                     &block,
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     #[cfg(feature = "monad")]
                     context.as_ref(),
+                    */
                     target,
                     &mut JournalInner::new(),
                     &AddressSet::default(),
@@ -3717,6 +3809,7 @@ mod tests {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn fork_replay_executes_monad_system_prefix_with_or_without_profile() {
@@ -3786,7 +3879,9 @@ mod tests {
             assert_eq!(fork.db.basic_ref(SYSTEM_ADDRESS).unwrap().unwrap().nonce, 4);
         }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn validates_block_identity() {
@@ -3803,6 +3898,7 @@ mod tests {
             ensure_block_identity(&block, BlockNumHash::new(1, hash), "grandparent").unwrap_err();
         assert!(err.to_string().contains("grandparent block changed"));
     }
+    */
 
     #[test]
     fn failed_fork_state_refresh_does_not_publish_transaction_changes() {
@@ -4015,6 +4111,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     fn fork_position_advances_from_exact_transaction_predecessor() {
         let parent_block = BlockNumHash::new(10, B256::with_last_byte(10));
@@ -4052,6 +4149,7 @@ mod tests {
         assert_eq!(before_second.after_transaction(block, parent_block.hash, 1, 1), None);
         assert_eq!(parent.after_transaction(block, parent_block.hash, 0, 0), None);
     }
+    */
 
     #[test]
     fn fork_block_env_updates_slot_number() {
@@ -4145,6 +4243,7 @@ mod tests {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "monad")]
     async fn fork_factory_boundary_preserves_explicit_execution_overrides() {
@@ -4218,6 +4317,7 @@ mod tests {
         )))
         .unwrap();
     }
+    */
 
     #[tokio::test(flavor = "multi_thread")]
     async fn can_read_write_cache() {

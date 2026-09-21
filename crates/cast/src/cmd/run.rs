@@ -47,7 +47,7 @@ use foundry_evm::{
     core::{
         FoundryBlock as _,
         env::FromAnyRpcTransaction as _,
-        evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TempoEvmNetwork, TxEnvFor},
+        evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TxEnvFor},
     },
     executors::{Executor, ExecutorBuilder, TracingExecutor},
     hardforks::FoundryHardfork,
@@ -64,14 +64,20 @@ use revm::{
 };
 use std::sync::Arc;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm::core::evm::BaseEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use foundry_evm::core::evm::{BlockContext, ChainFor, MonadEvmNetwork};
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::core::evm::OpEvmNetwork;
+*/
 
 /// CLI arguments for `cast run`.
 #[derive(Clone, Debug, Parser)]
@@ -170,15 +176,17 @@ pub struct RunArgs {
 struct TargetFetch {
     tx: AnyRpcTransaction,
     provider: RetryProvider,
-    compute_units_per_second: Option<u64>,
+    // compute_units_per_second: Option<u64>,
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Fields only needed by the Monad-specific `execute_monad` path.
-#[cfg(feature = "monad")]
+#[cfg(any())]
 struct MonadPrepared {
     tx_block_number: u64,
-    compute_units_per_second: Option<u64>,
+    // compute_units_per_second: Option<u64>,
 }
+*/
 
 /// State assembled by [`RunArgs::prepare`] and consumed by the network-specific `execute_*`
 /// methods below.
@@ -194,8 +202,10 @@ struct PreparedRun<FEN: FoundryEvmNetwork> {
     prestate_applied: bool,
     /// The block access list of the target's block, when the node serves one.
     block_access_list: Option<Arc<Bal>>,
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     monad: MonadPrepared,
+    */
 }
 
 impl RunArgs {
@@ -243,18 +253,26 @@ impl RunArgs {
         }
 
         if evm_opts.networks.is_tempo() {
-            return self
-                .run_with_evm(config, evm_opts, ExecutorBuilder::<TempoEvmNetwork>::new())
-                .await;
+            /* EVM2 migration: disabled non-Ethereum execution.
+
+                        return self
+                            .run_with_evm(config, evm_opts, ExecutorBuilder::<TempoEvmNetwork>::new())
+                            .await;
+
+            */
+            eyre::bail!("Tempo execution is disabled on the Ethereum-only EVM2 migration branch");
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if evm_opts.networks.is_base() {
             return self
                 .run_with_evm(config, evm_opts, ExecutorBuilder::<BaseEvmNetwork>::new())
                 .await;
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if evm_opts.networks.is_monad() {
             let target = self.fetch_target(&config).await?;
@@ -269,13 +287,16 @@ impl RunArgs {
             let result = run.execute_monad().await?;
             return run.finish(result).await;
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if evm_opts.networks.is_optimism() {
             return self
                 .run_with_evm(config, evm_opts, ExecutorBuilder::<OpEvmNetwork>::new())
                 .await;
         }
+        */
 
         self.run_with_evm(config, evm_opts, ExecutorBuilder::<EthEvmNetwork>::new()).await
     }
@@ -317,7 +338,7 @@ impl RunArgs {
             .await
             .wrap_err_with(|| format!("tx not found: {tx_hash:?}"))?
             .ok_or_else(|| eyre::eyre!("tx not found: {tx_hash:?}"))?;
-        Ok(TargetFetch { tx, provider, compute_units_per_second })
+        Ok(TargetFetch { tx, provider })
     }
 
     /// Fetches the trace from the node via `debug_traceTransaction` (callTracer) instead of
@@ -447,8 +468,8 @@ impl RunArgs {
         target: TargetFetch,
         executor_builder: ExecutorBuilder<FEN>,
     ) -> Result<PreparedRun<FEN>> {
-        #[cfg_attr(not(feature = "monad"), allow(unused_variables))]
-        let TargetFetch { tx, provider, compute_units_per_second } = target;
+        #[cfg_attr(not(any()), allow(unused_variables))]
+        let TargetFetch { tx, provider } = target;
         let tx_hash = tx.tx_hash();
         let tracing = self.configure_tracing(&mut config, &evm_opts);
 
@@ -591,8 +612,10 @@ impl RunArgs {
             trace_context,
             prestate_applied,
             block_access_list,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             monad: MonadPrepared { tx_block_number, compute_units_per_second },
+            */
         })
     }
 }
@@ -755,6 +778,7 @@ impl<FEN: FoundryEvmNetwork> PreparedRun<FEN> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 impl PreparedRun<MonadEvmNetwork> {
     async fn execute_monad(&mut self) -> Result<TraceResult> {
@@ -807,6 +831,7 @@ impl PreparedRun<MonadEvmNetwork> {
         Ok(TraceResult::from_raw(result, self.trace_kind()))
     }
 }
+*/
 
 fn is_system_transaction(tx: &AnyRpcTransaction) -> bool {
     is_known_system_sender(tx.from()) || tx.transaction_type() == Some(SYSTEM_TRANSACTION_TYPE)
@@ -1033,14 +1058,22 @@ mod tests {
             (networks, SpecId::CANCUN, root, root),
             (networks, SpecId::SHANGHAI, root, None),
             (networks, SpecId::SHANGHAI, None, None),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             (NetworkConfigs::with_monad(), SpecId::PRAGUE, root, None),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             (NetworkConfigs::with_monad(), SpecId::OSAKA, root, None),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             (NetworkConfigs::with_monad(), SpecId::PRAGUE, None, None),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             (NetworkConfigs::with_monad(), SpecId::OSAKA, None, None),
+            */
         ] {
             assert_eq!(parent_beacon_block_root_for_network(networks, spec_id, root), expected);
         }

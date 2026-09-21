@@ -11,15 +11,23 @@ use std::num::NonZeroU64;
 use tempo_alloy::TempoNetwork;
 use tempo_primitives::{SignatureType, TempoTxType, transaction::Call};
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_network::Base;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_rpc_types::BaseTransactionRequest;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_network::Optimism;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_rpc_types::OpTransactionRequest;
+*/
 
 /// Composite transaction builder trait for Foundry transactions.
 ///
@@ -386,6 +394,7 @@ impl FoundryTransactionBuilder<AnyNetwork> for <AnyNetwork as Network>::Transact
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl FoundryTransactionBuilder<Base> for BaseTransactionRequest {
     fn reset_gas_limit(&mut self) {
@@ -400,7 +409,9 @@ impl FoundryTransactionBuilder<Base> for BaseTransactionRequest {
         self.as_mut().authorization_list = Some(authorization_list);
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl FoundryTransactionBuilder<Optimism> for OpTransactionRequest {
     fn reset_gas_limit(&mut self) {
@@ -415,6 +426,7 @@ impl FoundryTransactionBuilder<Optimism> for OpTransactionRequest {
         self.as_mut().authorization_list = Some(authorization_list);
     }
 }
+*/
 
 /// Viem's Tempo formatter uses a 1,400-byte WebAuthn placeholder when the signature is not yet
 /// available. Tempo RPC encodes that size as a two-byte big-endian `keyData` value (`0x0578`).

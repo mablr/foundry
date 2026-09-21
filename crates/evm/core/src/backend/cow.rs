@@ -29,8 +29,10 @@ use revm::{
 };
 use std::{borrow::Cow, collections::BTreeMap, fmt::Debug};
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use crate::evm::MonadEvmNetwork;
+*/
 
 /// A wrapper around `Backend` that ensures only `revm::DatabaseRef` functions are called.
 ///
@@ -139,6 +141,7 @@ impl<'a, FEN: FoundryEvmNetwork> CowBackend<'a, FEN> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 impl CowBackend<'_, MonadEvmNetwork> {
     /// Tries to execute a canonical system transaction with explicit network-specific context.
@@ -171,6 +174,7 @@ impl CowBackend<'_, MonadEvmNetwork> {
         Ok(Some(result))
     }
 }
+*/
 
 impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for CowBackend<'_, FEN> {
     fn chain_context_for_synthetic_transaction(

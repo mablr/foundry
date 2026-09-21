@@ -104,6 +104,7 @@ casttest!(block_json_wraps_raw_and_scalar_field_outputs, |_prj, cmd| {
     assert_eq!(field_envelope["data"], 291);
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(block_raw_tempo, |_prj, cmd| {
     // https://explore.tempo.xyz/block/8386710
     let output = cmd
@@ -129,6 +130,7 @@ casttest!(block_raw_tempo, |_prj, cmd| {
         "0xcd6170dc28b888bcb93ed1ad76a6bea4ad9977b678db5d462df83d35ec9b8d15"
     );
 });
+*/
 
 // tests that the `cast find-block` command works correctly
 casttest!(finds_block, |_prj, cmd| {

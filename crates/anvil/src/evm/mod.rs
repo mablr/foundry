@@ -2,8 +2,10 @@ use alloy_evm::precompiles::{DynPrecompile, PrecompilesMap};
 use alloy_primitives::Address;
 use std::fmt::Debug;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 mod optimism;
+*/
 
 /// Object-safe trait that enables injecting extra precompiles when using
 /// `anvil` as a library.

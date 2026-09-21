@@ -18,17 +18,21 @@ use alloy_rpc_types::{
 };
 use alloy_serde::WithOtherFields;
 use anvil::{NodeConfig, PrecompileFactory, spawn};
-use foundry_evm::hardfork::{EthereumHardfork, TempoHardfork};
+use foundry_evm::hardfork::EthereumHardfork;
 use revm::precompile::{PrecompileError, PrecompileOutput, PrecompileStatus};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::hardfork::OpHardfork;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm_networks::NetworkConfigs;
+*/
 
 const REPLAY_PRE_EXECUTION_ERROR: &str = "replay pre-execution sentinel";
 
@@ -112,6 +116,7 @@ async fn ethereum_block_start_transitions_use_consensus_order() {
     assert_eq!(order.load(Ordering::SeqCst), 2);
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[tokio::test(flavor = "multi_thread")]
 async fn tempo_spec_id_does_not_enable_ethereum_block_transitions() {
     let order = Arc::new(AtomicUsize::new(0));
@@ -132,7 +137,9 @@ async fn tempo_spec_id_does_not_enable_ethereum_block_transitions() {
 
     assert_eq!(order.load(Ordering::SeqCst), 0);
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 #[tokio::test(flavor = "multi_thread")]
 async fn optimism_spec_id_does_not_enable_ethereum_block_transitions() {
@@ -155,6 +162,7 @@ async fn optimism_spec_id_does_not_enable_ethereum_block_transitions() {
 
     assert_eq!(order.load(Ordering::SeqCst), 0);
 }
+*/
 
 #[derive(Debug)]
 struct CountingPostBlockPrecompiles(Arc<AtomicUsize>);

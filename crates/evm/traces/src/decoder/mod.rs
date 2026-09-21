@@ -34,35 +34,45 @@ use revm::{bytecode::opcode::OpCode, interpreter::InstructionResult};
 use revm_inspectors::tracing::types::{DecodedCallLog, DecodedCallTrace};
 use std::{collections::BTreeMap, sync::OnceLock};
 use tempo_contracts::precompiles::{
-    CURRENT_COMMITTEE_ADDRESS, IAccountKeychain, IAddressRegistry, ICurrentCommittee, IFeeManager,
-    IReceivePolicyGuard, ISignatureVerifier, IStablecoinDEX, IStorageCredits, ITIP20ChannelReserve,
-    ITIP20Factory, ITIP403Registry, IValidatorConfig,
-};
-use tempo_precompiles::{
-    ACCOUNT_KEYCHAIN_ADDRESS, ADDRESS_REGISTRY_ADDRESS, NONCE_PRECOMPILE_ADDRESS, PATH_USD_ADDRESS,
+    ACCOUNT_KEYCHAIN_ADDRESS, ADDRESS_REGISTRY_ADDRESS, CURRENT_COMMITTEE_ADDRESS,
+    IAccountKeychain, IAddressRegistry, ICurrentCommittee, IFeeManager, IReceivePolicyGuard,
+    ISignatureVerifier, IStablecoinDEX, IStorageCredits, ITIP20ChannelReserve, ITIP20Factory,
+    ITIP403Registry, IValidatorConfig, NONCE_PRECOMPILE_ADDRESS, PATH_USD_ADDRESS,
     RECEIVE_POLICY_GUARD_ADDRESS, SIGNATURE_VERIFIER_ADDRESS, STABLECOIN_DEX_ADDRESS,
     STORAGE_CREDITS_ADDRESS, TIP_FEE_MANAGER_ADDRESS, TIP20_CHANNEL_RESERVE_ADDRESS,
     TIP20_FACTORY_ADDRESS, TIP403_REGISTRY_ADDRESS, VALIDATOR_CONFIG_ADDRESS, nonce::INonce,
     tip20::ITIP20,
 };
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_precompiles::{
     ActivationRegistryStorage, B20FactoryStorage, NonceManagerStorage, PolicyRegistryStorage,
     TxContextStorage,
 };
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm_hardforks::BaseSpecId;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm_networks::{active_base_precompiles, is_base_precompile_active_at};
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 type MonadHardfork = foundry_evm_hardforks::MonadHardfork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 mod base;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 mod monad;
+*/
 pub(crate) mod precompiles;
 
 /// Address-scoped events keyed by signature and indexed input count; anonymous events have no
@@ -220,10 +230,14 @@ impl CallTraceDecoderBuilder {
         self.decoder.base_labels = self.decoder.labels.clone();
         self.decoder.register_celo_metadata();
         self.decoder.register_tempo_metadata();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         self.decoder.register_monad_metadata();
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         self.decoder.register_base_metadata();
+        */
         self.decoder
     }
 }
@@ -327,6 +341,7 @@ impl CallTraceDecoder {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     fn register_base_metadata(&mut self) {
         if self.networks.is_some_and(|networks| !networks.is_base()) {
@@ -375,6 +390,7 @@ impl CallTraceDecoder {
             );
         }
     }
+    */
 
     /// Creates a new call trace decoder.
     ///
@@ -553,10 +569,14 @@ impl CallTraceDecoder {
 
         self.register_celo_metadata();
         self.register_tempo_metadata();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         self.register_monad_metadata();
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         self.register_base_metadata();
+        */
     }
 
     /// Returns labels for precompiles active in this decoder's chain context.
@@ -698,9 +718,12 @@ impl CallTraceDecoder {
         {
             return Some(functions);
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let base_functions = self.base_functions_for_selector(selector);
+        */
         // Tempo's function with this selector has no output, while B20 returns a bool.
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if let Some(functions) = base_functions
             && functions.first().is_some_and(|function| function.name == "transferWithMemo")
@@ -718,12 +741,16 @@ impl CallTraceDecoder {
             }
             return Some(functions);
         }
+        */
         let functions = self.functions.get(selector);
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let functions = functions.or(base_functions);
+        */
         functions.map(Vec::as_slice)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     fn is_base_context(&self) -> bool {
         self.networks.map_or_else(
@@ -731,7 +758,9 @@ impl CallTraceDecoder {
             |networks| networks.is_base(),
         )
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     fn base_functions_for_selector(&self, selector: &Selector) -> Option<&'static Vec<Function>> {
         if !self.is_base_context() {
@@ -748,7 +777,9 @@ impl CallTraceDecoder {
             })
             .get(selector)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     fn base_events(&self) -> Option<&'static BTreeMap<(B256, usize), Vec<Event>>> {
         if !self.is_base_context() {
@@ -763,7 +794,9 @@ impl CallTraceDecoder {
                 .collect()
         }))
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     fn base_revert_decoder(&self, address: Address) -> Option<&'static RevertDecoder> {
         let upgrade =
@@ -800,7 +833,9 @@ impl CallTraceDecoder {
             })
             .get(&address)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn register_monad_metadata(&mut self) {
         if self.networks.is_some_and(|networks| !networks.is_monad()) {
@@ -838,7 +873,9 @@ impl CallTraceDecoder {
                 .or_insert_with(|| "ReserveBalance".to_string());
         }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(any(feature = "base", feature = "monad"))]
     fn register_address_abi(&mut self, address: Address, abi: &JsonAbi) {
         for function in abi.functions() {
@@ -848,6 +885,7 @@ impl CallTraceDecoder {
             self.push_address_event(address, event.clone());
         }
     }
+    */
 
     fn is_current_committee_active(&self, address: Address) -> bool {
         address == CURRENT_COMMITTEE_ADDRESS
@@ -1499,12 +1537,14 @@ impl CallTraceDecoder {
         output: &[u8],
         status: Option<InstructionResult>,
     ) -> String {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if let Some(reason) =
             self.base_revert_decoder(address).and_then(|decoder| decoder.maybe_decode_known(output))
         {
             return reason;
         }
+        */
         if self.is_current_committee_active(address) {
             static DECODER: OnceLock<RevertDecoder> = OnceLock::new();
             let decoder = DECODER
@@ -1549,9 +1589,11 @@ impl CallTraceDecoder {
         let events = address.and_then(|address| self.events_by_address.as_deref()?.get(&address));
         let address_events = key.and_then(|(topic, count)| events?.get(&(Some(topic), count)));
         let global_events = key.and_then(|key| self.events.get(&key));
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let base_events = key.and_then(|key| self.base_events()?.get(&key));
-        #[cfg(not(feature = "base"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let base_events: Option<&Vec<Event>> = None;
         let fallback_events = global_events.or(base_events);
         let regular_events = address_events.or(fallback_events);
@@ -1881,11 +1923,16 @@ mod tests {
     use foundry_evm_core::precompiles::P256_VERIFY;
     use std::borrow::Cow;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_evm_hardforks::BaseUpgrade;
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_evm_networks::BASE_PRECOMPILE_ADDRESSES;
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn function_abi_items(functions: impl IntoIterator<Item = Function>) -> Vec<(String, String)> {
         let mut items = functions
@@ -1895,7 +1942,9 @@ mod tests {
         items.sort();
         items
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn event_abi_items(events: impl IntoIterator<Item = Event>) -> Vec<(String, usize, String)> {
         let mut items = events
@@ -1905,19 +1954,25 @@ mod tests {
         items.sort();
         items
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn typed_call_abi_item<C: SolCall>() -> (String, String) {
         (Selector::from(C::SELECTOR).to_string(), C::SIGNATURE.to_string())
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn typed_event_abi_item<E: SolEvent>() -> (String, usize, String) {
         let signature_topics = usize::from(!E::ANONYMOUS);
         let indexed_inputs = <E::TopicList as alloy_sol_types::TopicList>::COUNT - signature_topics;
         (E::SIGNATURE_HASH.to_string(), indexed_inputs, E::SIGNATURE.to_string())
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn monad_decoder(hardfork: MonadHardfork) -> CallTraceDecoder {
         CallTraceDecoderBuilder::new()
@@ -1926,7 +1981,9 @@ mod tests {
             .with_hardfork(Some(hardfork.into()))
             .build()
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn test_monad_decoder_abis_match_monad_revm() {
@@ -1999,6 +2056,7 @@ mod tests {
             "Monad reserve-balance event selectors drifted from monad_revm",
         );
     }
+    */
 
     #[test]
     fn test_selector_collision_resolution() {
@@ -2057,6 +2115,7 @@ mod tests {
         assert_eq!(result[0].signature(), "gasprice_bit_ether(int128)");
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[tokio::test]
     async fn base_fallback_does_not_shadow_ethereum_abi() {
@@ -2087,6 +2146,7 @@ mod tests {
         assert_eq!(decoded.call_data.unwrap().signature, "pause(uint8[])");
         assert_eq!(decoded.return_data, None);
     }
+    */
 
     #[tokio::test]
     async fn identified_event_does_not_shadow_builtin_metadata() {
@@ -3223,6 +3283,7 @@ mod tests {
         assert!(params[8].1.starts_with("1000000"));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     #[cfg(feature = "monad")]
     async fn test_decodes_monad_staking_precompile_call() {
@@ -3251,7 +3312,9 @@ mod tests {
         assert!(call_data.args.is_empty());
         assert_eq!(decoded.return_data.as_deref(), Some("42, true"));
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     #[cfg(feature = "monad")]
     async fn test_decodes_monad_staking_syscall() {
@@ -3274,7 +3337,9 @@ mod tests {
         assert_eq!(call_data.signature, "syscallReward(address)");
         assert_eq!(call_data.args, vec![expected_author]);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     #[cfg(feature = "monad")]
     async fn test_decodes_monad_reserve_balance_precompile_call() {
@@ -3296,7 +3361,9 @@ mod tests {
         assert!(call_data.args.is_empty());
         assert_eq!(decoded.return_data.as_deref(), Some("true"));
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     #[cfg(feature = "monad")]
     async fn test_decodes_monad_staking_precompile_event() {
@@ -3329,7 +3396,9 @@ mod tests {
             .await;
         assert_eq!(collision.name, None);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     #[cfg(feature = "monad")]
     async fn test_monad_metadata_is_not_registered_for_ethereum() {
@@ -3399,7 +3468,9 @@ mod tests {
             assert_eq!(decoded.name, None);
         }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     #[cfg(feature = "monad")]
     async fn test_monad_reserve_metadata_starts_at_monad_nine() {
@@ -3452,7 +3523,9 @@ mod tests {
             Some("dippedIntoReserve()")
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     #[cfg(feature = "monad")]
     async fn test_monad_metadata_refreshes_across_hardforks() {
@@ -3499,20 +3572,25 @@ mod tests {
             Some("dippedIntoReserve()")
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn topic_from_u64(value: u64) -> B256 {
         let mut topic = [0u8; 32];
         topic[24..].copy_from_slice(&value.to_be_bytes());
         B256::from(topic)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn topic_from_address(address: Address) -> B256 {
         let mut topic = [0u8; 32];
         topic[12..].copy_from_slice(address.as_slice());
         B256::from(topic)
     }
+    */
 
     #[tokio::test]
     async fn test_t7_storage_credits_call_and_error_decode() {
@@ -3676,7 +3754,8 @@ mod tests {
 
     #[test]
     fn test_identify_addresses_skips_tempo_precompiles() {
-        use foundry_evm_core::tempo::{TEMPO_PRECOMPILE_ADDRESSES, TIP20_CHANNEL_RESERVE_ADDRESS};
+        use foundry_evm_networks::TEMPO_PRECOMPILE_ADDRESSES;
+        use tempo_contracts::precompiles::TIP20_CHANNEL_RESERVE_ADDRESS;
 
         // Decoder with Tempo chain ID (4217).
         let decoder = CallTraceDecoderBuilder::new()
@@ -3796,6 +3875,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn test_precompile_labels_follow_base_upgrade_boundaries() {
@@ -3814,6 +3894,7 @@ mod tests {
         assert_eq!(base_label_count(&labels_for_upgrade(BaseUpgrade::Beryl)), 3);
         assert_eq!(base_label_count(&labels_for_upgrade(BaseUpgrade::Cobalt)), 5);
     }
+    */
 
     #[tokio::test]
     async fn test_current_committee_decoding_is_durable_and_context_gated() {
@@ -3950,7 +4031,7 @@ mod tests {
 
     #[test]
     fn test_tempo_hardfork_none_does_not_remove_user_reserve_label() {
-        use foundry_evm_core::tempo::TIP20_CHANNEL_RESERVE_ADDRESS;
+        use tempo_contracts::precompiles::TIP20_CHANNEL_RESERVE_ADDRESS;
 
         let reserve_label = "UserReserve".to_string();
         let decoder = CallTraceDecoderBuilder::new()
@@ -4233,7 +4314,7 @@ mod tests {
 
     #[test]
     fn test_identify_addresses_does_not_skip_future_tempo_precompiles() {
-        use foundry_evm_core::tempo::TIP20_CHANNEL_RESERVE_ADDRESS;
+        use tempo_contracts::precompiles::TIP20_CHANNEL_RESERVE_ADDRESS;
 
         let decoder = CallTraceDecoderBuilder::new()
             .with_chain_id(Some(4217))
@@ -4263,7 +4344,7 @@ mod tests {
 
     #[test]
     fn test_identify_addresses_does_not_skip_tempo_precompiles_on_other_chains() {
-        use foundry_evm_core::tempo::TEMPO_PRECOMPILE_ADDRESSES;
+        use foundry_evm_networks::TEMPO_PRECOMPILE_ADDRESSES;
 
         // Decoder with Ethereum mainnet chain ID (1).
         let mut decoder = CallTraceDecoder::new().clone();
@@ -4292,6 +4373,7 @@ mod tests {
         assert_eq!(identifier.queried, vec![regular_addr, tempo_precompile]);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn test_identify_addresses_skips_monad_precompiles() {
@@ -4327,7 +4409,9 @@ mod tests {
 
         assert_eq!(identifier.queried, vec![regular_addr]);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn test_identify_addresses_does_not_skip_monad_precompiles_on_other_chains() {
@@ -4370,7 +4454,9 @@ mod tests {
             ]
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn execution_network_overrides_nested_source_monad_precompile_detection() {
@@ -4381,4 +4467,5 @@ mod tests {
             Some(MonadHardfork::MonadNine.into()),
         ));
     }
+    */
 }

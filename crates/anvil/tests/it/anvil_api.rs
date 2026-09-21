@@ -1926,6 +1926,7 @@ async fn can_get_node_info_tempo_t1() {
     assert_eq!(node_info, expected_node_info);
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[tokio::test(flavor = "multi_thread")]
 #[cfg(feature = "monad")]
 async fn can_get_node_info_monad() {
@@ -1962,7 +1963,9 @@ async fn can_get_node_info_monad() {
 
     assert_eq!(node_info, expected_node_info);
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[tokio::test(flavor = "multi_thread")]
 #[cfg(feature = "optimism")]
 async fn can_get_node_info_optimism() {
@@ -1970,6 +1973,7 @@ async fn can_get_node_info_optimism() {
 
     assert_eq!(api.anvil_node_info().await.unwrap().network.as_deref(), Some("optimism"));
 }
+*/
 
 #[tokio::test(flavor = "multi_thread")]
 async fn can_get_default_base_fee_tempo_t0() {

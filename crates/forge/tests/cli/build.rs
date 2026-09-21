@@ -415,6 +415,7 @@ forgetest!(build_sizes_respects_configured_code_size_limit, |prj, cmd| {
     );
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest!(build_sizes_respects_monad_network_code_size_limit, |prj, cmd| {
     prj.add_source("LargeContract.sol", generate_large_init_contract(50_000).as_str());
@@ -436,6 +437,7 @@ forgetest!(build_sizes_respects_monad_network_code_size_limit, |prj, cmd| {
         .is_json(),
     );
 });
+*/
 
 forgetest!(build_sizes_respects_amsterdam_code_size_limits, |prj, cmd| {
     prj.add_source("LargeContract.sol", generate_large_init_contract(50_000).as_str());

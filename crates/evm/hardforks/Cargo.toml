@@ -16,19 +16,25 @@ workspace = true
 [dependencies]
 alloy-chains.workspace = true
 alloy-hardforks = { workspace = true, features = ["serde"] }
-alloy-op-hardforks = { workspace = true, features = ["serde"], optional = true }
+# alloy-op-hardforks = { workspace = true, features = ["serde"], optional = true }
 alloy-rpc-types.workspace = true
-monad-revm = { workspace = true, optional = true }
-base-common-genesis = { workspace = true, optional = true }
-base-common-evm = { workspace = true, optional = true }
-op-revm = { workspace = true, optional = true }
+# monad-revm = { workspace = true, optional = true }
+# base-common-genesis = { workspace = true, optional = true }
+# base-common-evm = { workspace = true, optional = true }
+# op-revm = { workspace = true, optional = true }
 revm.workspace = true
 serde = { workspace = true, features = ["derive"] }
 tempo-hardfork.workspace = true
 foundry-compilers.workspace = true
 
 [features]
-default = ["optimism"]
-monad = ["dep:monad-revm"]
-base = ["dep:base-common-genesis", "dep:base-common-evm"]
-optimism = ["dep:alloy-op-hardforks", "dep:op-revm"]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = ["dep:monad-revm"]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = ["dep:base-common-genesis", "dep:base-common-evm"]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = ["dep:alloy-op-hardforks", "dep:op-revm"]
+optimism = []

@@ -14,8 +14,12 @@ mod anvil_const {
 }
 
 const ETHEREUM_FORK_BLOCK: u64 = 25_519_075;
+/* EVM2 migration: disabled non-Ethereum execution.
 const TEMPO_FORK_BLOCK: u64 = 37_847_799;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 const TEMPO_RPC_URL: &str = "https://rpc.tempo.xyz";
+*/
 
 struct ProductionVault {
     project: &'static str,
@@ -34,10 +38,12 @@ const PRODUCTION_VAULTS: &[ProductionVault] = &[
     },
 ];
 
+/* EVM2 migration: disabled non-Ethereum execution.
 const TEMPO_VAULT: ProductionVault = ProductionVault {
     project: "Morpho on Tempo",
     address: "0x83a1491f3e7f8dAAB8F787a631334b9ca7a87023",
 };
+*/
 
 const READ_CALLS: &[(&str, &[&str])] = &[
     ("asset", &[]),
@@ -587,6 +593,7 @@ casttest!(erc4626_fork_reads_multiple_production_vaults, async |_prj, cmd| {
     }
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(flaky_erc4626_fork_reads_tempo_vault, async |_prj, cmd| {
     let fork = NodeConfig::test_tempo()
         .with_eth_rpc_url(Some(TEMPO_RPC_URL.to_string()))
@@ -597,3 +604,4 @@ casttest!(flaky_erc4626_fork_reads_tempo_vault, async |_prj, cmd| {
     assert_read_surface(&mut cmd, &TEMPO_VAULT, &rpc);
     assert_inspection_surface(&mut cmd, &TEMPO_VAULT, &rpc);
 });
+*/

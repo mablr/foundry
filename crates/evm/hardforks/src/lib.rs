@@ -13,49 +13,71 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-#[cfg(all(feature = "optimism", not(feature = "base")))]
+#[cfg(all(any(), not(any())))]
 use alloy_chains::NamedChain;
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_revm::OpSpecId;
+*/
 
 pub use alloy_hardforks::EthereumHardfork;
 pub use tempo_hardfork::TempoHardfork;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 pub use base_common_evm::BaseSpecId;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 pub use base_common_genesis::BaseUpgrade;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 pub use monad_revm::MonadHardfork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 pub use alloy_op_hardforks::OpHardfork;
+*/
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(into = "String")]
 pub enum FoundryHardfork {
     Ethereum(EthereumHardfork),
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     Optimism(OpHardfork),
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     Base(BaseUpgrade),
+    */
     Tempo(TempoHardfork),
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     Monad(MonadHardfork),
+    */
 }
 
 impl From<FoundryHardfork> for String {
     fn from(fork: FoundryHardfork) -> Self {
         match fork {
             FoundryHardfork::Ethereum(h) => format!("{h}"),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             FoundryHardfork::Optimism(h) => format!("optimism:{h}"),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             FoundryHardfork::Base(h) => format!("base:{h}"),
+            */
             FoundryHardfork::Tempo(h) => format!("tempo:{h}"),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             FoundryHardfork::Monad(h) => format!("monad:{h}"),
+            */
         }
     }
 }
@@ -90,24 +112,29 @@ impl FromStr for FoundryHardfork {
                 .map(Self::Ethereum)
                 .map_err(|_| format!("unknown ethereum hardfork '{fork_raw}'")),
 
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             "op" | "optimism" => OpHardfork::from_str(&fork)
                 .map(Self::Optimism)
                 .map_err(|_| format!("unknown optimism hardfork '{fork_raw}'")),
+            */
 
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             "base" => BaseUpgrade::from_str(&fork)
                 .map(Self::Base)
                 .map_err(|_| format!("unknown base hardfork '{fork_raw}'")),
-
+            */
             "t" | "tempo" => TempoHardfork::from_str(&fork)
                 .map(Self::Tempo)
                 .map_err(|_| format!("unknown tempo hardfork '{fork_raw}'")),
 
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             "m" | "monad" => MonadHardfork::from_str(&fork)
                 .map(Self::Monad)
                 .map_err(|_| format!("unknown monad hardfork '{fork_raw}'")),
+            */
             _ => EthereumHardfork::from_str(&fork)
                 .map(Self::Ethereum)
                 .map_err(|_| format!("unknown hardfork '{raw}'")),
@@ -120,36 +147,48 @@ impl FoundryHardfork {
         Self::Ethereum(h)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     pub const fn optimism(h: OpHardfork) -> Self {
         Self::Optimism(h)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     pub const fn base(h: BaseUpgrade) -> Self {
         Self::Base(h)
     }
+    */
 
     pub const fn tempo(h: TempoHardfork) -> Self {
         Self::Tempo(h)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     pub const fn monad(h: MonadHardfork) -> Self {
         Self::Monad(h)
     }
+    */
 
     /// Returns the hardfork name without a network namespace prefix.
     pub fn name(&self) -> String {
         match self {
             Self::Ethereum(h) => format!("{h}"),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Optimism(h) => format!("{h}"),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(h) => format!("{h}"),
+            */
             Self::Tempo(h) => format!("{h}"),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             Self::Monad(h) => format!("{h}"),
+            */
         }
     }
 
@@ -159,13 +198,19 @@ impl FoundryHardfork {
     pub const fn namespace(&self) -> Option<&'static str> {
         match self {
             Self::Ethereum(_) => None,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Optimism(_) => Some("optimism"),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(_) => Some("base"),
+            */
             Self::Tempo(_) => Some("tempo"),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             Self::Monad(_) => Some("monad"),
+            */
         }
     }
 
@@ -177,21 +222,27 @@ impl FoundryHardfork {
         if let Some(fork) = EthereumHardfork::from_chain_and_timestamp(chain, timestamp) {
             return Some(Self::Ethereum(fork));
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if let Some(fork) = BaseUpgrade::from_chain_and_timestamp(chain_id, timestamp) {
             return Some(Self::Base(fork));
         }
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if let Some(fork) = OpHardfork::from_chain_and_timestamp(chain, timestamp) {
             return Some(Self::Optimism(fork));
         }
+        */
         if let Some(fork) = TempoHardfork::from_chain_and_timestamp(chain_id, timestamp) {
             return Some(Self::Tempo(fork));
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if let Some(fork) = MonadHardfork::from_chain_and_timestamp(chain_id, timestamp) {
             return Some(Self::Monad(fork));
         }
+        */
         None
     }
 }
@@ -211,13 +262,16 @@ impl From<FoundryHardfork> for EthereumHardfork {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl From<OpHardfork> for FoundryHardfork {
     fn from(value: OpHardfork) -> Self {
         Self::Optimism(value)
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl From<FoundryHardfork> for OpHardfork {
     fn from(fork: FoundryHardfork) -> Self {
@@ -227,14 +281,18 @@ impl From<FoundryHardfork> for OpHardfork {
         }
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl From<BaseUpgrade> for FoundryHardfork {
     fn from(value: BaseUpgrade) -> Self {
         Self::Base(value)
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl From<FoundryHardfork> for BaseUpgrade {
     fn from(fork: FoundryHardfork) -> Self {
@@ -244,7 +302,9 @@ impl From<FoundryHardfork> for BaseUpgrade {
         }
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl From<FoundryHardfork> for BaseSpecId {
     fn from(fork: FoundryHardfork) -> Self {
@@ -254,6 +314,7 @@ impl From<FoundryHardfork> for BaseSpecId {
         }
     }
 }
+*/
 
 impl From<TempoHardfork> for FoundryHardfork {
     fn from(value: TempoHardfork) -> Self {
@@ -270,13 +331,16 @@ impl From<FoundryHardfork> for TempoHardfork {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 impl From<MonadHardfork> for FoundryHardfork {
     fn from(value: MonadHardfork) -> Self {
         Self::Monad(value)
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 impl From<FoundryHardfork> for MonadHardfork {
     fn from(fork: FoundryHardfork) -> Self {
@@ -286,22 +350,30 @@ impl From<FoundryHardfork> for MonadHardfork {
         }
     }
 }
+*/
 
 impl From<FoundryHardfork> for SpecId {
     fn from(fork: FoundryHardfork) -> Self {
         match fork {
             FoundryHardfork::Ethereum(hardfork) => spec_id_from_ethereum_hardfork(hardfork),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             FoundryHardfork::Optimism(hardfork) => eth_spec_id_from_optimism_hardfork(hardfork),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             FoundryHardfork::Base(hardfork) => BaseSpecId::new(hardfork).into_eth_spec(),
+            */
             FoundryHardfork::Tempo(hardfork) => spec_id_from_tempo_hardfork(hardfork),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             FoundryHardfork::Monad(hardfork) => hardfork.into(),
+            */
         }
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl From<FoundryHardfork> for OpSpecId {
     fn from(fork: FoundryHardfork) -> Self {
@@ -311,6 +383,7 @@ impl From<FoundryHardfork> for OpSpecId {
         }
     }
 }
+*/
 
 /// Map an `EthereumHardfork` enum into its corresponding `SpecId`.
 pub fn spec_id_from_ethereum_hardfork(hardfork: EthereumHardfork) -> SpecId {
@@ -343,6 +416,7 @@ pub fn spec_id_from_ethereum_hardfork(hardfork: EthereumHardfork) -> SpecId {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Map an `OptimismHardfork` enum into its corresponding `OpSpecId`.
 #[cfg(feature = "optimism")]
 pub fn spec_id_from_optimism_hardfork(hardfork: OpHardfork) -> OpSpecId {
@@ -361,7 +435,9 @@ pub fn spec_id_from_optimism_hardfork(hardfork: OpHardfork) -> OpSpecId {
         f => unreachable!("unimplemented {}", f),
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Map an `OptimismHardfork` enum into its corresponding Ethereum `SpecId`.
 #[cfg(feature = "optimism")]
 pub fn eth_spec_id_from_optimism_hardfork(hardfork: OpHardfork) -> SpecId {
@@ -376,6 +452,7 @@ pub fn eth_spec_id_from_optimism_hardfork(hardfork: OpHardfork) -> SpecId {
         f => unreachable!("unimplemented {}", f),
     }
 }
+*/
 
 /// Map a `TempoHardfork` enum into its corresponding Ethereum `SpecId`.
 pub const fn spec_id_from_tempo_hardfork(_: TempoHardfork) -> SpecId {
@@ -476,6 +553,7 @@ impl ExecutionSpec for SpecId {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl FromEvmVersion for OpSpecId {
     fn from_evm_version(version: EvmVersion) -> Self {
@@ -497,8 +575,10 @@ impl FromEvmVersion for OpSpecId {
         }
     }
 }
+*/
 
-#[cfg(feature = "optimism")]
+/* EVM2 migration: disabled non-Ethereum execution.
+#[cfg(any())]
 impl ExecutionSpec for OpSpecId {
     // Returns the user-facing name for the active execution spec.
     fn evm_version_name(&self) -> String {
@@ -532,7 +612,7 @@ impl ExecutionSpec for OpSpecId {
 
         // Base uses its own upgrade schedule. Without native Base support, retain the configured
         // EVM version instead of applying the incompatible OP schedule.
-        #[cfg(not(feature = "base"))]
+        // EVM2 migration: unconditional Ethereum fallback.
         if matches!(
             Chain::from_id(chain_id).named(),
             Some(NamedChain::Base | NamedChain::BaseSepolia)
@@ -548,6 +628,7 @@ impl ExecutionSpec for OpSpecId {
             .map(FoundryHardfork::Optimism)
     }
 }
+*/
 
 impl FromEvmVersion for TempoHardfork {
     fn from_evm_version(_: EvmVersion) -> Self {
@@ -579,13 +660,16 @@ impl ExecutionSpec for TempoHardfork {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 impl FromEvmVersion for MonadHardfork {
     fn from_evm_version(_: EvmVersion) -> Self {
         Self::default()
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 impl ExecutionSpec for MonadHardfork {
     // Returns the user-facing name for the active execution spec.
@@ -611,7 +695,9 @@ impl ExecutionSpec for MonadHardfork {
         Some(self.into())
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl FromEvmVersion for BaseSpecId {
     fn from_evm_version(version: EvmVersion) -> Self {
@@ -634,7 +720,9 @@ impl FromEvmVersion for BaseSpecId {
         Self::new(upgrade)
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl ExecutionSpec for BaseSpecId {
     // Returns the user-facing name for the active execution spec.
@@ -659,6 +747,7 @@ impl ExecutionSpec for BaseSpecId {
         Some(FoundryHardfork::Base(self.upgrade()))
     }
 }
+*/
 
 /// Returns the spec id derived from [`EvmVersion`] for a given spec type.
 pub fn evm_spec_id<SPEC: FromEvmVersion>(evm_version: EvmVersion) -> SPEC {
@@ -733,6 +822,7 @@ mod tests {
         assert_eq!(evm_spec_id::<TempoHardfork>(EvmVersion::Osaka), latest);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn test_monad_hardfork_parsing() {
@@ -749,7 +839,9 @@ mod tests {
             FoundryHardfork::Monad(MonadHardfork::MonadNext)
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn test_monad_hardfork_serialization() {
@@ -760,7 +852,9 @@ mod tests {
         assert_eq!(FoundryHardfork::Monad(MonadHardfork::MonadEight).namespace(), Some("monad"));
         assert_eq!(FoundryHardfork::Monad(MonadHardfork::MonadEight).name(), "MonadEight");
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn test_monad_hardfork_spec_id_mapping() {
@@ -772,6 +866,7 @@ mod tests {
             MonadHardfork::MonadNext
         );
     }
+    */
 
     #[test]
     fn test_tempo_hardfork_from_chain_and_timestamp() {
@@ -850,6 +945,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn test_monad_hardfork_from_chain_and_timestamp() {
@@ -913,6 +1009,7 @@ mod tests {
             Some(FoundryHardfork::Monad(MonadHardfork::MonadTen))
         );
     }
+    */
 
     #[test]
     fn test_evm_spec_id_from_str_parses_network_hardforks() {
@@ -924,6 +1021,7 @@ mod tests {
         assert_eq!(evm_spec_id_from_str::<TempoHardfork>("T13"), Some(TempoHardfork::T13));
         assert_eq!(evm_spec_id_from_str::<TempoHardfork>("ethereum:prague"), None);
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         {
             assert_eq!(
@@ -940,6 +1038,7 @@ mod tests {
             );
             assert_eq!(evm_spec_id_from_str::<MonadHardfork>("tempo:T3"), None);
         }
+        */
     }
 
     #[test]
@@ -978,6 +1077,7 @@ mod tests {
         assert_eq!(FoundryHardfork::from_chain_and_timestamp(999999, 0), None);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     mod base {
         use super::*;
@@ -1061,76 +1161,79 @@ mod tests {
             assert_eq!(evm_spec_id_from_str::<BaseSpecId>("tempo:T3"), None);
         }
     }
+    */
 
-    #[cfg(feature = "optimism")]
-    mod optimism {
-        use super::*;
+    /* EVM2 migration: disabled non-Ethereum execution.
+    #[cfg(any())]
+        mod optimism {
+            use super::*;
 
-        #[cfg(feature = "base")]
-        use base_common_genesis::UpgradeConfig;
+            #[cfg(any())]
+            use base_common_genesis::UpgradeConfig;
 
-        #[test]
-        fn test_optimism_spec_id_mapping() {
-            assert_eq!(spec_id_from_optimism_hardfork(OpHardfork::Bedrock), OpSpecId::BEDROCK);
-            assert_eq!(spec_id_from_optimism_hardfork(OpHardfork::Regolith), OpSpecId::REGOLITH);
+            #[test]
+            fn test_optimism_spec_id_mapping() {
+                assert_eq!(spec_id_from_optimism_hardfork(OpHardfork::Bedrock), OpSpecId::BEDROCK);
+                assert_eq!(spec_id_from_optimism_hardfork(OpHardfork::Regolith), OpSpecId::REGOLITH);
 
-            // Test latest hardforks
-            assert_eq!(spec_id_from_optimism_hardfork(OpHardfork::Holocene), OpSpecId::HOLOCENE);
-            assert_eq!(spec_id_from_optimism_hardfork(OpHardfork::Karst), OpSpecId::KARST);
-            assert_eq!(spec_id_from_optimism_hardfork(OpHardfork::Lagoon), OpSpecId::LAGOON);
-            assert_eq!(eth_spec_id_from_optimism_hardfork(OpHardfork::Jovian), SpecId::PRAGUE);
-            assert_eq!(eth_spec_id_from_optimism_hardfork(OpHardfork::Karst), SpecId::OSAKA);
-            assert_eq!(eth_spec_id_from_optimism_hardfork(OpHardfork::Lagoon), SpecId::OSAKA);
-            assert_eq!(evm_spec_id::<OpSpecId>(EvmVersion::Osaka), OpSpecId::KARST);
-        }
+                // Test latest hardforks
+                assert_eq!(spec_id_from_optimism_hardfork(OpHardfork::Holocene), OpSpecId::HOLOCENE);
+                assert_eq!(spec_id_from_optimism_hardfork(OpHardfork::Karst), OpSpecId::KARST);
+                assert_eq!(spec_id_from_optimism_hardfork(OpHardfork::Lagoon), OpSpecId::LAGOON);
+                assert_eq!(eth_spec_id_from_optimism_hardfork(OpHardfork::Jovian), SpecId::PRAGUE);
+                assert_eq!(eth_spec_id_from_optimism_hardfork(OpHardfork::Karst), SpecId::OSAKA);
+                assert_eq!(eth_spec_id_from_optimism_hardfork(OpHardfork::Lagoon), SpecId::OSAKA);
+                assert_eq!(evm_spec_id::<OpSpecId>(EvmVersion::Osaka), OpSpecId::KARST);
+            }
 
-        #[test]
-        fn test_from_chain_and_timestamp_op_mainnet() {
-            let op_chain_id = 10;
-            assert!(matches!(
-                FoundryHardfork::from_chain_and_timestamp(op_chain_id, u64::MAX),
-                Some(FoundryHardfork::Optimism(_))
-            ));
-        }
+            #[test]
+            fn test_from_chain_and_timestamp_op_mainnet() {
+                let op_chain_id = 10;
+                assert!(matches!(
+                    FoundryHardfork::from_chain_and_timestamp(op_chain_id, u64::MAX),
+                    Some(FoundryHardfork::Optimism(_))
+                ));
+            }
 
-        #[test]
-        #[cfg(feature = "base")]
-        fn test_base_chain_historical_hardfork_is_execution_family_specific() {
-            let chains = [
-                (8453, UpgradeConfig::BASE_MAINNET.ecotone_time.unwrap()),
-                (84532, UpgradeConfig::BASE_SEPOLIA.ecotone_time.unwrap()),
-            ];
+            #[test]
+            #[cfg(any())]
+            fn test_base_chain_historical_hardfork_is_execution_family_specific() {
+                let chains = [
+                    (8453, UpgradeConfig::BASE_MAINNET.ecotone_time.unwrap()),
+                    (84532, UpgradeConfig::BASE_SEPOLIA.ecotone_time.unwrap()),
+                ];
 
-            for (chain_id, timestamp) in chains {
-                assert_eq!(
-                    FoundryHardfork::from_chain_and_timestamp(chain_id, timestamp),
-                    Some(FoundryHardfork::Base(BaseUpgrade::Ecotone))
-                );
-                assert_eq!(
-                    BaseSpecId::historical_hardfork(chain_id, timestamp),
-                    Some(FoundryHardfork::Base(BaseUpgrade::Ecotone))
-                );
-                assert_eq!(
-                    OpSpecId::historical_hardfork(chain_id, timestamp),
-                    Some(FoundryHardfork::Optimism(OpHardfork::Ecotone))
-                );
-                assert_eq!(
-                    OpSpecId::fork_hardfork(chain_id, timestamp, None),
-                    Some(FoundryHardfork::Optimism(OpHardfork::Ecotone))
-                );
+                for (chain_id, timestamp) in chains {
+                    assert_eq!(
+                        FoundryHardfork::from_chain_and_timestamp(chain_id, timestamp),
+                        Some(FoundryHardfork::Base(BaseUpgrade::Ecotone))
+                    );
+                    assert_eq!(
+                        BaseSpecId::historical_hardfork(chain_id, timestamp),
+                        Some(FoundryHardfork::Base(BaseUpgrade::Ecotone))
+                    );
+                    assert_eq!(
+                        OpSpecId::historical_hardfork(chain_id, timestamp),
+                        Some(FoundryHardfork::Optimism(OpHardfork::Ecotone))
+                    );
+                    assert_eq!(
+                        OpSpecId::fork_hardfork(chain_id, timestamp, None),
+                        Some(FoundryHardfork::Optimism(OpHardfork::Ecotone))
+                    );
+                }
+            }
+
+            /// Base is an OP-stack chain, so without the `base` feature its chain IDs must still map
+            /// to an Optimism hardfork rather than resolving to nothing.
+            #[test]
+            // EVM2 migration: unconditional Ethereum fallback.
+            fn test_from_chain_and_timestamp_base() {
+                let base_chain_id = 8453;
+                assert!(matches!(
+                    FoundryHardfork::from_chain_and_timestamp(base_chain_id, u64::MAX),
+                    Some(FoundryHardfork::Optimism(_))
+                ));
             }
         }
-
-        /// Base is an OP-stack chain, so without the `base` feature its chain IDs must still map
-        /// to an Optimism hardfork rather than resolving to nothing.
-        #[test]
-        #[cfg(not(feature = "base"))]
-        fn test_from_chain_and_timestamp_base() {
-            let base_chain_id = 8453;
-            assert!(matches!(
-                FoundryHardfork::from_chain_and_timestamp(base_chain_id, u64::MAX),
-                Some(FoundryHardfork::Optimism(_))
-            ));
-        }
-    }
+    */
 }

@@ -3286,8 +3286,10 @@ mod tests {
     };
     use tempfile::tempdir;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_evm_hardforks::BaseUpgrade;
+    */
 
     // Helper function to clear `__warnings` in config, since it will be populated during loading
     // from file, causing testing problem when comparing to those created from `default()`, etc.
@@ -5764,6 +5766,7 @@ mod tests {
         });
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn base_upgrade_infers_base_network() {
@@ -5783,7 +5786,9 @@ mod tests {
             Ok(())
         });
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn namespaced_hardfork_infers_monad_network() {
@@ -5818,7 +5823,9 @@ mod tests {
             Ok(())
         });
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn network_selectors_reject_profile_merged_hybrid() {
@@ -5844,7 +5851,9 @@ mod tests {
             Ok(())
         });
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn network_selectors_reject_canonical_environment_conflict() {
@@ -5867,7 +5876,9 @@ mod tests {
             Ok(())
         });
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn matching_canonical_and_legacy_network_selectors_remain_valid() {
@@ -5891,6 +5902,7 @@ mod tests {
             Ok(())
         });
     }
+    */
 
     #[test]
     fn celo_network_accepts_ethereum_hardfork() {
@@ -8348,6 +8360,7 @@ mod tests {
         });
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn no_unknown_key_warning_for_legacy_monad_alias() {
@@ -8371,9 +8384,10 @@ mod tests {
             Ok(())
         });
     }
+    */
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn warns_for_monad_alias_without_monad_support() {
         figment::Jail::expect_with(|jail| {
             jail.create_file(

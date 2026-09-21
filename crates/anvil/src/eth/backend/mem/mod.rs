@@ -52,7 +52,7 @@ use alloy_consensus::{
     transaction::Recovered,
 };
 use alloy_eips::{
-    BlockNumHash, Encodable2718, eip2935, eip4788,
+    BlockNumHash, eip2935, eip4788,
     eip4844::{DATA_GAS_PER_BLOB, kzg_to_versioned_hash},
     eip6110::MAINNET_DEPOSIT_CONTRACT_ADDRESS,
     eip7002, eip7251,
@@ -62,7 +62,7 @@ use alloy_eips::{
     eip7928::{BlockAccessList, EMPTY_BLOCK_ACCESS_LIST_HASH, compute_block_access_list_hash},
 };
 use alloy_evm::{
-    Database, EthEvmFactory, Evm, EvmEnv, EvmFactory, FromTxWithEncoded,
+    Database, EthEvmFactory, Evm, EvmEnv, EvmFactory,
     block::{BalIndexedDatabase, BlockExecutionResult, BlockExecutor, StateDB},
     eth::{EthEvm, EthEvmContext},
     overrides::{OverrideBlockHashes, apply_state_overrides},
@@ -122,10 +122,7 @@ use flate2::{Compression, read::GzDecoder, write::GzEncoder};
 use foundry_evm::{
     backend::{BlockchainDb, DatabaseError, DatabaseResult, RevertStateSnapshotAction},
     constants::{DEFAULT_CREATE2_DEPLOYER, DEFAULT_CREATE2_DEPLOYER_RUNTIME_CODE},
-    core::{
-        evm::{EvmEnvFor, TempoEvmNetwork},
-        precompiles::EC_RECOVER,
-    },
+    core::precompiles::EC_RECOVER,
     decode::RevertDecoder,
     hardfork::{EthereumHardfork, FoundryHardfork},
     inspectors::AccessListInspector,
@@ -152,9 +149,7 @@ use revm::{
     context_interface::{
         JournalTr,
         block::BlobExcessGasAndPrice,
-        result::{
-            EVMError, ExecutionResult, HaltReason, InvalidTransaction, Output, ResultAndState,
-        },
+        result::{ExecutionResult, HaltReason, Output, ResultAndState},
         transaction::TransactionType,
     },
     database::{
@@ -185,7 +180,7 @@ use std::{
     time::Duration,
 };
 use storage::{Blockchain, DEFAULT_HISTORY_LIMIT, MinedTransaction};
-use tempo_evm::{TempoPoolValidationEvm, evm::TempoEvmFactory};
+use tempo_evm::evm::TempoEvmFactory;
 use tempo_hardfork::TempoHardfork;
 use tempo_precompiles::{
     NONCE_PRECOMPILE_ADDRESS, TIP_FEE_MANAGER_ADDRESS, extend_tempo_precompiles,
@@ -203,68 +198,106 @@ use tempo_primitives::{
     },
 };
 use tempo_revm::{
-    ExecutionContext, TempoBatchCallEnv, TempoBlockEnv, TempoInvalidTransaction, TempoTxEnv,
-    evm::TempoContext, gas_params::tempo_gas_params,
+    ExecutionContext, TempoBatchCallEnv, TempoBlockEnv, TempoTxEnv, evm::TempoContext,
+    gas_params::tempo_gas_params,
 };
 use tokio::{sync::RwLock as AsyncRwLock, task::JoinSet};
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(any(feature = "base", feature = "optimism"))]
 use foundry_primitives::get_deposit_tx_parts;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(any(feature = "base", feature = "optimism"))]
 use op_alloy_consensus::DEPOSIT_TX_TYPE_ID;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(any(feature = "base", feature = "optimism"))]
 use op_revm::transaction::deposit::DepositTransactionParts;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use alloy_hardforks::ForkCondition;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_chains::{ChainConfig, ChainUpgrades};
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_consensus::{
     BaseTransactionInfo, BaseTxEnvelope, EIP8130_REJECTION_MSG, Eip8130Constants, Predeploys,
 };
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_evm::{
     BaseContext, BaseEvmFactory, BaseSpecId, BaseTransaction, DEPOSIT_TRANSACTION_TYPE,
     DepositTransactionParts as BaseDepositTransactionParts, EIP8130_TRANSACTION_TYPE,
     Eip8130PhaseStatuses, L1BlockInfo, ensure_create2_deployer, ensure_eip8130_system_accounts,
 };
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_genesis::RollupConfig;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_precompiles::NonceManagerStorage;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_rpc_types::{
     EIP8130_PRE_ZENITH_RPC_ERROR, Eip8130Nonce, Eip8130ReceiptFields,
     Transaction as BaseRpcTransaction,
 };
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_execution_eip8130::{FeeCheck, IntrinsicGas, IntrinsicGasInput};
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm::{
     core::{constants::SYSTEM_PRECOMPILE_STUB, evm::base_code_sentinel_addresses},
     hardfork::BaseUpgrade,
 };
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use revm::inspector::NoOpInspector;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use alloy_op_evm::{OpEvmContext, OpEvmFactory, OpTx};
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::hardfork::OpHardfork;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm_networks::NetworkVariant;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_consensus::POST_EXEC_TX_TYPE_ID;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_revm::OpTransaction;
+*/
 
 /// Network-specific transaction data produced by [`Backend::build_call_env_with_base`].
 #[derive(Default, Clone, Debug)]
 struct CallTransactionInfo {
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// OP-compatible deposit fields shared by Base and Optimism RPC requests.
     #[cfg(any(feature = "base", feature = "optimism"))]
     deposit: DepositTransactionParts,
+    */
 }
 
 /// Fully prepared fork replacement awaiting an atomic backend commit.
@@ -474,20 +507,24 @@ impl<D> Drop for StagedForkDbUser<D> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 pub(crate) type MonadReplayContext = monad_revm::MonadChainContext;
+*/
 // Opaque stand-in that keeps feature-independent replay context plumbing type-stable.
-#[cfg(not(feature = "monad"))]
+// EVM2 migration: unconditional Ethereum fallback.
 #[derive(Clone)]
 pub(crate) struct MonadReplayContext;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 enum MonadExecutionContext<'a> {
     Exact(Box<MonadReplayContext>),
     Next(&'a mut MonadReplayContext),
 }
+*/
 
-#[cfg(not(feature = "monad"))]
+// EVM2 migration: unconditional Ethereum fallback.
 struct MonadExecutionContext<'a> {
     _marker: std::marker::PhantomData<&'a mut MonadReplayContext>,
 }
@@ -499,7 +536,7 @@ enum EnvelopeExecutionKind {
     Replay,
 }
 
-#[cfg_attr(not(feature = "monad"), allow(dead_code))]
+#[cfg_attr(not(any()), allow(dead_code))]
 struct EnvelopeExecution<'a> {
     monad_context: Option<MonadExecutionContext<'a>>,
     kind: EnvelopeExecutionKind,
@@ -522,6 +559,7 @@ impl<'a> EnvelopeExecution<'a> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 fn monad_execution_context_at(
     context: Option<&MonadReplayContext>,
@@ -533,8 +571,9 @@ fn monad_execution_context_at(
         MonadExecutionContext::Exact(Box::new(context))
     })
 }
+*/
 
-#[cfg(not(feature = "monad"))]
+// EVM2 migration: unconditional Ethereum fallback.
 const fn monad_execution_context_at(
     _context: Option<&MonadReplayContext>,
     _current_tx_index: usize,
@@ -542,12 +581,14 @@ const fn monad_execution_context_at(
     None
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 const fn next_monad_context(context: &mut MonadReplayContext) -> MonadExecutionContext<'_> {
     MonadExecutionContext::Next(context)
 }
+*/
 
-#[cfg(not(feature = "monad"))]
+// EVM2 migration: unconditional Ethereum fallback.
 const fn next_monad_context(_context: &mut MonadReplayContext) -> MonadExecutionContext<'_> {
     MonadExecutionContext { _marker: std::marker::PhantomData }
 }
@@ -629,12 +670,18 @@ where
 #[derive(Clone)]
 enum CallTxEnv {
     Eth(TxEnv),
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     Base(Box<BaseTransaction<TxEnv>>),
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     Monad(TxEnv),
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     Op(OpTransaction<TxEnv>),
+    */
     Tempo(TempoTxEnv),
 }
 
@@ -643,12 +690,18 @@ impl CallTxEnv {
     const fn base(&self) -> &TxEnv {
         match self {
             Self::Eth(tx) => tx,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(tx) => &tx.base,
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             Self::Monad(tx) => tx,
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Op(tx) => &tx.base,
+            */
             Self::Tempo(tx) => &tx.inner,
         }
     }
@@ -656,12 +709,18 @@ impl CallTxEnv {
     const fn base_mut(&mut self) -> &mut TxEnv {
         match self {
             Self::Eth(tx) => tx,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(tx) => &mut tx.base,
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             Self::Monad(tx) => tx,
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Op(tx) => &mut tx.base,
+            */
             Self::Tempo(tx) => &mut tx.inner,
         }
     }
@@ -669,12 +728,18 @@ impl CallTxEnv {
     fn into_base(self) -> TxEnv {
         match self {
             Self::Eth(tx) => tx,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(tx) => tx.base,
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             Self::Monad(tx) => tx,
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Op(tx) => tx.base,
+            */
             Self::Tempo(tx) => tx.inner,
         }
     }
@@ -682,16 +747,22 @@ impl CallTxEnv {
     fn uses_protocol_call_nonce(&self) -> bool {
         match self {
             Self::Eth(tx) => matches!(tx.kind, TxKind::Call(_)),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base(tx) => {
                 tx.eip8130.is_none()
                     && tx.base.tx_type != DEPOSIT_TRANSACTION_TYPE
                     && matches!(tx.base.kind, TxKind::Call(_))
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             Self::Monad(tx) => matches!(tx.kind, TxKind::Call(_)),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Op(tx) => matches!(tx.base.kind, TxKind::Call(_)),
+            */
             Self::Tempo(tx) => tx.tempo_tx_env.as_ref().map_or_else(
                 || matches!(tx.inner.kind, TxKind::Call(_)),
                 |aa| {
@@ -719,8 +790,10 @@ struct PreparedCall {
     evm_env: EvmEnv,
     tx_env: CallTxEnv,
     simulated_tempo_tx: Option<AASigned>,
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     simulated_envelope: Option<FoundryTxEnvelope>,
+    */
 }
 
 #[derive(Default)]
@@ -746,6 +819,7 @@ impl GasEstimateCallOptions {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Marker trait that abstracts over the per-network inspector trait bounds
 /// required by the in-memory backend. The OP bound is only included when the
 /// `optimism` feature is enabled.
@@ -758,6 +832,8 @@ pub trait BackendInspector<DB: Database>:
     + Inspector<alloy_monad_evm::MonadContext<DB>>
 {
 }
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(all(feature = "base", feature = "optimism", feature = "monad"))]
 impl<DB: Database, T> BackendInspector<DB> for T where
     T: Inspector<EthEvmContext<DB>>
@@ -767,7 +843,8 @@ impl<DB: Database, T> BackendInspector<DB> for T where
         + Inspector<alloy_monad_evm::MonadContext<DB>>
 {
 }
-#[cfg(all(feature = "base", feature = "optimism", not(feature = "monad")))]
+*/
+#[cfg(all(any(), any(), not(any())))]
 pub trait BackendInspector<DB: Database>:
     Inspector<EthEvmContext<DB>>
     + Inspector<BaseContext<DB>>
@@ -775,7 +852,7 @@ pub trait BackendInspector<DB: Database>:
     + Inspector<TempoContext<DB>>
 {
 }
-#[cfg(all(feature = "base", feature = "optimism", not(feature = "monad")))]
+#[cfg(all(any(), any(), not(any())))]
 impl<DB: Database, T> BackendInspector<DB> for T where
     T: Inspector<EthEvmContext<DB>>
         + Inspector<BaseContext<DB>>
@@ -783,7 +860,7 @@ impl<DB: Database, T> BackendInspector<DB> for T where
         + Inspector<TempoContext<DB>>
 {
 }
-#[cfg(all(feature = "base", not(feature = "optimism"), feature = "monad"))]
+#[cfg(all(any(), not(any()), any()))]
 pub trait BackendInspector<DB: Database>:
     Inspector<EthEvmContext<DB>>
     + Inspector<BaseContext<DB>>
@@ -791,7 +868,7 @@ pub trait BackendInspector<DB: Database>:
     + Inspector<alloy_monad_evm::MonadContext<DB>>
 {
 }
-#[cfg(all(feature = "base", not(feature = "optimism"), feature = "monad"))]
+#[cfg(all(any(), not(any()), any()))]
 impl<DB: Database, T> BackendInspector<DB> for T where
     T: Inspector<EthEvmContext<DB>>
         + Inspector<BaseContext<DB>>
@@ -799,17 +876,17 @@ impl<DB: Database, T> BackendInspector<DB> for T where
         + Inspector<alloy_monad_evm::MonadContext<DB>>
 {
 }
-#[cfg(all(feature = "base", not(feature = "optimism"), not(feature = "monad")))]
+#[cfg(all(any(), not(any()), not(any())))]
 pub trait BackendInspector<DB: Database>:
     Inspector<EthEvmContext<DB>> + Inspector<BaseContext<DB>> + Inspector<TempoContext<DB>>
 {
 }
-#[cfg(all(feature = "base", not(feature = "optimism"), not(feature = "monad")))]
+#[cfg(all(any(), not(any()), not(any())))]
 impl<DB: Database, T> BackendInspector<DB> for T where
     T: Inspector<EthEvmContext<DB>> + Inspector<BaseContext<DB>> + Inspector<TempoContext<DB>>
 {
 }
-#[cfg(all(not(feature = "base"), feature = "optimism", feature = "monad"))]
+#[cfg(all(not(any()), any(), any()))]
 pub trait BackendInspector<DB: Database>:
     Inspector<EthEvmContext<DB>>
     + Inspector<OpEvmContext<DB>>
@@ -817,7 +894,7 @@ pub trait BackendInspector<DB: Database>:
     + Inspector<alloy_monad_evm::MonadContext<DB>>
 {
 }
-#[cfg(all(not(feature = "base"), feature = "optimism", feature = "monad"))]
+#[cfg(all(not(any()), any(), any()))]
 impl<DB: Database, T> BackendInspector<DB> for T where
     T: Inspector<EthEvmContext<DB>>
         + Inspector<OpEvmContext<DB>>
@@ -825,50 +902,56 @@ impl<DB: Database, T> BackendInspector<DB> for T where
         + Inspector<alloy_monad_evm::MonadContext<DB>>
 {
 }
-#[cfg(all(not(feature = "base"), feature = "optimism", not(feature = "monad")))]
+#[cfg(all(not(any()), any(), not(any())))]
 pub trait BackendInspector<DB: Database>:
     Inspector<EthEvmContext<DB>> + Inspector<OpEvmContext<DB>> + Inspector<TempoContext<DB>>
 {
 }
-#[cfg(all(not(feature = "base"), feature = "optimism", not(feature = "monad")))]
+#[cfg(all(not(any()), any(), not(any())))]
 impl<DB: Database, T> BackendInspector<DB> for T where
     T: Inspector<EthEvmContext<DB>> + Inspector<OpEvmContext<DB>> + Inspector<TempoContext<DB>>
 {
 }
-#[cfg(all(not(feature = "base"), not(feature = "optimism"), feature = "monad"))]
+#[cfg(all(not(any()), not(any()), any()))]
 pub trait BackendInspector<DB: Database>:
     Inspector<EthEvmContext<DB>>
     + Inspector<TempoContext<DB>>
     + Inspector<alloy_monad_evm::MonadContext<DB>>
 {
 }
-#[cfg(all(not(feature = "base"), not(feature = "optimism"), feature = "monad"))]
+#[cfg(all(not(any()), not(any()), any()))]
 impl<DB: Database, T> BackendInspector<DB> for T where
     T: Inspector<EthEvmContext<DB>>
         + Inspector<TempoContext<DB>>
         + Inspector<alloy_monad_evm::MonadContext<DB>>
 {
 }
-#[cfg(all(not(feature = "base"), not(feature = "optimism"), not(feature = "monad")))]
+#[cfg(all(not(any()), not(any()), not(any())))]
 pub trait BackendInspector<DB: Database>:
     Inspector<EthEvmContext<DB>> + Inspector<TempoContext<DB>>
 {
 }
-#[cfg(all(not(feature = "base"), not(feature = "optimism"), not(feature = "monad")))]
+#[cfg(all(not(any()), not(any()), not(any())))]
 impl<DB: Database, T> BackendInspector<DB> for T where
     T: Inspector<EthEvmContext<DB>> + Inspector<TempoContext<DB>>
 {
 }
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 mod base;
+*/
 pub mod cache;
 pub mod fork_db;
 pub mod in_memory_db;
 pub mod inspector;
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 mod monad;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 pub mod optimism;
+*/
 pub mod state;
 pub mod storage;
 
@@ -883,12 +966,16 @@ impl DatabaseRef for dyn crate::eth::backend::db::Db {}
 pub const MIN_TRANSACTION_GAS: u128 = 21000;
 // Gas per transaction creating a contract.
 pub const MIN_CREATE_GAS: u128 = 53000;
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Standalone Base L1 base fee, in wei.
 #[cfg(feature = "base")]
 const DEFAULT_BASE_L1_BASE_FEE: u64 = 1_000_000_000;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Standalone Base L1 base-fee scalar, with six decimal places.
 #[cfg(feature = "base")]
 const DEFAULT_BASE_L1_FEE_SCALAR: u32 = 1_000_000;
+*/
 
 fn tempo_nonce(
     state: &dyn DatabaseRef,
@@ -1051,9 +1138,11 @@ pub struct Backend<N: Network> {
     evm_env: Arc<RwLock<EvmEnv>>,
     /// Network configuration (optimism, custom precompiles, etc.)
     networks: NetworkConfigs,
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Base activation-registry administrator override.
     #[cfg(feature = "base")]
     base_activation_admin: Option<Address>,
+    */
     /// The active hardfork.
     hardfork: Arc<RwLock<FoundryHardfork>>,
     /// This is set if this is currently forked off another client.
@@ -1106,8 +1195,10 @@ impl<N: Network> Clone for Backend<N> {
             states: self.states.clone(),
             evm_env: self.evm_env.clone(),
             networks: self.networks,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             base_activation_admin: self.base_activation_admin,
+            */
             hardfork: self.hardfork.clone(),
             fork: self.fork.clone(),
             last_fork_cache_source: self.last_fork_cache_source.clone(),
@@ -1382,6 +1473,7 @@ impl<N: Network> Backend<N> {
         &self,
         transaction: MaybeImpersonatedTransaction<FoundryTxEnvelope>,
     ) -> Result<PendingTransaction<FoundryTxEnvelope>, BlockchainError> {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.is_monad() {
             return Self::monad_pending_mined_transaction_from_storage(
@@ -1389,19 +1481,20 @@ impl<N: Network> Backend<N> {
                 transaction,
             );
         }
+        */
         Ok(PendingTransaction::from_maybe_impersonated(transaction)?)
     }
 
-    #[cfg(not(feature = "monad"))]
-    fn active_monad_context_for_mined_block(
+    // EVM2 migration: unconditional Ethereum fallback.
+    const fn active_monad_context_for_mined_block(
         &self,
         _block: &Block,
     ) -> Result<Option<MonadReplayContext>, BlockchainError> {
         Ok(None)
     }
 
-    #[cfg(not(feature = "monad"))]
-    fn active_monad_context_before_mined_transaction(
+    // EVM2 migration: unconditional Ethereum fallback.
+    const fn active_monad_context_before_mined_transaction(
         &self,
         _block: &Block,
         _current_tx_index: usize,
@@ -1409,11 +1502,13 @@ impl<N: Network> Backend<N> {
         Ok(None)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns true if Base network mode is active.
     #[cfg(feature = "base")]
     pub const fn is_base(&self) -> bool {
         self.networks.is_base()
     }
+    */
 
     /// Returns the active hardfork.
     pub fn hardfork(&self) -> FoundryHardfork {
@@ -1468,12 +1563,15 @@ impl<N: Network> Backend<N> {
         TempoHardfork::from(self.hardfork())
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the active Monad hardfork.
     #[cfg(feature = "monad")]
     pub fn monad_hardfork(&self) -> monad_revm::MonadHardfork {
         monad_revm::MonadHardfork::from(self.hardfork())
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the active Base upgrade.
     #[cfg(feature = "base")]
     pub fn base_upgrade(&self) -> BaseUpgrade {
@@ -1482,13 +1580,17 @@ impl<N: Network> Backend<N> {
             _ => BaseUpgrade::Azul,
         }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the configured Base activation-registry administrator override.
     #[cfg(feature = "base")]
     pub const fn base_activation_admin(&self) -> Option<Address> {
         self.base_activation_admin
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the Base upgrade active at `timestamp`.
     #[cfg(feature = "base")]
     pub fn base_upgrade_at_timestamp(&self, timestamp: u64) -> BaseUpgrade {
@@ -1499,13 +1601,17 @@ impl<N: Network> Backend<N> {
             self.base_upgrade()
         }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the head timestamp snapshot used for EIP-8130 pool admission.
     #[cfg(feature = "base")]
     pub fn eip8130_pool_timestamp(&self) -> u64 {
         self.evm_env.read().block_env.timestamp.saturating_to()
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the EIP-8130 pool admission snapshot in Unix milliseconds.
     ///
     /// EIP-8130 validity windows are millisecond timestamps evaluated against
@@ -1515,6 +1621,7 @@ impl<N: Network> Backend<N> {
     pub fn eip8130_pool_timestamp_ms(&self) -> u64 {
         self.eip8130_pool_timestamp().saturating_mul(1_000)
     }
+    */
 
     /// Returns whether a Tempo hardfork is active on this backend.
     pub fn is_tempo_hardfork_active(&self, hardfork: TempoHardfork) -> bool {
@@ -1596,6 +1703,7 @@ impl<N: Network> Backend<N> {
         get_blob_params_by_hardfork(configured_hardfork)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     fn is_optimism_jovian_at_header<H: BlockHeader>(
         &self,
@@ -1620,8 +1728,9 @@ impl<N: Network> Backend<N> {
         };
         OpHardfork::from(hardfork) >= OpHardfork::Jovian
     }
+    */
 
-    #[cfg(not(feature = "optimism"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     const fn is_optimism_jovian_at_header<H: BlockHeader>(
         &self,
         _header: &H,
@@ -1660,6 +1769,7 @@ impl<N: Network> Backend<N> {
         Err(BlockchainError::EIP7702TransactionUnsupportedAtHardfork)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns an error if deposit transactions are not active.
     #[cfg(any(feature = "base", feature = "optimism"))]
     pub const fn ensure_deposits_active(&self) -> Result<(), BlockchainError> {
@@ -1673,14 +1783,18 @@ impl<N: Network> Backend<N> {
         }
         Err(BlockchainError::DepositTransactionUnsupported)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns an error if Base EIP-8130 transactions are not active.
     #[cfg(feature = "base")]
     pub fn ensure_base_eip8130_active(&self) -> Result<(), BlockchainError> {
         let timestamp = self.evm_env.read().block_env.timestamp.saturating_to();
         self.ensure_base_eip8130_active_at(timestamp)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns an error if Base EIP-8130 RPC features are not active at `timestamp`.
     #[cfg(feature = "base")]
     pub fn ensure_base_eip8130_active_at(&self, timestamp: u64) -> Result<(), BlockchainError> {
@@ -1690,7 +1804,9 @@ impl<N: Network> Backend<N> {
         }
         Err(BlockchainError::InvalidTransactionRequest(EIP8130_PRE_ZENITH_RPC_ERROR.to_string()))
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns an admission error if Base EIP-8130 submissions are not active.
     #[cfg(feature = "base")]
     pub fn ensure_base_eip8130_submission_active(&self) -> Result<(), BlockchainError> {
@@ -1699,6 +1815,7 @@ impl<N: Network> Backend<N> {
         }
         Err(BlockchainError::Eip8130TransactionRejected(EIP8130_REJECTION_MSG.to_string()))
     }
+    */
 
     /// Returns an error if Tempo transactions are not active
     pub const fn ensure_tempo_active(&self) -> Result<(), BlockchainError> {
@@ -1751,6 +1868,7 @@ impl<N: Network> Backend<N> {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn monad_cfg_env(&self, evm_env: &EvmEnv) -> Option<monad_revm::MonadCfgEnv> {
         if !self.is_monad() {
@@ -1763,12 +1881,15 @@ impl<N: Network> Backend<N> {
             monad_revm::instructions::monad_gas_params(hardfork),
         )))
     }
+    */
 
     fn tx_gas_limit_cap(&self, evm_env: &EvmEnv) -> u64 {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if let Some(cfg) = self.monad_cfg_env(evm_env) {
             return cfg.tx_gas_limit_cap();
         }
+        */
         evm_env.cfg_env.tx_gas_limit_cap()
     }
 
@@ -1782,10 +1903,12 @@ impl<N: Network> Backend<N> {
     }
 
     fn max_initcode_size(&self, evm_env: &EvmEnv) -> usize {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if let Some(cfg) = self.monad_cfg_env(evm_env) {
             return cfg.max_initcode_size();
         }
+        */
         evm_env.cfg_env.max_initcode_size()
     }
 
@@ -1892,6 +2015,7 @@ impl<N: Network> Backend<N> {
         let mut evm_env = self.evm_env.read().clone();
         evm_env.block_env = self.block_env_from_header(&block.header);
         let hardfork = self.hardfork();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let hardfork = if self.is_monad() {
             let block_hash = block.header.hash_slow();
@@ -1913,6 +2037,7 @@ impl<N: Network> Backend<N> {
         } else {
             hardfork
         };
+        */
         apply_chain_specific_tx_replay_env_changes_for_chain(
             &mut evm_env,
             self.protocol_chain_id(),
@@ -2438,6 +2563,7 @@ impl<N: Network> Backend<N> {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns the timestamp represented by a block request.
     #[cfg(feature = "base")]
     pub async fn block_request_timestamp(
@@ -2453,6 +2579,7 @@ impl<N: Network> Backend<N> {
                 .ok_or(BlockchainError::BlockNotFound),
         }
     }
+    */
 
     /// Injects all configured precompiles into the given precompile map.
     ///
@@ -2520,6 +2647,7 @@ impl<N: Network> Backend<N> {
         if moves.is_empty() {
             return Ok(SimulationPrecompileOverrides::default());
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             return Err(simulate_rpc_error(
@@ -2527,6 +2655,7 @@ impl<N: Network> Backend<N> {
                 "precompile moves are not supported on this network",
             ));
         }
+        */
         if self.is_optimism() || self.is_tempo() || self.is_monad() {
             return Err(simulate_rpc_error(
                 -32000,
@@ -2722,7 +2851,7 @@ impl<N: Network> Backend<N> {
         evm_env: &EvmEnv,
         inspector: &mut I,
         pending: &PendingTransaction<FoundryTxEnvelope>,
-        #[cfg_attr(not(feature = "monad"), allow(unused_variables))] monad_context: Option<
+        #[cfg_attr(not(any()), allow(unused_variables))] monad_context: Option<
             MonadExecutionContext<'_>,
         >,
     ) -> Result<(ResultAndState<HaltReason>, TxEnv), BlockchainError>
@@ -2765,9 +2894,7 @@ impl<N: Network> Backend<N> {
         evm_env: &EvmEnv,
         inspector: &mut I,
         pending: &PendingTransaction<FoundryTxEnvelope>,
-        #[cfg_attr(not(feature = "monad"), allow(unused_variables))] execution: EnvelopeExecution<
-            '_,
-        >,
+        #[cfg_attr(not(any()), allow(unused_variables))] execution: EnvelopeExecution<'_>,
     ) -> Result<(ResultAndState<HaltReason>, TxEnv), BlockchainError>
     where
         DB: DatabaseRef + ?Sized,
@@ -2775,7 +2902,8 @@ impl<N: Network> Backend<N> {
         WrapDatabaseRef<&'db DB>: Database<Error = DatabaseError>,
     {
         let tx = pending.transaction.as_ref();
-        let sender = *pending.sender();
+        let _sender = *pending.sender();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             let base_tx: BaseTransaction<TxEnv> =
@@ -2784,13 +2912,22 @@ impl<N: Network> Backend<N> {
             let result = self.transact_base_with_inspector_ref(db, evm_env, inspector, base_tx)?;
             return Ok((result, base));
         }
+        */
         if tx.is_tempo() {
-            let tx_env: TempoTxEnv =
-                FromTxWithEncoded::from_encoded_tx(tx, sender, tx.encoded_2718().into());
-            let base = tx_env.inner.clone();
-            let result = self.transact_tempo_with_inspector_ref(db, evm_env, inspector, tx_env)?;
-            return Ok((result, base));
+            /* EVM2 migration: disabled non-Ethereum execution.
+
+                        let tx_env: TempoTxEnv =
+                            FromTxWithEncoded::from_encoded_tx(tx, sender, tx.encoded_2718().into());
+                        let base = tx_env.inner.clone();
+                        let result = self.transact_tempo_with_inspector_ref(db, evm_env, inspector, tx_env)?;
+                        return Ok((result, base));
+
+            */
+            return Err(BlockchainError::InvalidTransactionRequest(
+                "Tempo execution is disabled on the Ethereum-only EVM2 migration branch".into(),
+            ));
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if self.is_optimism() {
             let op_tx: OpTransaction<TxEnv> =
@@ -2801,8 +2938,10 @@ impl<N: Network> Backend<N> {
                 self.transact_op_with_inspector_ref(db, evm_env, inspector, op_tx, spec)?;
             return Ok((result, base));
         }
+        */
         let tx_env: TxEnv = build_tx_env_for_pending(pending, self.cheats());
         let base = tx_env.clone();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let result = if self.is_monad() {
             let context = monad::resolve_execution_context(execution.monad_context, &tx_env);
@@ -2820,7 +2959,8 @@ impl<N: Network> Backend<N> {
         } else {
             self.transact_eth_with_inspector_ref(db, evm_env, inspector, tx_env)?
         };
-        #[cfg(not(feature = "monad"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let result = self.transact_eth_with_inspector_ref(db, evm_env, inspector, tx_env)?;
         Ok((result, base))
     }
@@ -2830,7 +2970,7 @@ impl<N: Network> Backend<N> {
     fn build_tempo_evm_env(
         evm_env: &EvmEnv,
         hardfork: TempoHardfork,
-    ) -> EvmEnvFor<TempoEvmNetwork> {
+    ) -> alloy_evm::EvmEnv<TempoHardfork, tempo_revm::TempoBlockEnv> {
         EvmEnv::new(
             evm_env.cfg_env.clone().with_spec_and_gas_params(hardfork, tempo_gas_params(hardfork)),
             TempoBlockEnv {
@@ -2890,6 +3030,7 @@ impl<N: Network> Backend<N> {
         DB: StateDB<Error = DatabaseError> + BalIndexedDatabase,
     {
         let spec_id = *evm_env.spec_id();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.is_monad() {
             return self.execute_with_monad_block_executor(
@@ -2904,6 +3045,7 @@ impl<N: Network> Backend<N> {
                 validator,
             );
         }
+        */
 
         let inspector = self.build_mining_inspector();
         let transitions =
@@ -2930,6 +3072,7 @@ impl<N: Network> Backend<N> {
             }};
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             let upgrade =
@@ -2949,7 +3092,9 @@ impl<N: Network> Backend<N> {
             executor.set_base_upgrade(upgrade);
             return execute!(executor);
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if self.is_optimism() {
             let op_env = EvmEnv::new(
@@ -2964,15 +3109,23 @@ impl<N: Network> Backend<N> {
             executor.set_optimism_hardfork(hardfork);
             return execute!(executor);
         }
+        */
 
         if self.is_tempo() {
-            let tempo_env = Self::build_tempo_evm_env(evm_env, self.tempo_hardfork());
-            let mut evm =
-                TempoEvmFactory::default().create_evm_with_inspector(db, tempo_env, inspector);
-            self.inject_precompiles(evm.precompiles_mut(), evm_env);
-            let executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id, transitions)
-                .with_max_blob_gas_per_block(gas_config.max_blob_gas_per_block);
-            return execute!(executor);
+            /* EVM2 migration: disabled non-Ethereum execution.
+
+                        let tempo_env = Self::build_tempo_evm_env(evm_env, self.tempo_hardfork());
+                        let mut evm =
+                            TempoEvmFactory::default().create_evm_with_inspector(db, tempo_env, inspector);
+                        self.inject_precompiles(evm.precompiles_mut(), evm_env);
+                        let executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id, transitions)
+                            .with_max_blob_gas_per_block(gas_config.max_blob_gas_per_block);
+                        return execute!(executor);
+
+            */
+            return Err(BlockchainError::InvalidTransactionRequest(
+                "Tempo execution is disabled on the Ethereum-only EVM2 migration branch".into(),
+            ));
         }
         let mut evm =
             EthEvmFactory::default().create_evm_with_inspector(db, evm_env.clone(), inspector);
@@ -3036,9 +3189,11 @@ impl<N: Network> Backend<N> {
         base_evm_env: Option<&EvmEnv>,
     ) -> (EvmEnv, TxEnv, CallTransactionInfo) {
         let tx_type = request.minimal_tx_type() as u8;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(any(feature = "base", feature = "optimism"))]
         let mut transaction_info = CallTransactionInfo::default();
-        #[cfg(not(any(feature = "base", feature = "optimism")))]
+        */
+        #[cfg(not(any(any(), any())))]
         let transaction_info = CallTransactionInfo::default();
 
         let WithOtherFields::<TransactionRequest> {
@@ -3126,6 +3281,7 @@ impl<N: Network> Backend<N> {
         }
 
         // Deposit transaction? (only valid when a deposit-capable network is active)
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(any(feature = "base", feature = "optimism"))]
         {
             transaction_info.deposit = if self.ensure_deposits_active().is_ok()
@@ -3136,7 +3292,8 @@ impl<N: Network> Backend<N> {
                 DepositTransactionParts::default()
             };
         }
-        #[cfg(not(any(feature = "base", feature = "optimism")))]
+        */
+        #[cfg(not(any(any(), any())))]
         {
             // `other` carries OP-only deposit fields; consumed only when feature is enabled.
             let _ = &other;
@@ -3168,10 +3325,12 @@ impl<N: Network> Backend<N> {
     }
 
     const fn base_call_tx_env(&self, tx_env: TxEnv) -> CallTxEnv {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.is_monad() {
             return CallTxEnv::Monad(tx_env);
         }
+        */
         CallTxEnv::Eth(tx_env)
     }
 
@@ -3185,6 +3344,7 @@ impl<N: Network> Backend<N> {
         let (evm_env, tx_env, transaction_info) =
             self.build_call_env_with_base(request, fee_details, block_env, base_evm_env);
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             let mut base_tx = BaseTransaction::new(tx_env);
@@ -3205,7 +3365,9 @@ impl<N: Network> Backend<N> {
                 simulated_envelope: None,
             });
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         let tx_env = if self.is_optimism() {
             CallTxEnv::Op(OpTransaction {
@@ -3218,7 +3380,8 @@ impl<N: Network> Backend<N> {
         } else {
             self.base_call_tx_env(tx_env)
         };
-        #[cfg(not(feature = "optimism"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let tx_env = {
             let _ = transaction_info;
             if self.is_tempo() {
@@ -3231,8 +3394,10 @@ impl<N: Network> Backend<N> {
             evm_env,
             tx_env,
             simulated_tempo_tx: None,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             simulated_envelope: None,
+            */
         })
     }
 
@@ -3242,6 +3407,7 @@ impl<N: Network> Backend<N> {
         request: WithOtherFields<TransactionRequest>,
     ) -> Result<FoundryTransactionRequest, BlockchainError> {
         let transaction_type = request.transaction_type;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             let parsed = FoundryTransactionRequest::try_from(request.clone()).map_err(
@@ -3259,6 +3425,8 @@ impl<N: Network> Backend<N> {
             }
             return Ok(FoundryTransactionRequest::Ethereum(request.into_inner()));
         }
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if transaction_type == Some(foundry_primitives::FoundryTxType::Eip8130.into())
             || matches!(
@@ -3268,7 +3436,9 @@ impl<N: Network> Backend<N> {
         {
             return Err(BlockchainError::BaseTransactionUnsupported);
         }
+        */
         if !self.is_tempo() && transaction_type != Some(TEMPO_TX_TYPE_ID) {
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             if transaction_type == Some(DEPOSIT_TX_TYPE_ID)
                 || transaction_type == Some(POST_EXEC_TX_TYPE_ID)
@@ -3276,6 +3446,7 @@ impl<N: Network> Backend<N> {
             {
                 return Ok(FoundryTransactionRequest::Op(request));
             }
+            */
             return Ok(FoundryTransactionRequest::Ethereum(request.into_inner()));
         }
 
@@ -3414,10 +3585,13 @@ impl<N: Network> Backend<N> {
                     evm_env,
                     tx_env: CallTxEnv::Tempo(tx_env),
                     simulated_tempo_tx: Some(simulated_tempo_tx),
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     #[cfg(feature = "base")]
                     simulated_envelope: None,
+                    */
                 })
             }
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             FoundryTransactionRequest::Base(request) => {
                 self.ensure_base_eip8130_active_at(block_env.timestamp.saturating_to())?;
@@ -3448,16 +3622,19 @@ impl<N: Network> Backend<N> {
                     simulated_envelope,
                 })
             }
+            */
             FoundryTransactionRequest::Ethereum(request) => self.prepare_base_call_env_with_base(
                 WithOtherFields::new(request),
                 fee_details,
                 block_env,
                 base_evm_env,
             ),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             FoundryTransactionRequest::Op(request) => {
                 self.prepare_base_call_env_with_base(request, fee_details, block_env, base_evm_env)
             }
+            */
         }
     }
 
@@ -3467,7 +3644,7 @@ impl<N: Network> Backend<N> {
         evm_env: &EvmEnv,
         inspector: &mut I,
         tx_env: CallTxEnv,
-        #[cfg_attr(not(feature = "monad"), allow(unused_variables))] monad_context: Option<
+        #[cfg_attr(not(any()), allow(unused_variables))] monad_context: Option<
             MonadExecutionContext<'_>,
         >,
     ) -> Result<ResultAndState<HaltReason>, BlockchainError>
@@ -3492,10 +3669,10 @@ impl<N: Network> Backend<N> {
         evm_env: &EvmEnv,
         inspector: &mut I,
         tx_env: CallTxEnv,
-        #[cfg_attr(not(feature = "monad"), allow(unused_variables))] monad_context: Option<
+        #[cfg_attr(not(any()), allow(unused_variables))] monad_context: Option<
             MonadExecutionContext<'_>,
         >,
-        #[cfg_attr(not(feature = "monad"), allow(unused_variables))] hardfork: FoundryHardfork,
+        #[cfg_attr(not(any()), allow(unused_variables))] hardfork: FoundryHardfork,
     ) -> Result<ResultAndState<HaltReason>, BlockchainError>
     where
         DB: DatabaseRef + ?Sized,
@@ -3506,10 +3683,13 @@ impl<N: Network> Backend<N> {
             CallTxEnv::Eth(tx_env) => {
                 self.transact_eth_with_inspector_ref(db, evm_env, inspector, tx_env)
             }
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             CallTxEnv::Base(tx_env) => {
                 self.transact_base_with_inspector_ref(db, evm_env, inspector, *tx_env)
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             CallTxEnv::Monad(tx_env) => {
                 let context = monad::resolve_execution_context(monad_context, &tx_env);
@@ -3525,11 +3705,14 @@ impl<N: Network> Backend<N> {
                     },
                 )
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             CallTxEnv::Op(tx_env) => {
                 let spec = self.hardfork().into();
                 self.transact_op_with_inspector_ref(db, evm_env, inspector, tx_env, spec)
             }
+            */
             CallTxEnv::Tempo(tx_env) => {
                 self.transact_tempo_with_inspector_ref(db, evm_env, inspector, tx_env)
             }
@@ -3684,12 +3867,14 @@ impl<N: Network> Backend<N> {
         )?;
         let (exit_reason, gas_used, out, _logs) = unpack_execution_result(result);
         let access_list = inspector.access_list();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let access_list = if self.is_monad() {
             monad::normalize_access_list(access_list, self.monad_hardfork())
         } else {
             access_list
         };
+        */
         Ok((exit_reason, out, gas_used, access_list))
     }
 
@@ -4361,8 +4546,10 @@ impl<N: Network> Backend<N> {
         };
         let startup_fork_cache_user =
             StagedForkDbUser { db: Some(Arc::clone(&db)), cache_lease: startup_cache_lease };
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let base_activation_admin = node_config.read().await.base_activation_admin;
+        */
 
         let backend = Self {
             db,
@@ -4370,8 +4557,10 @@ impl<N: Network> Backend<N> {
             states: Arc::new(RwLock::new(states)),
             evm_env: env,
             networks,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             base_activation_admin,
+            */
             hardfork: Arc::new(RwLock::new(hardfork)),
             fork,
             last_fork_cache_source: Arc::new(RwLock::new(last_fork_cache_source)),
@@ -4395,13 +4584,17 @@ impl<N: Network> Backend<N> {
             startup_fork_cache_user,
         };
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let monad_fork =
             if backend.networks.is_monad() { backend.fork.read().clone() } else { None };
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if let Some(fork) = monad_fork {
             monad::cache_fork_context(&fork).await?;
         }
+        */
 
         if let Some(interval_block_time) = automine_block_time {
             backend.update_interval_mine_block_time(interval_block_time);
@@ -4463,6 +4656,7 @@ impl<N: Network> Backend<N> {
         self.apply_funded_accounts(&self.db).await?;
 
         // Seed Base protocol accounts and one-time state transitions for standalone nodes.
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() && !self.is_fork() {
             let mut db = self.db.write().await;
@@ -4533,28 +4727,31 @@ impl<N: Network> Backend<N> {
                 }
             }
         }
+        */
 
         // Initialize Tempo precompiles and fee tokens when in Tempo mode (not in fork mode).
         // In fork mode, precompiles are inherited from the forked origin.
+        /* EVM2 migration: disabled non-Ethereum execution.
         if self.networks.is_tempo() && !self.is_fork() {
-            let chain_id = self.evm_env.read().cfg_env.chain_id;
-            let timestamp = self.genesis.timestamp;
-            let test_accounts: Vec<Address> = self.genesis.accounts.clone();
-            let hardfork = self.tempo_hardfork();
-            let mut db = self.db.write().await;
-            crate::eth::backend::tempo::initialize_tempo_precompiles(
-                &mut **db,
-                chain_id,
-                timestamp,
-                &test_accounts,
-                hardfork,
-            )
-            .map_err(|e| {
-                tracing::error!(target: "backend", "failed to initialize Tempo precompiles: {e}");
-                DatabaseError::AnyRequest(Arc::new(eyre::eyre!("{e}")))
-            })?;
-            trace!(target: "backend", "initialized Tempo precompiles and fee tokens for {} accounts", test_accounts.len());
-        }
+                    let chain_id = self.evm_env.read().cfg_env.chain_id;
+                    let timestamp = self.genesis.timestamp;
+                    let test_accounts: Vec<Address> = self.genesis.accounts.clone();
+                    let hardfork = self.tempo_hardfork();
+                    let mut db = self.db.write().await;
+                    crate::eth::backend::tempo::initialize_tempo_precompiles(
+                        &mut **db,
+                        chain_id,
+                        timestamp,
+                        &test_accounts,
+                        hardfork,
+                    )
+                    .map_err(|e| {
+                        tracing::error!(target: "backend", "failed to initialize Tempo precompiles: {e}");
+                        DatabaseError::AnyRequest(Arc::new(eyre::eyre!("{e}")))
+                    })?;
+                    trace!(target: "backend", "initialized Tempo precompiles and fee tokens for {} accounts", test_accounts.len());
+                }
+        */
 
         trace!(target: "backend", "set genesis balances");
 
@@ -4635,9 +4832,9 @@ impl<N: Network> Backend<N> {
         genesis: &GenesisConfig,
         funded_accounts: &HashMap<Address, U256>,
         hardfork: FoundryHardfork,
-        chain_id: u64,
-        is_tempo: bool,
-        tempo_hardfork: Option<TempoHardfork>,
+        _chain_id: u64,
+        _is_tempo: bool,
+        _tempo_hardfork: Option<TempoHardfork>,
         genesis_hash: B256,
         install_create2_deployer: bool,
     ) -> Result<(), DatabaseError> {
@@ -4673,21 +4870,23 @@ impl<N: Network> Backend<N> {
             db.insert_account(address, info);
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         if is_tempo {
-            let hardfork = tempo_hardfork.ok_or_else(|| {
-                DatabaseError::AnyRequest(Arc::new(eyre::eyre!(
-                    "missing Tempo hardfork during memory reset"
-                )))
-            })?;
-            crate::eth::backend::tempo::initialize_tempo_precompiles(
-                db,
-                chain_id,
-                genesis.timestamp,
-                &genesis.accounts,
-                hardfork,
-            )
-            .map_err(|err| DatabaseError::AnyRequest(Arc::new(eyre::eyre!("{err}"))))?;
-        }
+                    let hardfork = tempo_hardfork.ok_or_else(|| {
+                        DatabaseError::AnyRequest(Arc::new(eyre::eyre!(
+                            "missing Tempo hardfork during memory reset"
+                        )))
+                    })?;
+                    crate::eth::backend::tempo::initialize_tempo_precompiles(
+                        db,
+                        chain_id,
+                        genesis.timestamp,
+                        &genesis.accounts,
+                        hardfork,
+                    )
+                    .map_err(|err| DatabaseError::AnyRequest(Arc::new(eyre::eyre!("{err}"))))?;
+                }
+        */
 
         if install_create2_deployer {
             db.set_code(
@@ -4856,10 +5055,12 @@ impl<N: Network> Backend<N> {
             }
             self.apply_fork_genesis(Arc::clone(&staged_db), cache_lease.clone()).await?;
 
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             if self.is_monad() {
                 monad::cache_fork_context(&staged_fork).await?;
             }
+            */
 
             if !staged_config
                 .fork_urls_match_context(
@@ -5056,10 +5257,12 @@ impl<N: Network> Backend<N> {
             self.networks.base_fee_params(genesis_timestamp),
             local_tempo_hardfork,
         );
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if self.networks.is_optimism() {
             staged_fees.set_optimism_hardfork(local_hardfork.into());
         }
+        */
         staged_fees.set_blob_params(local_blob_params);
         staged_fees.set_blob_excess_gas_and_price(local_blob_excess_gas_and_price);
 
@@ -5241,12 +5444,14 @@ impl<N: Network> Backend<N> {
         let evm_env = self.next_evm_env();
         let db = self.db.read().await;
         let mut inspector = self.build_inspector();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let mut monad_context = self
             .is_monad()
             .then(|| self.monad_context_for_child_of(self.best_hash()))
             .transpose()?;
-        #[cfg(not(feature = "monad"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let mut monad_context = None;
         let (ResultAndState { result, state }, _) = self
             .transact_envelope_with_inspector_ref_and_context(
@@ -5519,6 +5724,7 @@ where
 
         let scheduled_hardfork =
             source_hardfork(self.networks.execution_network(), source_chain_id, timestamp);
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let mut monad_replay = self
             .prepare_monad_fork_replay(
@@ -5529,12 +5735,15 @@ where
                 &transactions,
             )
             .await?;
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let hardfork = monad_replay
             .as_ref()
             .map(monad::ForkReplay::hardfork)
             .unwrap_or_else(|| scheduled_hardfork.unwrap_or_else(|| self.hardfork()));
-        #[cfg(not(feature = "monad"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let hardfork = scheduled_hardfork.unwrap_or_else(|| self.hardfork());
         if !self.is_optimism() && !self.is_tempo() {
             replay_env.cfg_env.spec = SpecId::from(hardfork);
@@ -5552,9 +5761,11 @@ where
             ));
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let monad_context = monad_replay.as_mut().and_then(monad::ForkReplay::take_context);
-        #[cfg(not(feature = "monad"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let monad_context = None;
 
         let (block_info, state_changes, block_hash) = {
@@ -5617,10 +5828,12 @@ where
             }
             storage.blocks.insert(block_hash, block);
             storage.hashes.insert(block_number, block_hash);
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             if let Some(replay) = &mut monad_replay {
                 replay.store_metadata(&mut storage, block_hash);
             }
+            */
             for (info, receipt) in transactions.into_iter().zip(receipts) {
                 let mined_tx = MinedTransaction { info, receipt, block_hash, block_number };
                 storage.transactions.insert(mined_tx.info.transaction_hash, mined_tx);
@@ -5635,20 +5848,24 @@ where
             }
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if let Some(replay) = &monad_replay {
             self.finalize_monad_fork_replay(replay, &mut evm_env);
         }
+        */
 
         evm_env.block_env.difficulty = U256::ZERO;
         *self.evm_env.write() = evm_env;
         self.time.reset(timestamp);
         self.time.set_next_block_timestamp(next_timestamp)?;
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if self.is_optimism() {
             self.fees.set_optimism_base_fee_rules(header.extra_data());
         }
+        */
         let next_block_base_fee = self.fees.get_next_block_base_fee_from_header(&header);
         let next_block_excess_blob_gas = self.networks.next_block_blob_excess_gas(
             self.fees.blob_params(),
@@ -5677,13 +5894,12 @@ where
         parent_beacon_block_root: Option<B256>,
         transactions: &[HistoricalReplayTransaction],
         inspector_tx_config: &InspectorTxConfig,
-        #[cfg_attr(not(feature = "monad"), allow(unused_variables))] monad_context: Option<
-            MonadReplayContext,
-        >,
+        #[cfg_attr(not(any()), allow(unused_variables))] monad_context: Option<MonadReplayContext>,
     ) -> Result<ExecutedHistoricalReplay>
     where
         DB: StateDB<Error = DatabaseError> + BalIndexedDatabase,
     {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.is_monad() {
             return self.execute_with_monad_replay_block_executor(
@@ -5697,6 +5913,7 @@ where
                     .ok_or_else(|| eyre::eyre!("Monad replay ancestor context is unavailable"))?,
             );
         }
+        */
 
         let inspector = self.build_mining_inspector();
         let spec_id = *evm_env.spec_id();
@@ -5726,6 +5943,7 @@ where
             }};
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             let upgrade =
@@ -5748,7 +5966,9 @@ where
             executor.set_base_upgrade(upgrade);
             return execute!(executor);
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if self.is_optimism() {
             let op_env = EvmEnv::new(
@@ -5767,18 +5987,27 @@ where
             executor.set_optimism_hardfork(hardfork);
             return execute!(executor);
         }
+        */
 
         if self.is_tempo() {
-            let tempo_env = Self::build_tempo_evm_env(evm_env, self.tempo_hardfork());
-            let mut evm =
-                TempoEvmFactory::default().create_evm_with_inspector(db, tempo_env, inspector);
-            self.inject_precompiles(evm.precompiles_mut(), evm_env);
-            if let Some(block_number) = arbitrum_rpc_block_number {
-                self.inject_arbitrum_precompile_at_block(evm.precompiles_mut(), block_number);
-            }
-            let executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id, transitions)
-                .with_state_changes();
-            return execute!(executor);
+            /* EVM2 migration: disabled non-Ethereum execution.
+
+                        let tempo_env = Self::build_tempo_evm_env(evm_env, self.tempo_hardfork());
+                        let mut evm =
+                            TempoEvmFactory::default().create_evm_with_inspector(db, tempo_env, inspector);
+                        self.inject_precompiles(evm.precompiles_mut(), evm_env);
+                        if let Some(block_number) = arbitrum_rpc_block_number {
+                            self.inject_arbitrum_precompile_at_block(evm.precompiles_mut(), block_number);
+                        }
+                        let executor = AnvilBlockExecutor::new(evm, parent_hash, spec_id, transitions)
+                            .with_state_changes();
+                        return execute!(executor);
+
+            */
+            return Err(BlockchainError::InvalidTransactionRequest(
+                "Tempo execution is disabled on the Ethereum-only EVM2 migration branch".into(),
+            )
+            .into());
         }
 
         let mut evm =
@@ -5992,6 +6221,7 @@ where
             let BlockInfo { block, transactions, receipts } = block_info;
 
             let header = block.header.clone();
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             let monad_participants = self.is_monad().then(|| {
                 let tx_envs = included
@@ -6005,6 +6235,7 @@ where
                     .collect::<Vec<_>>();
                 foundry_evm::core::evm::monad_block_participants(&tx_envs)
             });
+            */
 
             if let Some(parent_state) = parent_state {
                 self.states.write().insert(best_hash, parent_state);
@@ -6033,6 +6264,7 @@ where
             if let Some(block_access_list) = block_access_list {
                 storage.block_access_lists.insert(block_hash, block_access_list);
             }
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             if let Some(participants) = monad_participants {
                 monad::store_block_metadata(
@@ -6043,6 +6275,7 @@ where
                     hardfork,
                 );
             }
+            */
 
             node_info!("");
             // insert all transactions
@@ -6287,7 +6520,7 @@ where
         };
 
         if token.is_zero() {
-            return Ok(foundry_evm::core::tempo::PATH_USD_ADDRESS);
+            return Ok(foundry_common::tempo::PATH_USD_ADDRESS);
         }
         Ok(token)
     }
@@ -6748,13 +6981,15 @@ where
             return Err(BlockchainError::BlockOutOfRange(current_number, block_number));
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let context = if self.is_monad() {
             Some(self.monad_context_for_child_of_block_number(block_number).await?)
         } else {
             None
         };
-        #[cfg(not(feature = "monad"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let context = None;
 
         if block_number < current_number {
@@ -7726,8 +7961,10 @@ where
 
         let effective_gas_price = transaction.effective_gas_price(block.header.base_fee_per_gas());
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let eip8130_phase_statuses = tx_receipt.eip8130_phase_statuses().to_vec();
+        */
         let tx_receipt = tx_receipt.convert_logs_rpc(
             BlockNumHash::new(block.header.number(), block_hash),
             block.header.timestamp(),
@@ -7780,6 +8017,7 @@ where
                 inner = inner.with_fee_token(fee_token);
             }
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base()
             && let FoundryTxEnvelope::Eip8130(tx) = transaction.as_ref()
@@ -7794,6 +8032,7 @@ where
                 .other
                 .extend(OtherFields::try_from(fields).expect("EIP-8130 receipt fields serialize"));
         }
+        */
         MinedTransactionReceipt { inner, out: info.out.clone() }
     }
 
@@ -7857,12 +8096,17 @@ impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> Backend<N> {
         preserve_historical_states: bool,
     ) -> Result<SerializableState, BlockchainError> {
         let at = self.evm_env.read().block_env.clone();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let mut monad_block_participants = BTreeMap::new();
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let mut monad_block_replay_profiles = BTreeMap::new();
+        */
         let (best_number, blocks, transactions) = {
             let storage = self.blockchain.storage.read();
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             if self.is_monad() {
                 monad_block_participants = storage
@@ -7878,6 +8122,7 @@ impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> Backend<N> {
                     .map(|(hash, profile)| (*hash, *profile))
                     .collect();
             }
+            */
             (storage.best_number, storage.serialized_blocks(), storage.serialized_transactions())
         };
         let historical_states =
@@ -7893,6 +8138,7 @@ impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> Backend<N> {
                     "Dumping state not supported with the current configuration",
                 ))
             })?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         let state = {
             let mut state = state;
@@ -7900,6 +8146,7 @@ impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> Backend<N> {
             state.monad_block_replay_profiles = monad_block_replay_profiles;
             state
         };
+        */
         Ok(state)
     }
 
@@ -8031,6 +8278,7 @@ impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> Backend<N> {
             storage.best_hash = hash;
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.is_monad() {
             for (hash, profile) in &state.monad_block_replay_profiles {
@@ -8050,6 +8298,7 @@ impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> Backend<N> {
             // before changing the live chain, EVM environment, or database.
             self.monad_context_for_child_of_in_storage(&storage, storage.best_hash)?;
         }
+        */
 
         // Re-anchor block time to the canonical head selected above so the next blocks continue
         // its timeline: the saved one when the loaded head stays canonical, the fork's when the
@@ -8120,10 +8369,12 @@ impl<N: Network<ReceiptEnvelope = FoundryReceiptEnvelope>> Backend<N> {
             self.evm_env.write().block_env = block_env;
         }
         if let Some((parent_fees, blob_excess_gas_and_price)) = next_fees {
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             if self.is_optimism() {
                 self.fees.set_optimism_base_fee_rules(&parent_fees.extra_data);
             }
+            */
             self.fees.set_base_fee(parent_fees.base_fee);
             self.fees.set_blob_excess_gas_and_price(blob_excess_gas_and_price);
         }
@@ -8363,8 +8614,10 @@ impl Backend<FoundryNetwork> {
                     results.push(bundle_results);
                     block_env.number = block_env.number.saturating_add(U256::ONE);
                     block_env.timestamp = block_env.timestamp.saturating_add(U256::ONE);
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     #[cfg(feature = "monad")]
                     self::monad::advance_block_context(&mut monad_context);
+                    */
                 }
 
                 Ok(results)
@@ -8556,6 +8809,7 @@ impl Backend<FoundryNetwork> {
 
                 // execute all calls in that block
                 for (req_idx, mut request) in calls.into_iter().enumerate() {
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     #[cfg(feature = "base")]
                     if request.transaction_type == Some(EIP8130_TRANSACTION_TYPE) {
                         return Err(BlockchainError::InvalidTransactionRequest(
@@ -8563,8 +8817,10 @@ impl Backend<FoundryNetwork> {
                                 .to_string(),
                         ));
                     }
+                    */
 
                     let classified_request = self.parse_transaction_request(request.clone())?;
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     #[cfg(feature = "base")]
                     if classified_request.is_base() {
                         return Err(BlockchainError::InvalidTransactionRequest(
@@ -8572,6 +8828,7 @@ impl Backend<FoundryNetwork> {
                                 .to_string(),
                         ));
                     }
+                    */
                     let is_ethereum_request = classified_request.is_ethereum();
                     let mut parsed_request = self.is_tempo().then_some(classified_request);
                     if is_ethereum_request {
@@ -8682,7 +8939,7 @@ impl Backend<FoundryNetwork> {
                         mut evm_env,
                         mut tx_env,
                         simulated_tempo_tx,
-                        #[cfg(feature = "base")]
+                        #[cfg(any())]
                         simulated_envelope,
                     } = if let Some(parsed_request) = parsed_request {
                         self.prepare_typed_call_env(
@@ -8708,10 +8965,12 @@ impl Backend<FoundryNetwork> {
                         tx_env.base_mut().nonce = 0;
                     }
                     let uses_protocol_call_nonce = tx_env.uses_protocol_call_nonce();
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     #[cfg(feature = "base")]
                     let simulated_envelope = simulated_envelope
                         .or_else(|| simulated_tempo_tx.map(FoundryTxEnvelope::Tempo));
-                    #[cfg(not(feature = "base"))]
+                    */
+                    // EVM2 migration: unconditional Ethereum fallback.
                     let simulated_envelope = simulated_tempo_tx.map(FoundryTxEnvelope::Tempo);
 
                     if is_amsterdam {
@@ -8823,6 +9082,7 @@ impl Backend<FoundryNetwork> {
                         )
                     };
                     let tx_hash = tx.as_ref().hash();
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     #[cfg(feature = "optimism")]
                     if optimism_jovian {
                         let tx_blob_gas = crate::eth::backend::executor::optimism::blob_gas_used(
@@ -8840,12 +9100,14 @@ impl Backend<FoundryNetwork> {
                         }
                         block_blob_gas_used = block_blob_gas_used.saturating_add(tx_blob_gas);
                     }
+                    */
 
                     // Commit after calculating the footprint so the scalar comes from pre-tx
                     // state, matching the upstream OP block executor.
                     cache_db.commit(state);
                     cache_db.bump_bal_index();
                     preserve_deleted_storage(&mut cache_db.cache.accounts, previously_deleted);
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     #[cfg(any(feature = "base", feature = "optimism"))]
                     let receipt = if tx.as_ref().is_deposit() {
                         crate::eth::backend::executor::optimism::build_simulated_deposit_receipt(
@@ -8863,7 +9125,8 @@ impl Backend<FoundryNetwork> {
                             cumulative_gas_used,
                         )
                     };
-                    #[cfg(not(any(feature = "base", feature = "optimism")))]
+                    */
+                    #[cfg(not(any(any(), any())))]
                     let receipt = FoundryReceiptBuilder::build_simulated_receipt(
                         tx.as_ref().tx_type(),
                         &result,
@@ -9056,8 +9319,10 @@ impl Backend<FoundryNetwork> {
                 parent_blob_gas_used = header.blob_gas_used().unwrap_or_default();
 
                 block_res.push(simulated_block);
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 self::monad::advance_block_context(&mut monad_context);
+                */
             }
 
             Ok(block_res)
@@ -9074,12 +9339,14 @@ impl Backend<FoundryNetwork> {
                         &block.block,
                         block.block.body.transactions.len(),
                     )?;
+                    /* EVM2 migration: disabled non-Ethereum execution.
                     #[cfg(feature = "monad")]
                     let monad_context = {
                         let mut monad_context = monad_context;
                         self::monad::advance_block_context(&mut monad_context);
                         monad_context
                     };
+                    */
                     simulate_at(
                         state,
                         self.block_env_from_header(header),
@@ -9116,13 +9383,15 @@ impl Backend<FoundryNetwork> {
                     parent_fees.optimism_jovian,
                 );
 
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 let monad_context = if self.is_monad() {
                     Some(self.monad_context_for_child_of_block_number(base_number).await?)
                 } else {
                     None
                 };
-                #[cfg(not(feature = "monad"))]
+                */
+                // EVM2 migration: unconditional Ethereum fallback.
                 let monad_context = None;
 
                 self.with_database_at(block_request, |state, block_env| {
@@ -9314,10 +9583,12 @@ where
         account: &AccountInfo,
         evm_env: &EvmEnv,
     ) -> Result<(), InvalidTransactionError> {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.validate_monad_mining_pool_transaction_for(pool_tx, account, evm_env)? {
             return Ok(());
         }
+        */
 
         self.validate_pool_transaction_for(&pool_tx.pending_transaction, account, evm_env)
     }
@@ -9331,38 +9602,45 @@ where
     /// committing state.
     async fn validate_tempo_pool_transaction(
         &self,
-        pending: &PendingTransaction<FoundryTxEnvelope>,
-        evm_env: &EvmEnv,
+        _pending: &PendingTransaction<FoundryTxEnvelope>,
+        _evm_env: &EvmEnv,
     ) -> Result<(), BlockchainError> {
-        let tx = pending.transaction.as_ref();
-        let tx_env: TempoTxEnv =
-            FromTxWithEncoded::from_encoded_tx(tx, *pending.sender(), tx.encoded_2718().into());
-        let evm_env = evm_env.clone();
-        self.with_database_at(None, move |state, _| {
-            let cache_db = CacheDB::new(state);
-            let mut inspector = self.build_inspector();
-            let mut evm = TempoEvmFactory::default().create_evm_with_inspector(
-                WrapDatabaseRef(&cache_db),
-                Self::build_tempo_evm_env(&evm_env, self.tempo_hardfork()),
-                &mut inspector,
-            );
-            self.inject_tempo_precompiles(&mut evm, &evm_env);
-            evm.configure_for_pool();
-            let (result, _) = evm.validate_pool_transaction(tx_env);
-            result.map(drop).map_err(|err| match err {
-                // Tempo reports a fee token shortfall through the native funds error; name the
-                // token balance instead, since the sender holds no native balance to speak of.
-                EVMError::Transaction(TempoInvalidTransaction::EthInvalidTransaction(
-                    InvalidTransaction::LackOfFundForMaxFee { fee, balance },
-                )) => InvalidTransactionError::TempoInsufficientFeeTokenBalance {
-                    balance: *balance,
-                    required: *fee,
-                }
-                .into(),
-                err => err.into(),
-            })
-        })
-        .await?
+        /* EVM2 migration: disabled non-Ethereum execution.
+
+                let tx = pending.transaction.as_ref();
+                let tx_env: TempoTxEnv =
+                    FromTxWithEncoded::from_encoded_tx(tx, *pending.sender(), tx.encoded_2718().into());
+                let evm_env = evm_env.clone();
+                self.with_database_at(None, move |state, _| {
+                    let cache_db = CacheDB::new(state);
+                    let mut inspector = self.build_inspector();
+                    let mut evm = TempoEvmFactory::default().create_evm_with_inspector(
+                        WrapDatabaseRef(&cache_db),
+                        Self::build_tempo_evm_env(&evm_env, self.tempo_hardfork()),
+                        &mut inspector,
+                    );
+                    self.inject_tempo_precompiles(&mut evm, &evm_env);
+                    evm.configure_for_pool();
+                    let (result, _) = evm.validate_pool_transaction(tx_env);
+                    result.map(drop).map_err(|err| match err {
+                        // Tempo reports a fee token shortfall through the native funds error; name the
+                        // token balance instead, since the sender holds no native balance to speak of.
+                        EVMError::Transaction(TempoInvalidTransaction::EthInvalidTransaction(
+                            InvalidTransaction::LackOfFundForMaxFee { fee, balance },
+                        )) => InvalidTransactionError::TempoInsufficientFeeTokenBalance {
+                            balance: *balance,
+                            required: *fee,
+                        }
+                        .into(),
+                        err => err.into(),
+                    })
+                })
+                .await?
+
+        */
+        Err(BlockchainError::InvalidTransactionRequest(
+            "Tempo execution is disabled on the Ethereum-only EVM2 migration branch".into(),
+        ))
     }
 }
 
@@ -9377,13 +9655,16 @@ where
     ) -> Result<(), BlockchainError> {
         let address = *tx.sender();
         let account = self.get_account(address).await?;
-        #[cfg_attr(not(feature = "base"), allow(unused_mut))]
+        #[cfg_attr(not(any()), allow(unused_mut))]
         let mut evm_env = self.next_evm_env();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if tx.transaction.as_ref().is_eip8130() {
             evm_env.block_env.timestamp = U256::from(self.eip8130_pool_timestamp());
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if let FoundryTxEnvelope::Eip8130(signed) = tx.transaction.as_ref() {
             let body = signed.tx();
@@ -9458,6 +9739,7 @@ where
                 Err(error) => return Err(error),
             }
         }
+        */
 
         // Tempo AA: validate time bounds (async checks)
         if let FoundryTxEnvelope::Tempo(aa_tx) = tx.transaction.as_ref() {
@@ -9561,6 +9843,7 @@ where
             }
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if let FoundryTxEnvelope::Eip8130(signed) = pending.transaction.as_ref() {
             signed
@@ -9572,15 +9855,20 @@ where
                 )
                 .map_err(|error| InvalidTransactionError::Eip8130(error.to_string()))?;
         }
+        */
 
         // Nonce validation — skip for deposits (L1→L2), EIP-8130, and Tempo.
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(any(feature = "base", feature = "optimism"))]
         let is_deposit_tx = pending.transaction.as_ref().is_deposit();
-        #[cfg(not(any(feature = "base", feature = "optimism")))]
+        */
+        #[cfg(not(any(any(), any())))]
         let is_deposit_tx = false;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let is_eip8130_tx = pending.transaction.as_ref().is_eip8130();
-        #[cfg(not(feature = "base"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let is_eip8130_tx = false;
         let is_tempo_tx = pending.transaction.as_ref().is_tempo();
         let nonce = tx.nonce();
@@ -9589,8 +9877,10 @@ where
             return Err(InvalidTransactionError::NonceTooLow);
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         self.validate_monad_transaction_type(tx)?;
+        */
 
         // EIP-4844 structural validation
         if evm_env.cfg_env.spec >= SpecId::CANCUN && tx.is_eip4844() {
@@ -9694,6 +9984,7 @@ where
 
             let value = tx.value();
             match tx.as_ref() {
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(any(feature = "base", feature = "optimism"))]
                 FoundryTxEnvelope::Deposit(deposit_tx) => {
                     // Deposit transactions
@@ -9706,11 +9997,14 @@ where
                         return Err(InvalidTransactionError::InsufficientFunds);
                     }
                 }
+                */
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "base")]
                 FoundryTxEnvelope::Eip8130(_) => {
                     // EIP-8130 affordability is checked asynchronously against
                     // the resolved payer, including payer-authentication gas.
                 }
+                */
                 FoundryTxEnvelope::Tempo(_) => {
                     // Tempo AA transactions pay gas with fee tokens, not ETH.
                     // Fee token balance is validated in validate_pool_transaction (async).
@@ -9720,8 +10014,10 @@ where
                     // hold no native balance at all. The fee token balance is validated in
                     // validate_pool_transaction (async).
                 }
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 _ if self.validate_monad_transaction_funds(pending, account, evm_env)? => {}
+                */
                 _ => {
                     let max_cost = (tx.gas_limit() as u128)
                         .saturating_mul(tx.max_fee_per_gas())
@@ -9756,10 +10052,12 @@ where
         self.validate_pool_transaction_for(tx, account, evm_env)?;
         // EIP-8130 counts nonces per channel in the nonce manager, so `tx.nonce()` is not
         // comparable to the account's protocol nonce. Admission already validated the channel.
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if tx.transaction.as_ref().is_eip8130() {
             return Ok(());
         }
+        */
         if tx.nonce() > account.nonce {
             return Err(InvalidTransactionError::NonceTooHigh);
         }
@@ -9804,6 +10102,7 @@ pub fn transaction_build(
 ) -> AnyRpcTransaction {
     let mined_from = info.as_ref().map(|info| info.from);
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(any(feature = "base", feature = "optimism"))]
     if let FoundryTxEnvelope::Deposit(deposit_tx) = eth_transaction.as_ref() {
         let dep_tx = deposit_tx;
@@ -9844,7 +10143,9 @@ pub fn transaction_build(
             }
         }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     if let FoundryTxEnvelope::Eip8130(eip8130_tx) = eth_transaction.as_ref() {
         let from = mined_from.unwrap_or_else(|| eth_transaction.recover().unwrap_or_default());
@@ -9872,6 +10173,7 @@ pub fn transaction_build(
         });
         return build_rpc_transaction(envelope, from, block, info.as_ref(), None);
     }
+    */
 
     if let FoundryTxEnvelope::Tempo(tempo_tx) = eth_transaction.as_ref() {
         let from = mined_from.unwrap_or_else(|| eth_transaction.recover().unwrap_or_default());
@@ -10251,17 +10553,27 @@ mod tests {
     use std::sync::Arc;
     use tempfile::tempdir;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use base_common_precompiles::{ActivationRegistryStorage, B20FactoryStorage};
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_evm::{hardforks::BaseUpgrade, traces::CallTraceDecoderBuilder};
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(all(feature = "base", feature = "optimism"))]
     use alloy_consensus::Header;
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(all(feature = "base", feature = "optimism"))]
     use foundry_evm::hardfork::OpHardfork;
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(all(feature = "base", feature = "optimism"))]
     use foundry_evm_networks::NetworkConfigs;
+    */
 
     fn test_cache_db(cache_path: std::path::PathBuf) -> BlockchainDb {
         let db = BlockchainDb::new(BlockchainDbMeta::default(), Some(cache_path));
@@ -10285,6 +10597,7 @@ mod tests {
         assert_eq!(arbitrum_replay_block_number(&block), U256::from(16_938_707));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(all(feature = "base", feature = "optimism"))]
     #[tokio::test(flavor = "multi_thread")]
     async fn optimism_fork_uses_optimism_schedule_for_base_headers() {
@@ -10309,6 +10622,7 @@ mod tests {
                 .is_optimism_jovian_at_header(&Header { timestamp, ..Default::default() }, None)
         );
     }
+    */
 
     #[tokio::test]
     async fn fork_arbitrum_transaction_replay_preserves_rpc_block_number() {
@@ -10648,6 +10962,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[tokio::test]
     async fn monad_load_state_rebuilds_participant_cache() {
@@ -10686,7 +11001,9 @@ mod tests {
         let participants = storage.monad_block_participants.get(&block_hash).unwrap();
         assert!(participants.contains(&sender));
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[tokio::test]
     async fn monad_load_state_restores_pruned_participant_cache() {
@@ -10762,7 +11079,9 @@ mod tests {
         let outcome = loaded_api.backend.mine_block(vec![]).await.unwrap();
         assert_eq!(outcome.block_number, 3);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[tokio::test]
     async fn monad_load_state_rejection_is_atomic() {
@@ -10830,6 +11149,7 @@ mod tests {
         let outcome = target_api.backend.mine_block(vec![]).await.unwrap();
         assert_eq!(outcome.block_number, original_best_number + 1);
     }
+    */
 
     #[tokio::test]
     async fn trace_decoder_follows_executed_hardfork_for_cross_namespace_override() {
@@ -10845,6 +11165,7 @@ mod tests {
         assert!(Arc::ptr_eq(&decoder, &api.backend.call_trace_decoder()));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[tokio::test]
     async fn monad_trace_decoder_follows_resolved_hardfork() {
@@ -10892,7 +11213,9 @@ mod tests {
             Some("ReserveBalance")
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[tokio::test]
     async fn base_trace_decoder_follows_resolved_upgrade() {
@@ -10924,4 +11247,5 @@ mod tests {
             Some("ActivationRegistry")
         );
     }
+    */
 }

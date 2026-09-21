@@ -363,6 +363,7 @@ repl_test!(inline_assembly_expression, |repl| {
     repl.expect("Decimal: 7");
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 repl_test!(
     eval_tempo_network_uses_tempo_executor,
     "--network tempo eval address(0xfeEC000000000000000000000000000000000000).code.length",
@@ -378,7 +379,9 @@ repl_test!(
         repl.expect("Decimal: 1");
     }
 );
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 repl_test!(
     eval_base_network_uses_base_executor,
@@ -392,7 +395,9 @@ repl_test!(
         repl.expect("Data: 0xcE3a3bEE7E72E2A24079f3c0Cb3b97740ED425A9");
     }
 );
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 repl_test!(
     eval_tempo_named_chain_uses_tempo_executor,
     "--chain tempo eval address(0xfeEC000000000000000000000000000000000000).code.length",
@@ -400,16 +405,21 @@ repl_test!(
         repl.expect("Decimal: 1");
     }
 );
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 repl_test!(eval_monad_network_option_runs, "--network monad eval uint256(block.chainid)", |repl| {
     repl.expect("Decimal: 31337");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 repl_test!(eval_monad_chain_id_option_runs, "--chain 143 eval uint256(block.chainid)", |repl| {
     repl.expect("Decimal: 143");
 });
+*/
 
 // Issue #4938: Test memory/stack dumps with assembly.
 repl_test!(assembly_memory_dump, |repl| {

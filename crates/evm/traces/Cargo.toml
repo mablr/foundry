@@ -35,9 +35,9 @@ alloy-sol-types.workspace = true
 revm-inspectors.workspace = true
 
 tempo-contracts.workspace = true
-tempo-precompiles.workspace = true
-monad-revm = { workspace = true, optional = true }
-base-common-precompiles = { workspace = true, optional = true, features = ["std"] }
+# tempo-precompiles.workspace = true
+# monad-revm = { workspace = true, optional = true }
+# base-common-precompiles = { workspace = true, optional = true, features = ["std"] }
 
 async-trait.workspace = true
 eyre.workspace = true
@@ -61,22 +61,28 @@ snapbox.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
 [features]
-default = ["optimism"]
-monad = [
-    "dep:monad-revm",
-    "foundry-evm-core/monad",
-    "foundry-evm-hardforks/monad",
-    "foundry-evm-networks/monad",
-]
-base = [
-    "dep:base-common-precompiles",
-    "foundry-common/base",
-    "foundry-evm-core/base",
-    "foundry-evm-hardforks/base",
-    "foundry-evm-networks/base",
-]
-optimism = [
-    "foundry-common/optimism",
-    "foundry-evm-core/optimism",
-    "foundry-evm-networks/optimism",
-]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = [
+#     "dep:monad-revm",
+#     "foundry-evm-core/monad",
+#     "foundry-evm-hardforks/monad",
+#     "foundry-evm-networks/monad",
+# ]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "dep:base-common-precompiles",
+#     "foundry-common/base",
+#     "foundry-evm-core/base",
+#     "foundry-evm-hardforks/base",
+#     "foundry-evm-networks/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "foundry-common/optimism",
+#     "foundry-evm-core/optimism",
+#     "foundry-evm-networks/optimism",
+# ]
+optimism = []

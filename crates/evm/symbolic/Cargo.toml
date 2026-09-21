@@ -37,6 +37,10 @@ tracing.workspace = true
 wait-timeout.workspace = true
 
 [features]
-default = ["optimism"]
-base = ["foundry-evm/base"]
-optimism = ["foundry-evm/optimism"]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = ["foundry-evm/base"]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = ["foundry-evm/optimism"]
+optimism = []

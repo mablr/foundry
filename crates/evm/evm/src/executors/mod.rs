@@ -63,13 +63,17 @@ use std::{
     time::{Duration, Instant},
 };
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use foundry_common::{SYSTEM_TRANSACTION_TYPE, is_known_system_sender};
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use foundry_evm_core::{
     evm::{MonadEvmNetwork, try_transact_monad_system_replay},
     refresh_chain_journal,
 };
+*/
 
 mod builder;
 pub use builder::ExecutorBuilder;
@@ -145,6 +149,7 @@ pub struct Executor<FEN: FoundryEvmNetwork> {
     legacy_assertions: bool,
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 impl Executor<MonadEvmNetwork> {
     /// Tries to execute and commit a canonical system transaction during replay.
@@ -290,6 +295,7 @@ impl Executor<MonadEvmNetwork> {
         Ok(Some((result, used_system_replay)))
     }
 }
+*/
 
 impl<FEN: FoundryEvmNetwork> Executor<FEN> {
     /// Creates a new `Executor` with the given arguments.
@@ -1976,16 +1982,20 @@ mod tests {
         Vm::{blobhashesCall, mockCallRevert_1Call, revertToStateCall, snapshotStateCall},
     };
     use foundry_config::Config;
-    use foundry_evm_core::{constants::MAGIC_SKIP, evm::TempoEvmNetwork, opts::EvmOpts};
+    use foundry_evm_core::{constants::MAGIC_SKIP, opts::EvmOpts};
     use foundry_evm_traces::InternalTraceMode;
     use revm::context::{CfgEnv, TxEnv};
     use std::{sync::mpsc, thread};
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_evm_core::evm::BaseEvmNetwork;
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     use foundry_evm_core::constants::MONAD_CHEATCODE_ADDRESS;
+    */
 
     fn dense_call(edge: EdgeKey) -> RawCallResult {
         RawCallResult {
@@ -2006,6 +2016,7 @@ mod tests {
         assert!(!should_ignore_revert(false, target, None, &[]));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[test]
     fn network_cheatcode_revert_handling_is_monad_specific() {
@@ -2019,7 +2030,9 @@ mod tests {
             &[MONAD_CHEATCODE_ADDRESS],
         ));
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[test]
     fn executor_tooling_follows_concrete_builder() {
@@ -2042,7 +2055,9 @@ mod tests {
         assert!(monad.backend().networks().is_monad());
         assert!(monad.backend().is_persistent(&MONAD_CHEATCODE_ADDRESS));
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     fn tempo_labels_follow_concrete_builder() {
         let ethereum = ExecutorBuilder::<EthEvmNetwork>::new().build(
@@ -2061,6 +2076,7 @@ mod tests {
         );
         assert!(tempo.inspector().tempo_labels.is_some());
     }
+    */
 
     #[test]
     fn collision_free_edge_merge_uses_stable_indices() {
@@ -2134,6 +2150,7 @@ mod tests {
         assert!(matches!(err, EvmError::Execution(_)));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn base_block_replay_rejects_eip8130_before_execution() {
@@ -2191,6 +2208,7 @@ mod tests {
             assert_eq!(executor.get_nonce(Address::ZERO).unwrap(), 0);
         }
     }
+    */
 
     #[test]
     fn block_replay_commits_prefix_and_traces_only_target() {
@@ -2316,6 +2334,7 @@ mod tests {
         assert!(executor.backend().is_persistent(&deployed));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[test]
     fn block_replay_executes_monad_system_prefix() {
@@ -2366,7 +2385,9 @@ mod tests {
         assert!(!result.reverted);
         assert_eq!(executor.get_nonce(system_address).unwrap(), 1);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[test]
     fn block_replay_executes_monad_system_target() {
@@ -2409,6 +2430,7 @@ mod tests {
         assert!(!result.reverted);
         assert_eq!(executor.get_nonce(system_address).unwrap(), 1);
     }
+    */
 
     #[test]
     fn mismatched_skip_payload_is_execution_error() {
@@ -2776,6 +2798,7 @@ mod tests {
             "inactive env overrides must be removed after restoring their metadata",
         );
     }
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[test]
     fn concrete_system_replay_preserves_envelope_and_rejects_without_commit() {
@@ -2835,4 +2858,5 @@ mod tests {
         );
         assert_eq!(executor.get_nonce(CALLER).unwrap(), nonce);
     }
+    */
 }

@@ -77,10 +77,12 @@ impl TraceContext {
         if hardfork.is_none() && execution_network.is_tempo() {
             hardfork = Some(config.evm_spec_id::<TempoHardfork>().into());
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if hardfork.is_none() && execution_network.is_monad() {
             hardfork = Some(config.evm_spec_id::<foundry_evm_hardforks::MonadHardfork>().into());
         }
+        */
         hardfork
     }
 }

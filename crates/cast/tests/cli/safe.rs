@@ -882,6 +882,7 @@ casttest!(safe_signing_commands_support_hardware_wallets, |_prj, cmd| {
     }
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(safe_onchain_commands_support_tempo_transaction_options, |_prj, cmd| {
     for command in ["create", "execute"] {
         let output = cmd
@@ -900,6 +901,7 @@ casttest!(safe_onchain_commands_support_tempo_transaction_options, |_prj, cmd| {
         );
     }
 });
+*/
 
 casttest!(safe_create_honors_transaction_options, async |_prj, cmd| {
     let (api, handle) = anvil::spawn(NodeConfig::test()).await;

@@ -32,5 +32,7 @@ pub use edge_cov::{
 mod revert_diagnostic;
 pub use revert_diagnostic::RevertDiagnostic;
 
-mod tempo_labels;
-pub(crate) use tempo_labels::TempoLabels;
+// Disabled for the Ethereum-only EVM2 migration.
+// mod tempo_labels;
+// Disabled for the Ethereum-only EVM2 migration.
+// pub(crate) use tempo_labels::TempoLabels;

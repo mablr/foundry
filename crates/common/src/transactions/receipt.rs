@@ -10,11 +10,15 @@ use foundry_common_fmt::{UIfmt, UIfmtReceiptExt, get_pretty_receipt_attr};
 use serde::{Deserialize, Serialize};
 use tempo_alloy::rpc::TempoTransactionReceipt;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_rpc_types::BaseTransactionReceipt;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_rpc_types::OpTransactionReceipt;
+*/
 
 /// Helper trait providing `contract_address` setter for generic `ReceiptResponse`
 pub trait FoundryReceiptResponse {
@@ -28,19 +32,23 @@ impl FoundryReceiptResponse for TransactionReceipt {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl FoundryReceiptResponse for BaseTransactionReceipt {
     fn set_contract_address(&mut self, contract_address: Address) {
         self.inner.contract_address = Some(contract_address);
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl FoundryReceiptResponse for OpTransactionReceipt {
     fn set_contract_address(&mut self, contract_address: Address) {
         self.inner.contract_address = Some(contract_address);
     }
 }
+*/
 
 impl FoundryReceiptResponse for TempoTransactionReceipt {
     fn set_contract_address(&mut self, contract_address: Address) {

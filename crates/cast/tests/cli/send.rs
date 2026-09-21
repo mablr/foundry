@@ -175,6 +175,7 @@ casttest!(send_eip7702_auth_disclosure_forced, async |_prj, cmd| {
     .stderr_eq(str![""]);
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(send_sponsor_hash_supports_address_auth, async |_prj, cmd| {
     let (_api, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
 
@@ -197,7 +198,9 @@ casttest!(send_sponsor_hash_supports_address_auth, async |_prj, cmd| {
 "#]])
     .stderr_eq(str![""]);
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(batch_send_eip7702_auth_disclosure, async |_prj, cmd| {
     let args = [
         "batch-send",
@@ -236,6 +239,7 @@ Building batch transaction with 1 call(s)...
 
 "#]]);
 });
+*/
 
 casttest!(send_eip7702_multiple_auth, async |_prj, cmd| {
     let (_api, handle) =

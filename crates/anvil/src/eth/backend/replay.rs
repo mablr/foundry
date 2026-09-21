@@ -81,7 +81,7 @@ pub(crate) struct ExecutedHistoricalReplay {
 /// Converts and validates every source-prefix transaction before database execution.
 pub(crate) fn prepare_fork_transaction_replay(
     replay: ForkTransactionReplay,
-    #[cfg_attr(not(feature = "monad"), allow(unused_variables))] trust_monad_protocol_sender: bool,
+    #[cfg_attr(not(any()), allow(unused_variables))] trust_monad_protocol_sender: bool,
 ) -> Result<PreparedForkTransactionReplay> {
     let source_hash = replay.source_block.header().hash;
     let source_number = replay.source_block.header().number;
@@ -133,6 +133,7 @@ pub(crate) fn prepare_fork_transaction_replay(
                  ({source_number}) changed hash from {source_transaction_hash} to {}",
                 transaction.tx_hash()
             );
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             let sender = if trust_monad_protocol_sender
                 && source_transaction.from() == monad_revm::staking::constants::SYSTEM_ADDRESS
@@ -147,7 +148,8 @@ pub(crate) fn prepare_fork_transaction_replay(
                     )
                 })?
             };
-            #[cfg(not(feature = "monad"))]
+            */
+            // EVM2 migration: unconditional Ethereum fallback.
             let sender = transaction.recover_signer().wrap_err_with(|| {
                 format!(
                     "failed to recover sender for source transaction {source_transaction_hash} at \

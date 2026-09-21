@@ -56,15 +56,18 @@ pub use inspector::CheatcodeAnalysis;
 
 mod json;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 mod monad;
+*/
 
 mod script;
 pub use script::{Wallets, WalletsInner};
 
 mod string;
 
-mod tempo;
+// Disabled for the Ethereum-only EVM2 migration.
+// mod tempo;
 
 mod test;
 pub use test::expect::ExpectedCallTracker;
@@ -146,4 +149,17 @@ impl<FEN: FoundryEvmNetwork> CheatsCtxt<'_, '_, FEN> {
 #[cold]
 fn precompile_error(address: &Address) -> Error {
     fmt_err!("cannot use precompile {address} as an argument")
+}
+
+// Tempo's precompile implementation is outside the initial EVM2 migration.
+impl Cheatcode for Vm::isImplicitlyApprovedCall {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+        Err(fmt_err!("Tempo execution is disabled on the Ethereum-only EVM2 migration branch"))
+    }
+}
+
+impl Cheatcode for Vm::assumeImplicitApprovalCall {
+    fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
+        Err(fmt_err!("Tempo execution is disabled on the Ethereum-only EVM2 migration branch"))
+    }
 }

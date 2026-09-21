@@ -22,8 +22,10 @@ use foundry_wallets::{TempoAccountsWallet, WalletSigner};
 use std::{path::PathBuf, str::FromStr};
 use tempo_alloy::TempoNetwork;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_network::Base;
+*/
 
 /// CLI arguments for `cast mktx`.
 #[derive(Debug, Parser)]
@@ -116,11 +118,13 @@ impl MakeTxArgs {
             return self.run_generic::<TempoNetwork>(signer, access_key).await;
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if network.is_base() {
             super::validate_base_transaction_options(&self.tx)?;
             return self.run_generic::<Base>(signer, None).await;
         }
+        */
 
         self.run_generic::<Ethereum>(signer, None).await
     }

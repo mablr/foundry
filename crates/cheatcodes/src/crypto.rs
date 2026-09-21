@@ -732,17 +732,23 @@ fn derive_wallets<W: Wordlist>(
 mod tests {
     use super::*;
     use alloy_primitives::{FixedBytes, hex::FromHex};
-    use alloy_sol_types::SolCall;
+    // use alloy_sol_types::SolCall;
     use k256::elliptic_curve::Curve;
     use p256::ecdsa::signature::hazmat::PrehashVerifier;
+    /* EVM2 migration: disabled non-Ethereum execution.
     use tempo_contracts::precompiles::{IAccountKeychain, ISignatureVerifier};
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     use tempo_hardfork::TempoHardfork;
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     use tempo_precompiles::{
         Precompile,
         account_keychain::{AccountKeychain, KeyRestrictions, SignatureType},
         signature_verifier::SignatureVerifier,
         storage::{StorageCtx, hashmap::HashMapStorageProvider},
     };
+    */
 
     #[test]
     fn test_sign_p256() {
@@ -893,6 +899,7 @@ mod tests {
         assert_eq!(first, second);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     fn test_sign_keychain_matches_t6_signature_verifier_state() {
         let root_pk = U256::from(0xA11CEu64);
@@ -965,7 +972,9 @@ mod tests {
         })
         .unwrap();
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     fn authorize_t6_access_key(
         keychain: &mut AccountKeychain,
         account: Address,
@@ -987,13 +996,17 @@ mod tests {
         )?;
         Ok(())
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     fn keychain_signature(private_key: &U256, account: Address, hash: B256) -> Vec<u8> {
         let mut state = Cheatcodes::default();
         Vec::<u8>::abi_decode(&sign_keychain(&mut state, private_key, &account, &hash).unwrap())
             .unwrap()
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     fn verify_keychain(account: Address, hash: B256, signature: Vec<u8>) -> bool {
         let calldata =
             ISignatureVerifier::verifyKeychainCall { account, hash, signature: signature.into() }
@@ -1003,7 +1016,9 @@ mod tests {
         assert!(!output.is_revert(), "verifyKeychain reverted: {:?}", output.bytes);
         ISignatureVerifier::verifyKeychainCall::abi_decode_returns(&output.bytes).unwrap()
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     fn verify_keychain_admin(account: Address, hash: B256, signature: Vec<u8>) -> bool {
         let calldata = ISignatureVerifier::verifyKeychainAdminCall {
             account,
@@ -1016,7 +1031,9 @@ mod tests {
         assert!(!output.is_revert(), "verifyKeychainAdmin reverted: {:?}", output.bytes);
         ISignatureVerifier::verifyKeychainAdminCall::abi_decode_returns(&output.bytes).unwrap()
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     fn assert_keychain_signature_reverts(account: Address, hash: B256, signature: Vec<u8>) {
         let calldata =
             ISignatureVerifier::verifyKeychainCall { account, hash, signature: signature.into() }
@@ -1025,6 +1042,7 @@ mod tests {
         let output = SignatureVerifier::new().call(&calldata, Address::ZERO).unwrap();
         assert!(output.is_revert(), "malformed keychain signature should revert");
     }
+    */
 
     #[test]
     fn test_create_ed25519_key_determinism() {

@@ -108,8 +108,10 @@ const BACKWARD_COMPATIBLE_KEYS: &[&str] = &[
     "solc_version",
     "tempo",
     "optimism",
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     "monad",
+    */
 ];
 
 const LABELS_KEY: &str = "labels";

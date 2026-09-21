@@ -38,7 +38,7 @@ use foundry_evm::{
     core::{
         FoundryChain, FoundryTransaction as _,
         env::FromAnyRpcTransaction as _,
-        evm::{ChainFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TempoEvmNetwork, TxEnvFor},
+        evm::{ChainFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TxEnvFor},
     },
     executors::{EvmError, Executor, ExecutorBuilder, TracingExecutor},
     opts::{EvmOpts, ForkEndpointIdentity},
@@ -48,14 +48,20 @@ use foundry_evm_networks::NetworkVariant;
 use revm::{context::Block as _, state::AccountInfo};
 use std::path::PathBuf;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm::core::evm::BaseEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use foundry_evm::core::evm::{BlockContext, MonadEvmNetwork};
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::core::evm::OpEvmNetwork;
+*/
 
 impl_figment_convert!(VerifyBytecodeArgs);
 
@@ -263,6 +269,7 @@ impl VerifyBytecodeArgs {
                 )
                 .await
             }
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             NetworkVariant::Base => {
                 self.run_with_network::<BaseEvmNetwork>(
@@ -273,6 +280,8 @@ impl VerifyBytecodeArgs {
                 )
                 .await
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             NetworkVariant::Optimism => {
                 self.run_with_network::<OpEvmNetwork>(
@@ -283,39 +292,48 @@ impl VerifyBytecodeArgs {
                 )
                 .await
             }
+            */
             NetworkVariant::Tempo => {
-                self.run_with_network::<TempoEvmNetwork>(
-                    config,
-                    endpoint_identity,
-                    network_was_inferred,
-                    ExecutorBuilder::<TempoEvmNetwork>::new(),
-                )
-                .await
-            }
-            #[cfg(feature = "monad")]
-            NetworkVariant::Monad => {
-                let Some(mut verification) = self
-                    .prepare_runtime_verification::<MonadEvmNetwork>(
-                        config,
-                        endpoint_identity,
-                        network_was_inferred,
-                        ExecutorBuilder::<MonadEvmNetwork>::new(),
-                    )
-                    .await?
-                else {
-                    return Ok(());
-                };
-                let context = replay_monad_block_transactions(
-                    &verification.config,
-                    verification.block.as_ref(),
-                    verification.simulation_block,
-                    verification.transaction.tx_hash(),
-                    &mut verification.executor,
-                    &verification.evm_env,
-                )
-                .await?;
-                verification.finish(context).await
-            }
+                /* EVM2 migration: disabled non-Ethereum execution.
+                {
+                                self.run_with_network::<TempoEvmNetwork>(
+                                    config,
+                                    endpoint_identity,
+                                    network_was_inferred,
+                                    ExecutorBuilder::<TempoEvmNetwork>::new(),
+                                )
+                                .await
+                            }
+                */
+                eyre::bail!(
+                    "Tempo execution is disabled on the Ethereum-only EVM2 migration branch"
+                );
+            } /* EVM2 migration: disabled non-Ethereum execution.
+              #[cfg(feature = "monad")]
+              NetworkVariant::Monad => {
+                  let Some(mut verification) = self
+                      .prepare_runtime_verification::<MonadEvmNetwork>(
+                          config,
+                          endpoint_identity,
+                          network_was_inferred,
+                          ExecutorBuilder::<MonadEvmNetwork>::new(),
+                      )
+                      .await?
+                  else {
+                      return Ok(());
+                  };
+                  let context = replay_monad_block_transactions(
+                      &verification.config,
+                      verification.block.as_ref(),
+                      verification.simulation_block,
+                      verification.transaction.tx_hash(),
+                      &mut verification.executor,
+                      &verification.evm_env,
+                  )
+                  .await?;
+                  verification.finish(context).await
+              }
+              */
         }
     }
 
@@ -1045,6 +1063,7 @@ fn replay_block_transactions<FEN: FoundryEvmNetwork>(
     Ok(Some(ChainFor::<FEN>::for_transaction(&target_tx_env)))
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Replays Monad transactions preceding `target_hash` with their ancestry context.
 #[cfg(feature = "monad")]
 async fn replay_monad_block_transactions(
@@ -1099,6 +1118,7 @@ async fn replay_monad_block_transactions(
 
     Ok(Some(block_context.transaction(target_index)))
 }
+*/
 
 fn execute_replay_transaction<FEN: FoundryEvmNetwork>(
     executor: &mut Executor<FEN>,
@@ -1137,6 +1157,7 @@ fn execute_replay_transaction<FEN: FoundryEvmNetwork>(
     Ok(())
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Fetches the block context Monad needs to reconstruct replay ordering.
 #[cfg(feature = "monad")]
 async fn monad_block_context(
@@ -1151,6 +1172,7 @@ async fn monad_block_context(
     })?;
     BlockContext::<MonadEvmNetwork>::fetch(&provider, &block).await
 }
+*/
 
 #[cfg(test)]
 mod tests {
@@ -1254,6 +1276,7 @@ mod tests {
         assert_eq!(args.network, Some(NetworkVariant::Tempo));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn can_parse_monad_network() {
@@ -1267,6 +1290,7 @@ mod tests {
 
         assert_eq!(args.network, Some(NetworkVariant::Monad));
     }
+    */
 
     #[test]
     fn configured_network_uses_tempo_config_network() {
@@ -1344,6 +1368,7 @@ mod tests {
         assert!(evm_opts.fork_network_is_inferred);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn configured_network_uses_monad_config_network() {
@@ -1354,7 +1379,9 @@ mod tests {
             Some(NetworkVariant::Monad)
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn configured_network_prefers_cli_network() {
@@ -1365,7 +1392,9 @@ mod tests {
             Some(NetworkVariant::Ethereum)
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn nested_endpoint_separates_execution_family_from_explorer_chain() {
@@ -1394,7 +1423,9 @@ mod tests {
             1
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn configured_network_preserves_base() {
@@ -1404,4 +1435,5 @@ mod tests {
             Some(NetworkVariant::Base)
         );
     }
+    */
 }

@@ -43,8 +43,10 @@ use semver::{BuildMetadata, Version};
 use serde::{Deserialize, Serialize};
 use yansi::Paint;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(all(test, feature = "monad"))]
 use foundry_config::FoundryHardfork;
+*/
 
 /// Enum to represent the type of bytecode being verified
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, ValueEnum)]
@@ -394,6 +396,7 @@ where
     Ok((evm_env, tx_env, executor))
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(all(test, feature = "monad"))]
 fn resolve_runtime_spec<FEN>(
     config: &Config,
@@ -412,6 +415,7 @@ where
         None,
     )
 }
+*/
 
 pub fn configure_env_block<FEN>(
     evm_env: &mut EvmEnvFor<FEN>,
@@ -595,6 +599,7 @@ mod tests {
     use foundry_config::NamedChain;
     use foundry_test_utils::TestProject;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn monad_env(timestamp: u64) -> EvmEnvFor<foundry_evm::core::evm::MonadEvmNetwork> {
         let mut env = EvmEnvFor::<foundry_evm::core::evm::MonadEvmNetwork>::default();
@@ -602,6 +607,7 @@ mod tests {
         env.block_env.set_timestamp(U256::from(timestamp));
         env
     }
+    */
 
     #[test]
     fn encoded_constructor_args_must_be_canonical() {
@@ -751,6 +757,7 @@ contract Broken {
         assert_eq!(evm_opts.env.chain_id, Some(1));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn runtime_spec_uses_monad_source_chain_timestamp() {
@@ -796,7 +803,9 @@ contract Broken {
         );
         assert_eq!(after_env.cfg_env.spec, foundry_evm::hardforks::MonadHardfork::MonadNine);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn runtime_spec_and_labels_prefer_explicit_monad_hardfork() {
@@ -831,6 +840,7 @@ contract Broken {
         assert!(config.labels.values().any(|label| label == "Staking"));
         assert!(!config.labels.values().any(|label| label == "ReserveBalance"));
     }
+    */
 
     #[test]
     fn test_host_only() {

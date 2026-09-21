@@ -39,8 +39,10 @@ use std::{
     sync::Arc,
 };
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 mod monad;
+*/
 
 /// Same as [ExecutedState](crate::execute::ExecutedState), but also contains [ExecutionArtifacts]
 /// which are obtained from [ScriptResult].
@@ -405,6 +407,7 @@ impl<FEN: FoundryEvmNetwork> PreSimulationState<FEN> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(all(test, feature = "monad"))]
 mod tests {
     use super::*;
@@ -643,6 +646,7 @@ mod tests {
         );
     }
 }
+*/
 
 /// At this point we have converted transactions collected during script execution to
 /// [TransactionWithMetadata] objects which contain additional metadata needed for broadcasting and

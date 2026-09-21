@@ -45,6 +45,10 @@ svm.workspace = true
 idna_adapter.workspace = true
 
 [features]
-default = ["optimism"]
-base = ["foundry-common/base"]
-optimism = ["foundry-common/optimism"]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = ["foundry-common/base"]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = ["foundry-common/optimism"]
+optimism = []

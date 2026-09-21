@@ -270,6 +270,7 @@ casttest!(cast_estimate_negative_numbers, |_prj, cmd| {
     .assert_success();
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(any(feature = "base", feature = "optimism"))]
 casttest!(cast_da_estimate_honors_config_and_cli_override, |prj, cmd| {
     prj.update_config(|config| {
@@ -291,3 +292,4 @@ curl -X POST -H 'Content-Type: application/json' --data-raw '{"method":"eth_getB
 "#]])
         .stderr_eq(str![""]);
 });
+*/

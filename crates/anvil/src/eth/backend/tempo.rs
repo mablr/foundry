@@ -7,11 +7,13 @@
 //! This module provides a storage provider adapter for Anvil's `Db` trait and
 //! uses the shared initialization logic from `foundry-evm-core`.
 
-use alloy_primitives::{Address, B256, U256, address};
+use alloy_primitives::{Address, B256, U256};
+/* EVM2 migration: disabled non-Ethereum execution.
 use foundry_evm::core::tempo::{
     ALPHA_USD_ADDRESS, BETA_USD_ADDRESS, PATH_USD_ADDRESS, THETA_USD_ADDRESS,
     initialize_tempo_genesis_at_hardfork,
 };
+*/
 use revm::{
     DatabaseRef,
     context::{BlockEnv, journaled_state::JournalCheckpoint},
@@ -19,25 +21,19 @@ use revm::{
 };
 use std::collections::HashMap;
 use tempo_hardfork::TempoHardfork;
-use tempo_precompiles::{
-    TIP_FEE_MANAGER_ADDRESS,
-    account_keychain::{
-        AccountKeychain,
-        IAccountKeychain::{KeyRestrictions, SignatureType},
-    },
-    error::TempoPrecompileError,
-    storage::{PrecompileStorageProvider, StorageCtx},
-    tip_fee_manager::{IFeeManager, TipFeeManager},
-    tip20::{ITIP20, TIP20Token},
-};
+use tempo_precompiles::{error::TempoPrecompileError, storage::PrecompileStorageProvider};
 use tempo_primitives::TempoBlockEnv;
 
 use super::db::Db;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Sender address used for genesis initialization.
 const SENDER: Address = address!("0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38");
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Admin address used for genesis initialization.
 const ADMIN: Address = address!("0x5615dEB798BB3E4dFa0139dFa1b3D433Cc23b72f");
+*/
 
 /// Storage provider adapter for Anvil's Db to work with Tempo precompiles.
 pub struct AnvilStorageProvider<'a> {
@@ -231,6 +227,7 @@ impl PrecompileStorageProvider for AnvilStorageProvider<'_> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Initialize Tempo precompiles and fee tokens for Anvil.
 ///
 /// This sets up the same precompiles and tokens as Tempo's genesis, enabling
@@ -340,3 +337,4 @@ pub fn initialize_tempo_precompiles(
 
     Ok(())
 }
+*/

@@ -52,17 +52,23 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [features]
-default = ["optimism"]
-monad = ["foundry-evm-core/monad"]
-base = [
-    "foundry-common/base",
-    "foundry-evm-core/base",
-    "foundry-evm-coverage/base",
-    "foundry-evm-traces/base",
-]
-optimism = [
-    "foundry-common/optimism",
-    "foundry-evm-core/optimism",
-    "foundry-evm-coverage/optimism",
-    "foundry-evm-traces/optimism",
-]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = ["foundry-evm-core/monad"]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "foundry-common/base",
+#     "foundry-evm-core/base",
+#     "foundry-evm-coverage/base",
+#     "foundry-evm-traces/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "foundry-common/optimism",
+#     "foundry-evm-core/optimism",
+#     "foundry-evm-coverage/optimism",
+#     "foundry-evm-traces/optimism",
+# ]
+optimism = []
