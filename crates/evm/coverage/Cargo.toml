@@ -27,7 +27,13 @@ rayon.workspace = true
 solar.workspace = true
 
 [features]
-default = ["optimism"]
-monad = ["foundry-evm-core/monad"]
-base = ["foundry-common/base", "foundry-evm-core/base"]
-optimism = ["foundry-common/optimism", "foundry-evm-core/optimism"]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = ["foundry-evm-core/monad"]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = ["foundry-common/base", "foundry-evm-core/base"]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = ["foundry-common/optimism", "foundry-evm-core/optimism"]
+optimism = []

@@ -94,11 +94,12 @@ pub struct NodeArgs {
     #[arg(long)]
     pub hardfork: Option<String>,
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Override the Base activation-registry administrator.
     #[cfg(feature = "base")]
     #[arg(long, value_name = "ADDRESS")]
     pub base_activation_admin: Option<Address>,
-
+    */
     /// Block time in seconds for interval mining.
     #[arg(short, long, visible_alias = "blockTime", value_name = "SECONDS", value_parser = duration_from_secs_f64)]
     pub block_time: Option<Duration>,
@@ -261,8 +262,10 @@ impl NodeArgs {
         }
 
         let funded_accounts = self.parse_funded_accounts()?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let base_activation_admin = self.base_activation_admin;
+        */
 
         let local_chain_id = self
             .evm
@@ -355,8 +358,10 @@ impl NodeArgs {
             .with_memory_limit(self.evm.memory_limit)
             .with_cache_path(self.cache_path)
             .with_funded_accounts(funded_accounts);
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let config = config.with_base_activation_admin(base_activation_admin);
+        */
         Ok(config)
     }
 
@@ -962,12 +967,17 @@ mod tests {
     use std::{env, net::Ipv4Addr};
     use tempo_hardfork::TempoHardfork;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_evm::hardforks::BaseUpgrade;
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     use foundry_evm::hardfork::OpHardfork;
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn base_chain_ids_select_native_base_unless_overridden() {
@@ -983,6 +993,7 @@ mod tests {
             assert!(config.networks.execution_network().is_ethereum());
         }
     }
+    */
 
     #[test]
     fn test_parse_fork_url() {
@@ -1021,6 +1032,7 @@ mod tests {
         assert_eq!(config.hardfork, Some(EthereumHardfork::Berlin.into()));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     #[test]
     fn can_parse_optimism_hardfork() {
@@ -1029,6 +1041,7 @@ mod tests {
         let config = args.into_node_config().unwrap();
         assert_eq!(config.hardfork, Some(OpHardfork::Regolith.into()));
     }
+    */
 
     #[test]
     fn can_parse_tempo_hardfork_from_network() {
@@ -1049,6 +1062,7 @@ mod tests {
         assert_eq!(config.hardfork, Some(TempoHardfork::T5.into()));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn can_parse_base_hardfork_from_network() {
@@ -1059,7 +1073,9 @@ mod tests {
         assert!(config.networks.is_base());
         assert_eq!(config.hardfork, Some(BaseUpgrade::Beryl.into()));
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn can_parse_namespaced_base_hardfork() {
@@ -1069,7 +1085,9 @@ mod tests {
         assert!(config.networks.is_base());
         assert_eq!(config.hardfork, Some(BaseUpgrade::Beryl.into()));
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn can_parse_base_activation_admin() {
@@ -1089,7 +1107,9 @@ mod tests {
         assert!(config.networks.is_base());
         assert_eq!(config.base_activation_admin, Some(admin));
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     #[test]
     fn chain_id_infers_optimism_network_in_node_config() {
@@ -1098,9 +1118,10 @@ mod tests {
 
         assert!(config.networks.is_optimism());
     }
+    */
 
     #[test]
-    #[cfg(not(feature = "optimism"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn chain_id_rejects_disabled_optimism_network() {
         let args = NodeArgs::parse_from(["anvil", "--chain-id", "10"]);
         let error = args.into_node_config().unwrap_err();
@@ -1112,6 +1133,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "base")]
     fn base_fork_chain_id_precedes_execution_chain_id_for_network() {
@@ -1131,11 +1153,12 @@ mod tests {
         assert!(config.networks.is_base());
         assert_eq!(config.get_chain_id(), 1);
     }
+    */
 
     /// `anvil --chain-id 8453` resolved to Optimism before Base support existed and must keep
     /// doing so in builds without the feature, which is what release binaries ship.
     #[test]
-    #[cfg(all(not(feature = "base"), feature = "optimism"))]
+    #[cfg(all(not(any()), any()))]
     fn chain_id_without_base_still_resolves_to_optimism() {
         for chain_id in ["8453", "84532"] {
             let args = NodeArgs::parse_from(["anvil", "--chain-id", chain_id]);
@@ -1147,7 +1170,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn chain_id_rejects_disabled_monad_network() {
         for chain_id in ["143", "10143"] {
             let args = NodeArgs::parse_from(["anvil", "--chain-id", chain_id]);
@@ -1173,7 +1196,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn explicit_ethereum_allows_monad_chain_id() {
         let args = NodeArgs::parse_from(["anvil", "--network", "ethereum", "--chain-id", "143"]);
         let config = args.into_node_config().unwrap();
@@ -1183,7 +1206,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn genesis_chain_id_rejects_disabled_monad_network() {
         let mut args = NodeArgs::parse_from(["anvil"]);
         let mut genesis = Genesis::default();
@@ -1199,6 +1222,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "base")]
     fn genesis_chain_id_infers_base_network() {
@@ -1210,11 +1234,12 @@ mod tests {
         let config = args.into_node_config().unwrap();
         assert!(config.networks.is_base());
     }
+    */
 
     /// Base chain IDs resolved to Optimism before Base support existed, so a build without the
     /// `base` feature must keep resolving them that way rather than erroring.
     #[test]
-    #[cfg(all(not(feature = "base"), feature = "optimism"))]
+    #[cfg(all(not(any()), any()))]
     fn genesis_chain_id_without_base_still_infers_optimism() {
         let mut args = NodeArgs::parse_from(["anvil"]);
         let mut genesis = Genesis::default();
@@ -1226,7 +1251,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn explicit_network_overrides_genesis_chain_id_inference() {
         let mut args = NodeArgs::parse_from(["anvil", "--network", "ethereum"]);
         let mut genesis = Genesis::default();
@@ -1240,7 +1265,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn explicit_chain_id_precedes_genesis_network_inference() {
         let mut args = NodeArgs::parse_from(["anvil", "--chain-id", "1"]);
         let mut genesis = Genesis::default();
@@ -1278,7 +1303,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn disabled_fork_chain_id_precedes_execution_chain_id() {
         let args = NodeArgs::parse_from([
             "anvil",
@@ -1349,6 +1374,7 @@ mod tests {
         assert_eq!(config.hardfork, Some(TempoHardfork::T5.into()));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn chain_id_infers_monad_network_in_node_config() {
@@ -1357,7 +1383,9 @@ mod tests {
 
         assert!(config.networks.is_monad());
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn fork_chain_id_precedes_execution_chain_id_for_network() {
@@ -1377,6 +1405,7 @@ mod tests {
         assert!(config.networks.is_monad());
         assert_eq!(config.get_chain_id(), 1);
     }
+    */
 
     #[test]
     fn fork_execution_chain_id_does_not_infer_source_network() {
@@ -1393,6 +1422,7 @@ mod tests {
         assert_eq!(config.get_chain_id(), 4217);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn can_parse_monad_hardfork() {
@@ -1402,7 +1432,9 @@ mod tests {
         assert_eq!(config.hardfork, Some(foundry_evm::hardfork::MonadHardfork::MonadNine.into()));
         assert!(config.networks.is_monad());
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn monad_uses_monad_default_hardfork() {
@@ -1412,6 +1444,7 @@ mod tests {
         assert_eq!(config.get_hardfork(), foundry_evm::hardfork::MonadHardfork::default().into());
         assert!(config.networks.is_monad());
     }
+    */
 
     #[test]
     fn cant_parse_invalid_hardfork() {

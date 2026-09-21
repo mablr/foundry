@@ -325,9 +325,11 @@ forgetest!(can_verify_random_contract_fantom_testnet, |prj, cmd| {
 });
 
 // tests `create && contract-verify && verify-check` on Optimism kovan if correct env vars are set
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest!(can_verify_random_contract_optimism_kovan, |prj, cmd| {
     verify_on_chain(EnvExternalities::optimism_kovan(), prj, cmd);
 });
+*/
 
 // tests `create && contract-verify && verify-check` on Sepolia testnet if correct env vars are set
 forgetest!(can_verify_random_contract_sepolia, |prj, cmd| {

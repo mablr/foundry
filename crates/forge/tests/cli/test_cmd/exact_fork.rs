@@ -167,7 +167,7 @@ contract ExactForkTest {{
 
     cmd.args(["test", "--fork-url", &endpoint, "--match-test", "testExactForkAncestry"])
         .assert_success();
-    #[cfg(feature = "monad")]
+    #[cfg(any())]
     {
         let mut monad_cmd = prj.forge_command();
         monad_cmd

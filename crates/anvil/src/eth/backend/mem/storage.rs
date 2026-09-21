@@ -314,21 +314,27 @@ pub struct BlockchainStorage<N: Network> {
     pub transactions: B256HashMap<MinedTransaction<N>>,
     /// The total difficulty of the chain until this block
     pub total_difficulty: U256,
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Monad senders and authorities retained even when old transaction bodies are pruned.
     #[cfg(feature = "monad")]
     pub monad_block_participants: B256HashMap<foundry_evm::core::evm::MonadBlockParticipants>,
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Execution profile used when each locally stored Monad block was created.
     #[cfg(feature = "monad")]
     pub monad_block_replay_profiles: B256HashMap<crate::eth::backend::db::MonadBlockReplayProfile>,
+    */
 }
 
 impl<N: Network> BlockchainStorage<N> {
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Removes all metadata associated with a locally stored Monad block.
     #[cfg(feature = "monad")]
     fn remove_monad_block_metadata(&mut self, block_hash: &B256) {
         self.monad_block_participants.remove(block_hash);
         self.monad_block_replay_profiles.remove(block_hash);
     }
+    */
 
     /// Creates a new storage with a genesis block.
     pub fn new(header: FoundryHeader) -> Self {
@@ -353,10 +359,14 @@ impl<N: Network> BlockchainStorage<N> {
             genesis_number: best_number,
             transactions: Default::default(),
             total_difficulty: Default::default(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             monad_block_participants: Default::default(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             monad_block_replay_profiles: Default::default(),
+            */
         }
     }
 
@@ -374,10 +384,14 @@ impl<N: Network> BlockchainStorage<N> {
             genesis_number: 0,
             transactions: Default::default(),
             total_difficulty,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             monad_block_participants: Default::default(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             monad_block_replay_profiles: Default::default(),
+            */
         }
     }
 
@@ -398,8 +412,10 @@ impl<N: Network> BlockchainStorage<N> {
                     removed.push(block);
                 }
                 self.block_access_lists.remove(&hash);
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 self.remove_monad_block_metadata(&hash);
+                */
                 self.hashes.remove(&i);
             }
         }
@@ -419,10 +435,14 @@ impl<N: Network> BlockchainStorage<N> {
             genesis_number: Default::default(),
             transactions: Default::default(),
             total_difficulty: Default::default(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             monad_block_participants: Default::default(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             monad_block_replay_profiles: Default::default(),
+            */
         }
     }
 

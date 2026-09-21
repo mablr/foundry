@@ -27,15 +27,21 @@ use tempo_alloy::{
     rpc::{TempoHeaderResponse, TempoTransactionReceipt},
 };
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_consensus::{
     BaseReceipt, BaseTxEnvelope, Eip8130Signed, TxDeposit as BaseTxDeposit,
 };
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_rpc_types::{BaseTransactionReceipt, Transaction as BaseRpcTransaction};
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_consensus::{OpTxEnvelope, TxDeposit, TxPostExec};
+*/
 
 /// length of the name column for pretty formatting `{:>20}{value}`
 const NAME_COLUMN_LEN: usize = 20usize;
@@ -240,6 +246,7 @@ impl UIfmt for TransactionReceipt {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl UIfmt for BaseTransactionReceipt {
     fn pretty(&self) -> String {
@@ -288,6 +295,7 @@ metadata             {}",
         )
     }
 }
+*/
 
 impl UIfmt for AnyTransactionReceipt {
     fn pretty(&self) -> String {
@@ -508,6 +516,7 @@ input                {}",
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl UIfmt for TxDeposit {
     fn pretty(&self) -> String {
@@ -532,7 +541,9 @@ input                {}",
         )
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl UIfmt for BaseTxDeposit {
     fn pretty(&self) -> String {
@@ -557,7 +568,9 @@ input                {}",
         )
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl UIfmt for Eip8130Signed {
     fn pretty(&self) -> String {
@@ -601,7 +614,9 @@ payerAuth            {}",
         )
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl UIfmt for TxPostExec {
     fn pretty(&self) -> String {
@@ -616,6 +631,7 @@ input                {}",
         )
     }
 }
+*/
 
 impl UIfmt for Call {
     fn pretty(&self) -> String {
@@ -717,6 +733,7 @@ impl UIfmt for TxEnvelope {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl UIfmt for BaseTxEnvelope {
     fn pretty(&self) -> String {
@@ -730,6 +747,7 @@ impl UIfmt for BaseTxEnvelope {
         }
     }
 }
+*/
 
 impl UIfmt for AnyTxEnvelope {
     fn pretty(&self) -> String {
@@ -751,6 +769,7 @@ type               {:#x}
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl UIfmt for OpTxEnvelope {
     fn pretty(&self) -> String {
@@ -764,6 +783,7 @@ impl UIfmt for OpTxEnvelope {
         }
     }
 }
+*/
 
 impl UIfmt for TempoTxEnvelope {
     fn pretty(&self) -> String {
@@ -797,6 +817,7 @@ effectiveGasPrice    {}
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl UIfmt for BaseRpcTransaction {
     fn pretty(&self) -> String {
@@ -811,7 +832,9 @@ depositReceiptVersion {}
         )
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl<T: UIfmt> UIfmt for op_alloy_rpc_types::Transaction<T> {
     fn pretty(&self) -> String {
@@ -826,6 +849,7 @@ depositReceiptVersion {}
         )
     }
 }
+*/
 
 impl UIfmt for AnyRpcBlock {
     fn pretty(&self) -> String {
@@ -943,19 +967,23 @@ impl UIfmtSignatureExt for AnyTxEnvelope {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl UIfmtSignatureExt for BaseTxEnvelope {
     fn signature_pretty(&self) -> Option<(String, String, String)> {
         self.signature().map(pretty_signature_fields)
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl UIfmtSignatureExt for OpTxEnvelope {
     fn signature_pretty(&self) -> Option<(String, String, String)> {
         self.signature().map(pretty_signature_fields)
     }
 }
+*/
 
 impl UIfmtSignatureExt for TempoTxEnvelope {
     fn signature_pretty(&self) -> Option<(String, String, String)> {
@@ -1017,6 +1045,7 @@ impl UIfmtReceiptExt for TransactionReceipt {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl UIfmtReceiptExt for BaseTransactionReceipt {
     fn logs_pretty(&self) -> String {
@@ -1031,6 +1060,7 @@ impl UIfmtReceiptExt for BaseTransactionReceipt {
         self.inner.inner.receipt.tx_type().to_string()
     }
 }
+*/
 
 impl UIfmtReceiptExt for AnyTransactionReceipt {
     fn logs_pretty(&self) -> String {
@@ -1290,8 +1320,10 @@ mod tests {
     use similar_asserts::assert_eq;
     use std::str::FromStr;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use base_common_consensus::{Call as BaseCall, TxEip8130};
+    */
 
     #[test]
     fn format_date_time() {
@@ -1319,6 +1351,7 @@ mod tests {
         assert_eq!(b.pretty(), b32.pretty());
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn can_pretty_print_eip8130_transaction() {
@@ -1361,7 +1394,9 @@ senderAuth           0x01
 payerAuth            0x02"
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn can_pretty_print_base_deposit_receipt_fields() {
@@ -1418,7 +1453,9 @@ payerAuth            0x02"
         assert!(pretty.contains("depositNonce         9055505"), "{pretty}");
         assert!(pretty.contains("depositReceiptVersion 1"), "{pretty}");
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     #[test]
     fn can_pretty_print_optimism_tx() {
@@ -1470,7 +1507,9 @@ yParity              1
             .trim()
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     #[test]
     fn can_pretty_print_optimism_tx_through_any() {
@@ -1532,6 +1571,7 @@ txType               0
 ".trim()
         );
     }
+    */
 
     #[test]
     fn can_pretty_print_eip2930() {

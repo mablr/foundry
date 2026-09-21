@@ -745,6 +745,7 @@ mod tests {
         assert!(dispatcher.source().config.evm_opts.networks.is_celo());
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn ensure_fork_network_matches_rejects_cross_family_change() {
@@ -756,7 +757,9 @@ mod tests {
              with `--network monad` or a fork URL for that network."
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn clearing_startup_fork_preserves_inferred_monad_context() {
@@ -790,6 +793,7 @@ mod tests {
         assert!(config.foundry_config.networks.is_monad());
         assert_eq!(config.foundry_config.chain.map(|chain| chain.id()), Some(143));
     }
+    */
 
     #[test]
     fn ensure_loaded_session_network_matches_rejects_different_network() {
@@ -804,6 +808,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn ensure_loaded_session_network_matches_rejects_monad_on_default_network() {
@@ -817,6 +822,7 @@ mod tests {
              `ethereum`. Rerun with `--network monad` to load it."
         );
     }
+    */
 
     #[test]
     fn ensure_loaded_session_network_matches_accepts_same_network() {
@@ -826,6 +832,7 @@ mod tests {
         ensure_loaded_session_network_matches(&current, &loaded, "42").unwrap();
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn ensure_loaded_session_network_matches_preserves_base() {
@@ -836,6 +843,7 @@ mod tests {
             ensure_loaded_session_network_matches(&Config::default(), &base, "42").unwrap_err();
         assert!(err.to_string().contains("Rerun with `--network base`"), "{err}");
     }
+    */
 
     #[test]
     fn test_trivia() {

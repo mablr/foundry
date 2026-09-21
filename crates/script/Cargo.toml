@@ -59,43 +59,51 @@ alloy-eips.workspace = true
 alloy-consensus.workspace = true
 thiserror.workspace = true
 
-tempo-alloy.workspace = true
-tempo-primitives.workspace = true
+# tempo-alloy.workspace = true
+# tempo-primitives.workspace = true
 
 [dev-dependencies]
+tempo-alloy.workspace = true
+tempo-primitives.workspace = true
 anvil.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 
 [features]
-default = ["optimism"]
-monad = [
-    "anvil/monad",
-    "foundry-config/monad",
-    "foundry-evm/monad",
-    "foundry-evm-networks/monad",
-    "foundry-common/monad",
-    "foundry-cheatcodes/monad",
-    "foundry-cli/monad",
-    "forge-script-sequence/monad",
-    "forge-verify/monad",
-]
-base = [
-    "anvil/base",
-    "foundry-evm/base",
-    "foundry-evm-networks/base",
-    "foundry-common/base",
-    "foundry-cheatcodes/base",
-    "foundry-cli/base",
-    "foundry-debugger/base",
-    "forge-script-sequence/base",
-    "forge-verify/base",
-]
-optimism = [
-    "foundry-evm/optimism",
-    "foundry-evm-networks/optimism",
-    "foundry-common/optimism",
-    "foundry-cheatcodes/optimism",
-    "foundry-cli/optimism",
-    "forge-script-sequence/optimism",
-    "forge-verify/optimism",
-]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = [
+#     "anvil/monad",
+#     "foundry-config/monad",
+#     "foundry-evm/monad",
+#     "foundry-evm-networks/monad",
+#     "foundry-common/monad",
+#     "foundry-cheatcodes/monad",
+#     "foundry-cli/monad",
+#     "forge-script-sequence/monad",
+#     "forge-verify/monad",
+# ]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "anvil/base",
+#     "foundry-evm/base",
+#     "foundry-evm-networks/base",
+#     "foundry-common/base",
+#     "foundry-cheatcodes/base",
+#     "foundry-cli/base",
+#     "foundry-debugger/base",
+#     "forge-script-sequence/base",
+#     "forge-verify/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "foundry-evm/optimism",
+#     "foundry-evm-networks/optimism",
+#     "foundry-common/optimism",
+#     "foundry-cheatcodes/optimism",
+#     "foundry-cli/optimism",
+#     "forge-script-sequence/optimism",
+#     "forge-verify/optimism",
+# ]
+optimism = []

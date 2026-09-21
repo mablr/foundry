@@ -53,7 +53,7 @@ use foundry_evm::{
     core::{
         FoundryBlock, FoundryTransaction,
         decode::RevertDecoder,
-        evm::{EthEvmNetwork, FoundryEvmNetwork, TempoEvmNetwork},
+        evm::{EthEvmNetwork, FoundryEvmNetwork},
     },
     executors::{ExecutorBuilder, TracingExecutor},
     opts::EvmOpts,
@@ -63,14 +63,20 @@ use foundry_evm_networks::NetworkConfigs;
 use foundry_wallets::{BrowserWalletOpts, WalletOpts};
 use std::str::FromStr;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm::core::evm::BaseEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use foundry_evm::core::evm::MonadEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::core::evm::OpEvmNetwork;
+*/
 
 /// CLI arguments for `cast call`.
 ///
@@ -291,16 +297,22 @@ impl CallArgs {
         }
 
         if evm_opts.networks.is_tempo() {
-            return self
-                .run_with_network_and_opts::<TempoEvmNetwork>(
-                    config,
-                    evm_opts,
-                    auth_preflight,
-                    ExecutorBuilder::<TempoEvmNetwork>::new(),
-                )
-                .await;
+            /* EVM2 migration: disabled non-Ethereum execution.
+
+                        return self
+                            .run_with_network_and_opts::<TempoEvmNetwork>(
+                                config,
+                                evm_opts,
+                                auth_preflight,
+                                ExecutorBuilder::<TempoEvmNetwork>::new(),
+                            )
+                            .await;
+
+            */
+            eyre::bail!("Tempo execution is disabled on the Ethereum-only EVM2 migration branch");
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if evm_opts.networks.is_base() {
             super::validate_base_transaction_options(&self.tx)?;
@@ -313,7 +325,9 @@ impl CallArgs {
                 )
                 .await;
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if evm_opts.networks.is_monad() {
             return self
@@ -325,7 +339,9 @@ impl CallArgs {
                 )
                 .await;
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if evm_opts.networks.is_optimism() {
             return self
@@ -337,6 +353,7 @@ impl CallArgs {
                 )
                 .await;
         }
+        */
 
         self.run_with_network_and_opts::<EthEvmNetwork>(
             config,
@@ -1016,7 +1033,7 @@ mod tests {
     /// Base chain IDs resolved to Optimism before Base support existed, so a build without the
     /// `base` feature — which is what release binaries ship — must keep resolving them that way.
     #[test]
-    #[cfg(all(not(feature = "base"), feature = "optimism"))]
+    #[cfg(all(not(any()), any()))]
     fn chain_id_without_base_still_resolves_to_optimism() {
         for chain_id in [8453, 84532] {
             let networks = NetworkConfigs::default()

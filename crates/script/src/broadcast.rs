@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, num::NonZeroU64, sync::Arc, time::Duration};
+use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 use crate::{
     ScriptArgs, ScriptConfig,
@@ -19,12 +19,11 @@ use alloy_network::{
     EthereumWallet, Network, NetworkTransactionBuilder, ReceiptResponse, TransactionBuilder,
 };
 use alloy_primitives::{
-    Address, TxHash, TxKind, U256, keccak256,
+    Address, TxHash,
     map::{AddressHashMap, AddressHashSet, HashMap},
     utils::format_units,
 };
 use alloy_provider::{Provider, RootProvider, utils::Eip1559Estimation};
-use alloy_rpc_types::TransactionRequest;
 use alloy_signer::Signature;
 use eyre::{Context, Result, bail};
 use forge_script_sequence::ScriptSequence;
@@ -40,18 +39,10 @@ use foundry_common::{
     tempo::{TempoSponsor, maybe_print_fee_token, resolve_and_set_fee_token},
 };
 use foundry_config::Config;
-use foundry_evm::core::{
-    constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
-    evm::{FoundryEvmNetwork, TempoEvmNetwork},
-    fork::ResolvedFork,
-    opts::EvmOpts,
-};
+use foundry_evm::core::{evm::FoundryEvmNetwork, fork::ResolvedFork, opts::EvmOpts};
 use foundry_wallets::{TempoAccountsWallet, wallet_browser::signer::BrowserSigner};
 use futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered};
 use itertools::Itertools;
-use revm_inspectors::tracing::types::CallKind;
-use tempo_alloy::{TempoNetwork, rpc::TempoTransactionRequest};
-use tempo_primitives::transaction::Call;
 
 /// Represents how to send a single transaction.
 #[derive(Clone)]
@@ -791,6 +782,7 @@ impl<FEN: FoundryEvmNetwork> BundledState<FEN> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 impl BundledState<TempoEvmNetwork> {
     /// Broadcasts all transactions as a single Tempo batch transaction (type 0x76).
     ///
@@ -1310,7 +1302,9 @@ impl BundledState<TempoEvmNetwork> {
         })
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 async fn wait_for_batch_receipt<N: Network>(
     provider: &RootProvider<N>,
     tx_hash: TxHash,
@@ -1333,6 +1327,7 @@ async fn wait_for_batch_receipt<N: Network>(
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 }
+*/
 
 pub async fn estimate_gas<N: Network, P: Provider<N>>(
     tx: &mut N::TransactionRequest,
@@ -1394,10 +1389,11 @@ mod tests {
     use alloy_consensus::{Eip658Value, Receipt, ReceiptEnvelope, ReceiptWithBloom};
     use alloy_eips::BlockId;
     use alloy_network::Ethereum;
-    use alloy_primitives::{Bloom, address};
-    use alloy_rpc_types::TransactionReceipt;
+    use alloy_primitives::{Bloom, TxKind, U256, address};
+    use alloy_rpc_types::{TransactionReceipt, TransactionRequest};
     use alloy_signer::Signer;
     use forge_script_sequence::TransactionWithMetadata;
+    use tempo_alloy::{TempoNetwork, rpc::TempoTransactionRequest};
 
     const ROOT_PRIVATE_KEY: &str =
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";

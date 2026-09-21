@@ -64,11 +64,11 @@ tempo-contracts.workspace = true
 tempo-primitives.workspace = true
 
 # Base
-base-common-network = { workspace = true, optional = true, features = ["serde", "std"] }
+# base-common-network = { workspace = true, optional = true, features = ["serde", "std"] }
 
-op-alloy-consensus = { workspace = true, features = ["k256"], optional = true }
-op-alloy-flz = { workspace = true, optional = true }
-op-alloy-network = { workspace = true, optional = true }
+# op-alloy-consensus = { workspace = true, features = ["k256"], optional = true }
+# op-alloy-flz = { workspace = true, optional = true }
+# op-alloy-network = { workspace = true, optional = true }
 
 aes-gcm = "0.10"
 hkdf = "0.12"
@@ -131,7 +131,7 @@ reqwest.workspace = true
 tower.workspace = true
 
 [features]
-default = ["jemalloc", "asm-keccak", "optimism"]
+default = ["jemalloc", "asm-keccak", ]
 asm-keccak = ["alloy-primitives/asm-keccak", "revm/asm-keccak"]
 jemalloc = ["foundry-cli/jemalloc"]
 mimalloc = ["foundry-cli/mimalloc"]
@@ -140,30 +140,36 @@ aws-kms = ["foundry-wallets/aws-kms"]
 gcp-kms = ["foundry-wallets/gcp-kms"]
 turnkey = ["foundry-wallets/turnkey"]
 touch-id = ["foundry-wallets/touch-id"]
-monad = [
-    "anvil/monad",
-    "foundry-common/monad",
-    "foundry-config/monad",
-    "foundry-evm-networks/monad",
-    "foundry-evm/monad",
-    "foundry-cli/monad",
-]
-base = [
-    "anvil/base",
-    "dep:base-common-network",
-    "dep:op-alloy-flz",
-    "foundry-common/base",
-    "foundry-debugger/base",
-    "foundry-evm/base",
-    "foundry-evm-networks/base",
-    "foundry-cli/base",
-]
-optimism = [
-    "dep:op-alloy-flz",
-    "dep:op-alloy-consensus",
-    "dep:op-alloy-network",
-    "foundry-common/optimism",
-    "foundry-evm-networks/optimism",
-    "foundry-evm/optimism",
-    "foundry-cli/optimism",
-]
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = [
+#     "anvil/monad",
+#     "foundry-common/monad",
+#     "foundry-config/monad",
+#     "foundry-evm-networks/monad",
+#     "foundry-evm/monad",
+#     "foundry-cli/monad",
+# ]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "anvil/base",
+#     "dep:base-common-network",
+#     "dep:op-alloy-flz",
+#     "foundry-common/base",
+#     "foundry-debugger/base",
+#     "foundry-evm/base",
+#     "foundry-evm-networks/base",
+#     "foundry-cli/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "dep:op-alloy-flz",
+#     "dep:op-alloy-consensus",
+#     "dep:op-alloy-network",
+#     "foundry-common/optimism",
+#     "foundry-evm-networks/optimism",
+#     "foundry-evm/optimism",
+#     "foundry-cli/optimism",
+# ]
+optimism = []

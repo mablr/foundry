@@ -16,8 +16,10 @@ use foundry_wallets::{BrowserWalletOpts, WalletOpts};
 use std::str::FromStr;
 use tempo_alloy::TempoNetwork;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_network::Base;
+*/
 
 /// CLI arguments for `cast access-list`.
 #[derive(Debug, Parser)]
@@ -75,11 +77,13 @@ impl AccessListArgs {
         if network.is_tempo() {
             return self.run_with_network::<TempoNetwork>(config).await;
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if network.is_base() {
             super::validate_base_transaction_options(&self.tx)?;
             return self.run_with_network::<Base>(config).await;
         }
+        */
         self.run_with_network::<Ethereum>(config).await
     }
 

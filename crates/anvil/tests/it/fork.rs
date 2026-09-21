@@ -64,8 +64,10 @@ use std::{
     time::Duration,
 };
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::hardfork::OpHardfork;
+*/
 
 const BLOCK_NUMBER: u64 = 14_608_400u64;
 const DEAD_BALANCE_AT_BLOCK_NUMBER: u128 = 12_556_069_338_441_120_059_867u128;
@@ -751,6 +753,7 @@ async fn test_fork_transaction_hash_replay_resolves_source_hardfork() {
     assert!(replayed.header.parent_beacon_block_root.is_none());
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_ethereum_fork_transaction_hash_replay_preserves_optimism_source_hardfork() {
@@ -801,7 +804,9 @@ async fn test_ethereum_fork_transaction_hash_replay_preserves_optimism_source_ha
     );
     assert!(replayed.header.parent_beacon_block_root.is_none());
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(all(feature = "base", feature = "optimism"))]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_ethereum_fork_transaction_hash_replay_preserves_base_id_op_source_hardfork() {
@@ -849,7 +854,9 @@ async fn test_ethereum_fork_transaction_hash_replay_preserves_base_id_op_source_
     assert!(!replayed_receipt.status());
     assert_eq!(fork.http_provider().get_storage_at(target, U256::ZERO).await.unwrap(), U256::ZERO);
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(all(feature = "base", feature = "optimism"))]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_optimism_fork_transaction_hash_replay_uses_base_source_schedule() {
@@ -895,6 +902,7 @@ async fn test_optimism_fork_transaction_hash_replay_uses_base_source_schedule() 
     assert!(!replayed_receipt.status());
     assert_eq!(fork.http_provider().get_storage_at(target, U256::ZERO).await.unwrap(), U256::ZERO);
 }
+*/
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_fork_transaction_hash_replay_applies_source_beacon_root() {
@@ -3962,6 +3970,7 @@ async fn test_pre_cancun_fork_with_post_cancun_hardfork() {
     assert!(api.backend.evm_env().read().block_env.blob_excess_gas_and_price.is_none());
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_optimism_fork_preserves_ethereum_source_blob_header_fallback() {
@@ -4000,8 +4009,9 @@ async fn test_optimism_fork_preserves_ethereum_source_blob_header_fallback() {
     let request = TransactionRequest { to: Some(TxKind::Call(target)), ..Default::default() };
     assert_eq!(fork.http_provider().call(request.into()).await.unwrap(), Bytes::from(vec![0; 32]));
 }
+*/
 
-#[cfg(all(feature = "base", not(feature = "optimism")))]
+#[cfg(all(any(), not(any())))]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_ethereum_fork_on_base_chain_id_preserves_missing_blob_header_fallback() {
     const ECOTONE_ERA_TIMESTAMP: u64 = 1_710_374_401;
@@ -4139,6 +4149,7 @@ async fn spawn_rpc_proxy_with_blob_header_fields(
     format!("http://{address}")
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_optimism_fork_keeps_excess_blob_gas_zero_after_mining() {
@@ -4168,6 +4179,7 @@ async fn test_optimism_fork_keeps_excess_blob_gas_zero_after_mining() {
     assert_eq!(next_blob_fee.excess_blob_gas, 0);
     assert_eq!(next_blob_fee.blob_gasprice, 1);
 }
+*/
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_arbitrum_forks_accept_nitro_headers_without_blob_fields() {

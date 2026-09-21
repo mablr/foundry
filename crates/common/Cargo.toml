@@ -43,12 +43,12 @@ alloy-transport-mpp.workspace = true
 alloy-consensus = { workspace = true, features = ["k256"] }
 alloy-network.workspace = true
 
-op-alloy-network = { workspace = true, optional = true }
-op-alloy-rpc-types = { workspace = true, optional = true }
+# op-alloy-network = { workspace = true, optional = true }
+# op-alloy-rpc-types = { workspace = true, optional = true }
 
 # Base
-base-common-network = { workspace = true, optional = true, features = ["serde", "std"] }
-base-common-rpc-types = { workspace = true, optional = true, features = ["serde", "std"] }
+# base-common-network = { workspace = true, optional = true, features = ["serde", "std"] }
+# base-common-rpc-types = { workspace = true, optional = true, features = ["serde", "std"] }
 
 revm.workspace = true
 
@@ -103,16 +103,22 @@ foundry-evm-hardforks.workspace = true
 k256 = { workspace = true }
 
 [features]
-default = ["optimism"]
-monad = ["foundry-config/monad"]
-base = [
-    "dep:base-common-network",
-    "dep:base-common-rpc-types",
-    "foundry-common-fmt/base",
-    "foundry-config/base",
-]
-optimism = [
-    "dep:op-alloy-network",
-    "dep:op-alloy-rpc-types",
-    "foundry-common-fmt/optimism",
-]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = ["foundry-config/monad"]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "dep:base-common-network",
+#     "dep:base-common-rpc-types",
+#     "foundry-common-fmt/base",
+#     "foundry-config/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "dep:op-alloy-network",
+#     "dep:op-alloy-rpc-types",
+#     "foundry-common-fmt/optimism",
+# ]
+optimism = []

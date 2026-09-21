@@ -126,16 +126,26 @@ use tokio::{
     try_join,
 };
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_consensus::Eip8130Constants;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_evm::EIP8130_TRANSACTION_TYPE;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_precompiles::NonceManagerStorage;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_rpc_types::{BaseTransactionRequest, Eip8130Nonce};
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_execution_eip8130::{FeeCheck, IntrinsicGas};
+*/
 
 /// The client version: `anvil/v{major}.{minor}.{patch}`
 pub const CLIENT_VERSION: &str = concat!("anvil/v", env!("CARGO_PKG_VERSION"));
@@ -363,11 +373,14 @@ impl<N: Network> EthApi<N> {
     pub async fn anvil_set_chain_id(&self, chain_id: u64) -> Result<()> {
         node_info!("anvil_setChainId");
         self.backend.set_chain_id(chain_id);
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         self.invalidate_base_eip8130_pool();
+        */
         Ok(())
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Invalidates EIP-8130 admission state after out-of-band state mutation.
     #[cfg(feature = "base")]
     fn invalidate_base_eip8130_pool(&self) {
@@ -375,6 +388,7 @@ impl<N: Network> EthApi<N> {
             let _ = self.pool.clear_transaction_type(EIP8130_TRANSACTION_TYPE);
         }
     }
+    */
 
     /// Modifies the balance of an account.
     ///
@@ -382,8 +396,10 @@ impl<N: Network> EthApi<N> {
     pub async fn anvil_set_balance(&self, address: Address, balance: U256) -> Result<()> {
         node_info!("anvil_setBalance");
         self.backend.set_balance(address, balance).await?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         self.invalidate_base_eip8130_pool();
+        */
         Ok(())
     }
 
@@ -393,8 +409,10 @@ impl<N: Network> EthApi<N> {
     pub async fn anvil_set_code(&self, address: Address, code: Bytes) -> Result<()> {
         node_info!("anvil_setCode");
         self.backend.set_code(address, code).await?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         self.invalidate_base_eip8130_pool();
+        */
         Ok(())
     }
 
@@ -404,8 +422,10 @@ impl<N: Network> EthApi<N> {
     pub async fn anvil_set_nonce(&self, address: Address, nonce: U256) -> Result<()> {
         node_info!("anvil_setNonce");
         self.backend.set_nonce(address, nonce).await?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         self.invalidate_base_eip8130_pool();
+        */
         Ok(())
     }
 
@@ -420,8 +440,10 @@ impl<N: Network> EthApi<N> {
     ) -> Result<bool> {
         node_info!("anvil_setStorageAt");
         self.backend.set_storage_at(address, slot, val).await?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         self.invalidate_base_eip8130_pool();
+        */
         Ok(true)
     }
 
@@ -838,10 +860,12 @@ impl<N: Network> EthApi<N> {
         let _lifecycle = self.lifecycle_lock.read().await;
         let _mining = self.backend.lock_mining().await;
         let reverted = self.backend.revert_state_snapshot(id).await?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if reverted {
             self.invalidate_base_eip8130_pool();
         }
+        */
         Ok(reverted)
     }
 
@@ -1646,10 +1670,12 @@ impl EthApi<FoundryNetwork> {
     pub async fn anvil_load_state(&self, buf: Bytes) -> Result<bool> {
         node_info!("anvil_loadState");
         let loaded = self.backend.load_state_bytes(buf).await?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if loaded {
             self.invalidate_base_eip8130_pool();
         }
+        */
         Ok(loaded)
     }
 
@@ -1735,13 +1761,17 @@ impl EthApi<FoundryNetwork> {
             .map_err(|_| BlockchainError::FailedToDecodeSignedTransaction)?;
         self.ensure_typed_transaction_supported(&transaction)?;
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let is_eip8130 = transaction.is_eip8130();
+        */
         let pending_transaction = PendingTransaction::new(transaction).map_err(|error| {
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             if is_eip8130 {
                 return BlockchainError::Eip8130TransactionRejected(error.to_string());
             }
+            */
             BlockchainError::RecoveryError(error)
         })?;
         let block_request = self.block_request(block_number).await?;
@@ -1845,6 +1875,7 @@ impl EthApi<FoundryNetwork> {
         )?
         .or_zero_fees();
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.backend.is_base() && request.is_base() {
             self.backend.ensure_base_eip8130_active_at(block_env.timestamp.saturating_to())?;
@@ -1870,6 +1901,7 @@ impl EthApi<FoundryNetwork> {
                 GasEstimationCallResult::EvmError(error) => Err(BlockchainError::EvmError(error)),
             };
         }
+        */
 
         // get the highest possible gas limit, either the request's set value or the currently
         // configured gas limit
@@ -2112,11 +2144,13 @@ impl EthApi<FoundryNetwork> {
             }
             EthRequest::EthGetTransactionCount(params) => {
                 let (address, block, nonce_key) = params.into_parts();
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "base")]
                 {
                     self.transaction_count_with_key(address, block, nonce_key).await.to_rpc_result()
                 }
-                #[cfg(not(feature = "base"))]
+                */
+                // EVM2 migration: unconditional Ethereum fallback.
                 {
                     if nonce_key.is_some() {
                         return ResponseResult::Error(RpcError::invalid_params(
@@ -2523,15 +2557,9 @@ impl EthApi<FoundryNetwork> {
     }
 
     fn sign_request(&self, from: &Address, typed_tx: FoundryTypedTx) -> Result<FoundryTxEnvelope> {
-        match typed_tx {
-            #[cfg(feature = "optimism")]
-            FoundryTypedTx::Deposit(_) => return Ok(typed_tx.into_impersonated()),
-            _ => {
-                for signer in self.signers.iter() {
-                    if signer.accounts().contains(from) {
-                        return signer.sign_transaction_from(from, typed_tx);
-                    }
-                }
+        for signer in self.signers.iter() {
+            if signer.accounts().contains(from) {
+                return signer.sign_transaction_from(from, typed_tx);
             }
         }
         Err(BlockchainError::NoSignerAvailable)
@@ -2842,6 +2870,7 @@ impl EthApi<FoundryNetwork> {
         self.get_transaction_count(address, block_number).await.map(U256::from)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns a protocol or EIP-8130 channel nonce.
     #[cfg(feature = "base")]
     pub async fn transaction_count_with_key(
@@ -2875,6 +2904,7 @@ impl EthApi<FoundryNetwork> {
             .await?;
         Ok(Eip8130Nonce::decode_channel_nonce(U256::from_be_bytes(word.0)))
     }
+    */
 
     /// Returns the number of transactions in a block with given block number.
     ///
@@ -2994,6 +3024,7 @@ impl EthApi<FoundryNetwork> {
         // pre-validate
         self.backend.validate_pool_transaction(&pending_transaction).await?;
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let (requires, provides) =
             if let Some(markers) = self.eip8130_nonce_markers(&pending_transaction).await? {
@@ -3001,7 +3032,8 @@ impl EthApi<FoundryNetwork> {
             } else {
                 nonce_markers(&pending_transaction, nonce, on_chain_nonce, from)
             };
-        #[cfg(not(feature = "base"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let (requires, provides) = nonce_markers(&pending_transaction, nonce, on_chain_nonce, from);
 
         self.add_pending_transaction(pending_transaction, requires, provides)
@@ -3056,6 +3088,7 @@ impl EthApi<FoundryNetwork> {
         self.backend.validate_pool_transaction(&pending_transaction).await?;
 
         let on_chain_nonce = self.backend.current_nonce(from).await?;
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let (requires, provides) =
             if let Some(markers) = self.eip8130_nonce_markers(&pending_transaction).await? {
@@ -3063,7 +3096,8 @@ impl EthApi<FoundryNetwork> {
             } else {
                 nonce_markers(&pending_transaction, nonce, on_chain_nonce, from)
             };
-        #[cfg(not(feature = "base"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let (requires, provides) = nonce_markers(&pending_transaction, nonce, on_chain_nonce, from);
 
         self.add_pending_transaction(pending_transaction, requires, provides)
@@ -3180,13 +3214,17 @@ impl EthApi<FoundryNetwork> {
             trace!(target: "node", tx = ?transaction.hash(), ?classification, "classified transaction lane");
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let is_eip8130 = transaction.is_eip8130();
+        */
         let pending_transaction = PendingTransaction::new(transaction).map_err(|error| {
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             if is_eip8130 {
                 return BlockchainError::Eip8130TransactionRejected(error.to_string());
             }
+            */
             BlockchainError::RecoveryError(error)
         })?;
 
@@ -3195,6 +3233,7 @@ impl EthApi<FoundryNetwork> {
 
         let from = *pending_transaction.sender();
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let (requires, provides) =
             if let Some(markers) = self.eip8130_nonce_markers(&pending_transaction).await? {
@@ -3206,8 +3245,9 @@ impl EthApi<FoundryNetwork> {
                 let nonce = pending_transaction.transaction.nonce();
                 (required_marker(nonce, on_chain_nonce, from), vec![to_marker(nonce, from)])
             };
+        */
         // Tempo txs use a 2D nonce system — no sequential ordering by account nonce.
-        #[cfg(not(feature = "base"))]
+        // EVM2 migration: unconditional Ethereum fallback.
         let (requires, provides) = if let Some((requires, provides)) =
             tempo_parallel_nonce_markers(&pending_transaction)
         {
@@ -3391,6 +3431,7 @@ impl EthApi<FoundryNetwork> {
             return Ok(fork.call_raw(&request, Some(number.into())).await?);
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.backend.is_base()
             && serde_json::to_value(&request)
@@ -3400,6 +3441,7 @@ impl EthApi<FoundryNetwork> {
             let timestamp = self.backend.block_request_timestamp(&block_request).await?;
             self.backend.ensure_base_eip8130_active_at(timestamp)?;
         }
+        */
 
         let fees = FeeDetails::new(
             request.gas_price,
@@ -3621,6 +3663,7 @@ impl EthApi<FoundryNetwork> {
         }
         let typed_request = self.parse_transaction_request(request.clone())?;
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.backend.is_base()
             && serde_json::to_value(&request)
@@ -3633,6 +3676,7 @@ impl EthApi<FoundryNetwork> {
                 "eth_createAccessList does not support EIP-8130 transaction requests".to_string(),
             ));
         }
+        */
 
         self.backend
             .with_database_at_and_context(Some(block_request), |state, block_env, monad_context| {
@@ -4400,6 +4444,7 @@ impl EthApi<FoundryNetwork> {
         Ok(())
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Recognizes a canonical Monad protocol envelope without requiring its reserved sender to be
     /// globally impersonated or recoverable from the envelope signature.
     #[cfg(feature = "monad")]
@@ -4423,6 +4468,7 @@ impl EthApi<FoundryNetwork> {
             .is_ok_and(|call| call.is_some())
             .then_some(pending)
     }
+    */
 
     /// Reorg the chain to a specific depth and mine new blocks back to the canonical height.
     ///
@@ -4499,14 +4545,14 @@ impl EthApi<FoundryNetwork> {
                         let decoded = FoundryTxEnvelope::decode_2718(&mut data)
                             .map_err(|_| BlockchainError::FailedToDecodeSignedTransaction)?;
                         let protocol_pending = {
+                            /* EVM2 migration: disabled non-Ethereum execution.
                             #[cfg(feature = "monad")]
                             {
                                 self.monad_protocol_reorg_transaction(decoded.clone())
                             }
-                            #[cfg(not(feature = "monad"))]
-                            {
-                                None
-                            }
+                            */
+                            // EVM2 migration: unconditional Ethereum fallback.
+                            None
                         };
                         if let Some(pending) = protocol_pending {
                             pending
@@ -4545,6 +4591,7 @@ impl EthApi<FoundryNetwork> {
                         *curr_nonce += 1;
 
                         let protocol_pending = {
+                            /* EVM2 migration: disabled non-Ethereum execution.
                             #[cfg(feature = "monad")]
                             {
                                 if from == monad_revm::staking::constants::SYSTEM_ADDRESS {
@@ -4555,10 +4602,9 @@ impl EthApi<FoundryNetwork> {
                                     None
                                 }
                             }
-                            #[cfg(not(feature = "monad"))]
-                            {
-                                None
-                            }
+                            */
+                            // EVM2 migration: unconditional Ethereum fallback.
+                            None
                         };
                         if let Some(pending) = protocol_pending {
                             pending
@@ -4678,6 +4724,7 @@ impl EthApi<FoundryNetwork> {
         // pre-validate
         self.backend.validate_pool_transaction(&pending_transaction).await?;
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         let (requires, provides) =
             if let Some(markers) = self.eip8130_nonce_markers(&pending_transaction).await? {
@@ -4685,7 +4732,8 @@ impl EthApi<FoundryNetwork> {
             } else {
                 nonce_markers(&pending_transaction, nonce, on_chain_nonce, from)
             };
-        #[cfg(not(feature = "base"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         let (requires, provides) = nonce_markers(&pending_transaction, nonce, on_chain_nonce, from);
 
         self.add_pending_transaction(pending_transaction, requires, provides)
@@ -5214,6 +5262,7 @@ impl EthApi<FoundryNetwork> {
         Ok(*tx.hash())
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns Base EIP-8130 channel/replay markers when the transaction does not use the
     /// protocol nonce lane.
     #[cfg(feature = "base")]
@@ -5281,7 +5330,9 @@ impl EthApi<FoundryNetwork> {
 
         Ok(None)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Enforces Base's default ten-percent EIP-8130 replacement price bump.
     #[cfg(feature = "base")]
     fn ensure_eip8130_replacement_price(
@@ -5313,7 +5364,9 @@ impl EthApi<FoundryNetwork> {
         }
         Ok(())
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Reserves each payer's maximum EIP-8130 fee across pending transactions.
     #[cfg(feature = "base")]
     async fn ensure_eip8130_payer_reservation(
@@ -5361,6 +5414,7 @@ impl EthApi<FoundryNetwork> {
         }
         Ok(())
     }
+    */
 
     /// additional validation against hardfork
     fn ensure_typed_transaction_supported(&self, tx: &FoundryTxEnvelope) -> Result<()> {
@@ -5369,14 +5423,20 @@ impl EthApi<FoundryNetwork> {
             FoundryTxEnvelope::Eip1559(_) => self.backend.ensure_eip1559_active(),
             FoundryTxEnvelope::Eip4844(_) => self.backend.ensure_eip4844_active(),
             FoundryTxEnvelope::Eip7702(_) => self.backend.ensure_eip7702_active(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             FoundryTxEnvelope::Deposit(_) => self.backend.ensure_deposits_active(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             FoundryTxEnvelope::PostExec(_) => Err(BlockchainError::InvalidTransactionRequest(
                 "not implemented for post-exec tx".to_string(),
             )),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             FoundryTxEnvelope::Eip8130(_) => self.backend.ensure_base_eip8130_submission_active(),
+            */
             FoundryTxEnvelope::Legacy(_) => Ok(()),
             FoundryTxEnvelope::Tempo(_) => self.backend.ensure_tempo_active(),
         }
@@ -5474,6 +5534,7 @@ fn required_marker(provided_nonce: u64, on_chain_nonce: u64, from: Address) -> V
     if on_chain_nonce <= prev_nonce { vec![to_marker(prev_nonce, from)] } else { Vec::new() }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 fn eip8130_channel_marker(sender: Address, nonce_key: U256, nonce_sequence: u64) -> TxMarker {
     let mut marker = b"base-eip8130-channel".to_vec();
@@ -5482,13 +5543,16 @@ fn eip8130_channel_marker(sender: Address, nonce_key: U256, nonce_sequence: u64)
     marker.extend_from_slice(&nonce_sequence.to_be_bytes());
     marker
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 fn eip8130_replay_marker(replay_id: B256) -> TxMarker {
     let mut marker = b"base-eip8130-replay".to_vec();
     marker.extend_from_slice(replay_id.as_slice());
     marker
 }
+*/
 
 fn tempo_parallel_nonce_markers(
     pending_transaction: &PendingTransaction<FoundryTxEnvelope>,
@@ -5571,6 +5635,7 @@ fn encode_rpc_transaction(transaction: &AnyRpcTransaction) -> Result<Bytes> {
 
 fn txpool_transaction_key(pending_transaction: &PendingTransaction<FoundryTxEnvelope>) -> String {
     match pending_transaction.transaction.as_ref() {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         FoundryTxEnvelope::Eip8130(signed) if !signed.tx().nonce_key.is_zero() => {
             if signed.tx().nonce_key == Eip8130Constants::NONCE_KEY_MAX {
@@ -5578,6 +5643,7 @@ fn txpool_transaction_key(pending_transaction: &PendingTransaction<FoundryTxEnve
             }
             format!("{}:{}", signed.tx().nonce_key, signed.tx().nonce_sequence)
         }
+        */
         FoundryTxEnvelope::Tempo(tx) if !tx.tx().nonce_key.is_zero() => {
             let tx = tx.tx();
             format!("{}:{}", tx.nonce_key, tx.nonce)
@@ -5746,6 +5812,7 @@ mod tests {
     use super::*;
     use crate::{NodeConfig, spawn};
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[tokio::test(flavor = "multi_thread")]
     async fn base_requests_are_rejected_without_execution() {
@@ -5759,6 +5826,7 @@ mod tests {
             ));
         }
     }
+    */
 
     #[tokio::test(flavor = "multi_thread")]
     async fn set_rpc_url_installs_context_equivalent_identity_with_new_instance() {

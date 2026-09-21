@@ -4846,6 +4846,7 @@ Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing te
 "#]]);
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest_init!(test_fuzz_monad_cheatcode_revert_is_failure, |prj, cmd| {
     prj.update_config(|config| {
@@ -4898,6 +4899,7 @@ Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing te
 
 "#]]);
 });
+*/
 
 forgetest_init!(forge_fuzz_replay_respects_fuzz_fail_on_revert, |prj, cmd| {
     prj.update_config(|config| {

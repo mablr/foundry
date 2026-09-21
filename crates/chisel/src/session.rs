@@ -302,8 +302,10 @@ mod tests {
     use foundry_evm::core::evm::EthEvmNetwork;
     use semver::Version;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     use foundry_evm::core::{constants::MONAD_CHEATCODE_ADDRESS, evm::MonadEvmNetwork};
+    */
 
     /// Deleted sessions must not cause the next ID to collide with an existing file.
     #[test]
@@ -366,6 +368,7 @@ mod tests {
         assert!(!session.source.config.foundry_config.force);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[test]
     fn deserialized_sessions_use_active_monad_tooling() {
@@ -387,6 +390,7 @@ mod tests {
             &[MONAD_CHEATCODE_ADDRESS]
         );
     }
+    */
 
     /// A session id containing a path separator lets `chisel-<id>.json` escape the cache
     /// directory once resolved: `chisel-x/../../../foo.json` has real `..` path components

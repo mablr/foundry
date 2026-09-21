@@ -11,11 +11,15 @@ use foundry_common::provider::ProviderBuilder;
 use foundry_config::Config;
 use foundry_evm_networks::NetworkVariant;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_network::Base;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_network::Optimism;
+*/
 
 /// CLI arguments for `cast da-estimate`.
 #[derive(Debug, Parser)]
@@ -38,10 +42,14 @@ impl DAEstimateArgs {
             None => super::resolve_transaction_network(&config, false).await?,
         };
         match network {
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             NetworkVariant::Base => da_estimate::<Base>(&config, block).await,
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             NetworkVariant::Optimism => da_estimate::<Optimism>(&config, block).await,
+            */
             NetworkVariant::Ethereum => da_estimate::<Ethereum>(&config, block).await,
             other => eyre::bail!(
                 "DA estimation is not supported for {other:?}: EIP-4844 blob transactions are not available on this network"

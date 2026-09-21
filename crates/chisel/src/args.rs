@@ -8,7 +8,7 @@ use foundry_cli::utils::{self, LoadConfig};
 use foundry_common::fs;
 use foundry_config::Config;
 use foundry_evm::{
-    core::evm::{EthEvmNetwork, FoundryEvmNetwork, TempoEvmNetwork},
+    core::evm::{EthEvmNetwork, FoundryEvmNetwork},
     executors::ExecutorBuilder,
     opts::EvmOpts,
 };
@@ -17,14 +17,20 @@ use rustyline::{Editor, config::Configurer, error::ReadlineError};
 use std::{ops::ControlFlow, path::PathBuf};
 use yansi::Paint;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm::core::evm::BaseEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use foundry_evm::core::evm::MonadEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::core::evm::OpEvmNetwork;
+*/
 
 /// Run the `chisel` command line interface.
 pub fn run() -> Result<()> {
@@ -68,17 +74,23 @@ pub async fn run_command(args: Chisel) -> Result<()> {
     let local_chain_id = evm_opts.env.chain_id.or(config.chain.map(|chain| chain.id()));
 
     if evm_opts.networks.is_tempo() {
-        return Box::pin(run_command_with_network::<TempoEvmNetwork>(
-            args,
-            config,
-            evm_opts,
-            ExecutorBuilder::<TempoEvmNetwork>::new(),
-            local_networks,
-            local_chain_id,
-        ))
-        .await;
+        /* EVM2 migration: disabled non-Ethereum execution.
+
+                return Box::pin(run_command_with_network::<TempoEvmNetwork>(
+                    args,
+                    config,
+                    evm_opts,
+                    ExecutorBuilder::<TempoEvmNetwork>::new(),
+                    local_networks,
+                    local_chain_id,
+                ))
+                .await;
+
+        */
+        eyre::bail!("Tempo execution is disabled on the Ethereum-only EVM2 migration branch");
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     if evm_opts.networks.is_base() {
         return Box::pin(run_command_with_network::<BaseEvmNetwork>(
@@ -91,7 +103,9 @@ pub async fn run_command(args: Chisel) -> Result<()> {
         ))
         .await;
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     if evm_opts.networks.is_monad() {
         return Box::pin(run_command_with_network::<MonadEvmNetwork>(
@@ -104,7 +118,9 @@ pub async fn run_command(args: Chisel) -> Result<()> {
         ))
         .await;
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     if evm_opts.networks.is_optimism() {
         return Box::pin(run_command_with_network::<OpEvmNetwork>(
@@ -117,6 +133,7 @@ pub async fn run_command(args: Chisel) -> Result<()> {
         ))
         .await;
     }
+    */
 
     Box::pin(run_command_with_network::<EthEvmNetwork>(
         args,
@@ -302,7 +319,7 @@ mod tests {
     /// Base chain IDs resolved to Optimism before Base support existed, so a build without the
     /// `base` feature — which is what release binaries ship — must keep resolving them that way.
     #[test]
-    #[cfg(all(not(feature = "base"), feature = "optimism"))]
+    #[cfg(all(not(any()), any()))]
     fn chain_id_without_base_still_resolves_to_optimism() {
         for chain_id in [8453, 84532] {
             let networks = infer_network_from_chain_id(NetworkConfigs::default(), Some(chain_id))
@@ -312,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn chain_id_rejects_disabled_monad_network() {
         let error = infer_network_from_chain_id(NetworkConfigs::default(), Some(143)).unwrap_err();
 

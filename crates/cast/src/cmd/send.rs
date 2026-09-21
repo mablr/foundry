@@ -32,8 +32,10 @@ use tempo_contracts::precompiles::{TIP20_FACTORY_ADDRESS, is_iso4217_currency};
 use tempo_primitives::transaction::FEE_PAYER_SIGNATURE_MARKER;
 use url::Url;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_network::Base;
+*/
 
 /// CLI arguments for `cast send`.
 #[derive(Debug, Parser)]
@@ -152,11 +154,13 @@ impl SendTxArgs {
             return self.run_generic::<TempoNetwork>(signer, tempo_access_key).await;
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if network.is_base() {
             super::validate_base_transaction_options(&self.tx)?;
             return self.run_generic::<Base>(signer, None).await;
         }
+        */
 
         self.run_generic::<Ethereum>(signer, None).await
     }

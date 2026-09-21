@@ -17,10 +17,14 @@ use revm::{
     primitives::{TxKind, hardfork::SpecId},
 };
 use std::fmt::Debug;
+/* EVM2 migration: disabled non-Ethereum execution.
 use tempo_revm::{TempoBlockEnv, TempoTxEnv};
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_revm::transaction::deposit::DEPOSIT_TRANSACTION_TYPE;
+*/
 
 pub use alloy_evm::EvmEnv;
 
@@ -57,15 +61,17 @@ pub trait FoundryBlock: Block {
         _base_fee_update_fraction: u64,
     );
 
-    // Tempo methods
+    /* EVM2 migration: disabled non-Ethereum execution.
+        // Tempo methods
 
-    /// Returns the milliseconds portion of the block timestamp.
-    fn timestamp_millis_part(&self) -> u64 {
-        0
-    }
+        /// Returns the milliseconds portion of the block timestamp.
+        fn timestamp_millis_part(&self) -> u64 {
+            0
+        }
 
-    /// Sets the milliseconds portion of the block timestamp.
-    fn set_timestamp_millis_part(&mut self, _millis: u64) {}
+        /// Sets the milliseconds portion of the block timestamp.
+        fn set_timestamp_millis_part(&mut self, _millis: u64) {}
+    */
 }
 
 impl FoundryBlock for BlockEnv {
@@ -110,6 +116,7 @@ impl FoundryBlock for BlockEnv {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 impl FoundryBlock for TempoBlockEnv {
     fn set_number(&mut self, number: U256) {
         self.inner.set_number(number);
@@ -158,6 +165,7 @@ impl FoundryBlock for TempoBlockEnv {
         self.timestamp_millis_part = millis;
     }
 }
+*/
 
 /// Extension of [`Transaction`] with mutable setters, allowing EVM-agnostic mutation of transaction
 /// fields.
@@ -211,69 +219,73 @@ pub trait FoundryTransaction: Transaction {
         *self.authorization_list_mut() = auth.into_iter().map(Either::Left).collect();
     }
 
-    // `OpTransaction` methods
+    /* EVM2 migration: disabled non-Ethereum execution.
+        // `OpTransaction` methods
 
-    /// Enveloped transaction bytes.
-    fn enveloped_tx(&self) -> Option<&Bytes> {
-        None
-    }
-
-    /// Set Enveloped transaction bytes.
-    fn set_enveloped_tx(&mut self, _bytes: Bytes) {}
-
-    /// Source hash of the deposit transaction.
-    fn source_hash(&self) -> Option<B256> {
-        None
-    }
-
-    /// Sets source hash of the deposit transaction.
-    fn set_source_hash(&mut self, _source_hash: B256) {}
-
-    /// Mint of the deposit transaction
-    fn mint(&self) -> Option<u128> {
-        None
-    }
-
-    /// Sets mint of the deposit transaction.
-    fn set_mint(&mut self, _mint: u128) {}
-
-    /// Whether the transaction is a system transaction
-    fn is_system_transaction(&self) -> bool {
-        false
-    }
-
-    /// Sets whether the transaction is a system transaction
-    fn set_system_transaction(&mut self, _is_system_transaction: bool) {}
-
-    /// Returns `true` if transaction is an Optimism deposit transaction.
-    fn is_deposit(&self) -> bool {
-        #[cfg(feature = "optimism")]
-        {
-            self.tx_type() == DEPOSIT_TRANSACTION_TYPE
+        /// Enveloped transaction bytes.
+        fn enveloped_tx(&self) -> Option<&Bytes> {
+            None
         }
-        #[cfg(not(feature = "optimism"))]
-        {
+
+        /// Set Enveloped transaction bytes.
+        fn set_enveloped_tx(&mut self, _bytes: Bytes) {}
+
+        /// Source hash of the deposit transaction.
+        fn source_hash(&self) -> Option<B256> {
+            None
+        }
+
+        /// Sets source hash of the deposit transaction.
+        fn set_source_hash(&mut self, _source_hash: B256) {}
+
+        /// Mint of the deposit transaction
+        fn mint(&self) -> Option<u128> {
+            None
+        }
+
+        /// Sets mint of the deposit transaction.
+        fn set_mint(&mut self, _mint: u128) {}
+
+        /// Whether the transaction is a system transaction
+        fn is_system_transaction(&self) -> bool {
             false
         }
-    }
 
-    // Tempo methods
+        /// Sets whether the transaction is a system transaction
+        fn set_system_transaction(&mut self, _is_system_transaction: bool) {}
 
-    /// Returns the fee token address for this transaction.
-    fn fee_token(&self) -> Option<Address> {
-        None
-    }
+        /// Returns `true` if transaction is an Optimism deposit transaction.
+        fn is_deposit(&self) -> bool {
+            /* EVM2 migration: disabled non-Ethereum execution.
+    #[cfg(any())]
+            {
+                self.tx_type() == DEPOSIT_TRANSACTION_TYPE
+            }
+    */
+            // EVM2 migration: unconditional Ethereum fallback.
+            {
+                false
+            }
+        }
 
-    /// Sets the fee token address for this transaction.
-    fn set_fee_token(&mut self, _token: Option<Address>) {}
+        // Tempo methods
 
-    /// Returns the fee payer for this transaction.
-    fn fee_payer(&self) -> Option<Option<Address>> {
-        None
-    }
+        /// Returns the fee token address for this transaction.
+        fn fee_token(&self) -> Option<Address> {
+            None
+        }
 
-    /// Sets the fee payer for this transaction.
-    fn set_fee_payer(&mut self, _payer: Option<Option<Address>>) {}
+        /// Sets the fee token address for this transaction.
+        fn set_fee_token(&mut self, _token: Option<Address>) {}
+
+        /// Returns the fee payer for this transaction.
+        fn fee_payer(&self) -> Option<Option<Address>> {
+            None
+        }
+
+        /// Sets the fee payer for this transaction.
+        fn set_fee_payer(&mut self, _payer: Option<Option<Address>>) {}
+    */
 }
 
 impl FoundryTransaction for TxEnv {
@@ -336,6 +348,7 @@ impl FoundryTransaction for TxEnv {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 impl FoundryTransaction for TempoTxEnv {
     fn set_tx_type(&mut self, tx_type: u8) {
         self.inner.set_tx_type(tx_type);
@@ -422,6 +435,7 @@ impl FoundryTransaction for TempoTxEnv {
         self.fee_payer = payer;
     }
 }
+*/
 
 /// Foundry extension for chain context type
 ///
@@ -474,6 +488,7 @@ impl<SPEC: Into<SpecId> + Copy + Debug> FoundryCfg for CfgEnv<SPEC> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 impl FoundryCfg for monad_revm::MonadCfgEnv {
     fn cfg_env(&self) -> &CfgEnv<Self::Spec> {
@@ -489,6 +504,7 @@ impl FoundryCfg for monad_revm::MonadCfgEnv {
         self.inner_mut().set_gas_params(monad_revm::instructions::monad_gas_params(spec));
     }
 }
+*/
 
 /// Foundry extension for Journal type
 pub trait FoundryJournal: JournalExt {
@@ -498,6 +514,7 @@ pub trait FoundryJournal: JournalExt {
     /// Reference to the journal inner.
     fn journal_inner(&self) -> &JournaledState;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Captures Monad's reserve-balance tracker for the active transaction.
     #[cfg(feature = "monad")]
     fn capture_reserve_balance(
@@ -505,7 +522,9 @@ pub trait FoundryJournal: JournalExt {
     ) -> monad_revm::reserve_balance::tracker::ReserveBalanceTracker {
         monad_revm::reserve_balance::tracker::ReserveBalanceTracker::default()
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Restores Monad's reserve-balance tracker for the active transaction.
     #[cfg(feature = "monad")]
     fn restore_reserve_balance(
@@ -513,7 +532,9 @@ pub trait FoundryJournal: JournalExt {
         _tracker: monad_revm::reserve_balance::tracker::ReserveBalanceTracker,
     ) {
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Whether transaction boundaries currently preserve the reserve-balance tracker, e.g. for
     /// an isolated call that models an inner call of the enclosing transaction rather than a
     /// new one.
@@ -521,10 +542,13 @@ pub trait FoundryJournal: JournalExt {
     fn preserves_reserve_balance(&self) -> bool {
         false
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Sets whether transaction boundaries preserve the reserve-balance tracker.
     #[cfg(feature = "monad")]
     fn set_preserve_reserve_balance(&mut self, _preserve: bool) {}
+    */
 }
 
 impl<DB: Database> FoundryJournal for Journal<DB> {
@@ -537,6 +561,7 @@ impl<DB: Database> FoundryJournal for Journal<DB> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 impl<DB: Database> FoundryJournal for monad_revm::MonadJournal<DB> {
     fn db_journal_inner_mut(&mut self) -> (&mut DB, &mut JournaledState) {
@@ -568,6 +593,7 @@ impl<DB: Database> FoundryJournal for monad_revm::MonadJournal<DB> {
         monad_revm::MonadJournalTr::set_preserve_reserve_balance_tracker(self, preserve);
     }
 }
+*/
 
 /// Extension trait providing mutable field access to block, tx, and cfg environments.
 ///
@@ -735,6 +761,7 @@ impl FromAnyRpcTransaction for TxEnv {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 impl FromAnyRpcTransaction for TempoTxEnv {
     fn from_any_rpc_transaction(tx: &AnyRpcTransaction) -> eyre::Result<Self> {
         if let Some(envelope) = tx.as_envelope() {
@@ -767,7 +794,9 @@ impl FromAnyRpcTransaction for TempoTxEnv {
         eyre::bail!("cannot convert unknown transaction type to TempoTxEnv");
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 mod base {
     use super::*;
@@ -893,7 +922,9 @@ mod base {
         }
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 mod optimism {
     use super::*;
@@ -1112,6 +1143,7 @@ mod optimism {
         }
     }
 }
+*/
 
 #[cfg(test)]
 mod tests {
@@ -1122,17 +1154,27 @@ mod tests {
     use alloy_primitives::Signature;
     use alloy_rpc_types::{Transaction as RpcTransaction, TransactionInfo};
     use alloy_serde::WithOtherFields;
+    /* EVM2 migration: disabled non-Ethereum execution.
     use foundry_evm_hardforks::TempoHardfork;
+    */
     use revm::database::EmptyDB;
+    /* EVM2 migration: disabled non-Ethereum execution.
     use std::num::NonZeroU64;
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     use tempo_alloy::primitives::{
         AASigned, TempoSignature, TempoTransaction, TempoTxEnvelope,
         transaction::{Call, PrimitiveSignature},
     };
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     use tempo_evm::TempoEvmFactory;
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use base_common_evm::{BaseEvmFactory, BaseSpecId, BaseTransaction, BaseUpgrade};
+    */
 
     #[test]
     fn eth_evm_foundry_context_ext_implementation() {
@@ -1157,6 +1199,7 @@ mod tests {
         evm.ctx_mut().set_evm(evm_env);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn base_evm_foundry_context_ext_implementation() {
@@ -1176,7 +1219,9 @@ mod tests {
         let evm_env = evm.ctx().evm_clone();
         evm.ctx_mut().set_evm(evm_env);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn monad_evm_foundry_context_ext_implementation() {
@@ -1212,7 +1257,9 @@ mod tests {
         assert_eq!(evm.ctx().journal_inner().depth, 2);
         assert!(evm.ctx().journal().preserves_reserve_balance());
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn monad_memory_limit_follows_hardfork_transitions() {
@@ -1240,7 +1287,9 @@ mod tests {
             monad_revm::instructions::monad_gas_params(monad_revm::MonadHardfork::MonadEight)
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     fn tempo_evm_foundry_context_ext_implementation() {
         let mut evm = TempoEvmFactory::default().create_evm(EmptyDB::default(), EvmEnv::default());
@@ -1263,7 +1312,9 @@ mod tests {
         let evm_env = evm.ctx().evm_clone();
         evm.ctx_mut().set_evm(evm_env);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     fn tempo_tx_env_setters_update_aa_call_payload() {
         let old_to = TxKind::Call(Address::with_last_byte(0xAA));
@@ -1302,6 +1353,7 @@ mod tests {
         assert_eq!(call.value, new_value);
         assert_eq!(call.input, new_input);
     }
+    */
 
     fn make_signed_eip1559() -> Signed<TxEip1559> {
         Signed::new_unchecked(
@@ -1337,6 +1389,7 @@ mod tests {
         assert_eq!(tx_env.kind, TxKind::Call(Address::with_last_byte(0xBB)));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn from_any_rpc_transaction_for_base_eth_envelope() {
@@ -1355,6 +1408,7 @@ mod tests {
         assert_eq!(tx_env.base.value, U256::from(101));
         assert!(tx_env.enveloped_tx.is_some());
     }
+    */
 
     #[test]
     fn from_any_rpc_transaction_unknown_envelope_errors() {
@@ -1429,6 +1483,7 @@ mod tests {
         assert_eq!(tx_env.chain_id, Some(42_220));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     fn from_any_rpc_transaction_for_tempo_eth_envelope() {
         let from = Address::random();
@@ -1446,7 +1501,9 @@ mod tests {
         assert_eq!(tx_env.inner.value, U256::from(101));
         assert_eq!(tx_env.fee_token, None);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     fn from_any_rpc_transaction_for_tempo_aa() {
         let from = Address::random();
@@ -1485,7 +1542,9 @@ mod tests {
         assert_eq!(tx_env.inner.chain_id, Some(42431));
         assert_eq!(tx_env.fee_token, fee_token);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     mod optimism {
         use super::*;
@@ -1577,4 +1636,5 @@ mod tests {
             assert!(op_tx_env.deposit.is_system_transaction);
         }
     }
+    */
 }

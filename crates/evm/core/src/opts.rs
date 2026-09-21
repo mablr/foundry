@@ -1587,11 +1587,15 @@ mod tests {
     };
     use revm::context::{BlockEnv, TxEnv};
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_evm_hardforks::BaseUpgrade;
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     use op_revm::OpSpecId;
+    */
 
     fn resolved_context(block_number: BlockNumber) -> ForkContext {
         ForkContext {
@@ -1903,6 +1907,7 @@ mod tests {
         assert!(evm_opts.fork_block_number_is_inferred);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     fn monad_env(timestamp: u64) -> EvmEnv<foundry_evm_hardforks::MonadHardfork, BlockEnv> {
         let mut block = BlockEnv::default();
@@ -1911,7 +1916,9 @@ mod tests {
         cfg.chain_id = NamedChain::Monad as u64;
         EvmEnv::new(cfg, block)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn resolve_execution_spec_uses_monad_ten_activation_timestamp() {
@@ -1945,7 +1952,9 @@ mod tests {
         );
         assert_eq!(after.cfg_env.spec, foundry_evm_hardforks::MonadHardfork::MonadTen);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn resolve_execution_spec_prefers_exact_endpoint_hardfork() {
@@ -1968,7 +1977,9 @@ mod tests {
         );
         assert_eq!(env.cfg_env.spec, foundry_evm_hardforks::MonadHardfork::MonadEight);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn resolve_execution_spec_ignores_schedule_for_local_env() {
@@ -1989,6 +2000,7 @@ mod tests {
         );
         assert_eq!(env.cfg_env.spec, foundry_evm_hardforks::MonadHardfork::MonadTen);
     }
+    */
 
     #[test]
     fn resolve_execution_spec_preserves_ethereum_config_for_local_forks() {
@@ -2048,6 +2060,7 @@ mod tests {
         assert_eq!(env.cfg_env.spec, SpecId::from(expected));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "optimism")]
     fn resolve_execution_spec_uses_optimism_schedule_for_local_forks() {
@@ -2072,9 +2085,10 @@ mod tests {
         );
         assert_eq!(env.cfg_env.spec, OpSpecId::from_foundry_hardfork(expected).unwrap());
     }
+    */
 
     #[test]
-    #[cfg(all(feature = "optimism", not(feature = "base")))]
+    #[cfg(all(any(), not(any())))]
     fn resolve_execution_spec_preserves_config_for_base_op_fallback() {
         let config = Config { evm_version: EvmVersion::Osaka, ..Default::default() };
         let mut block = BlockEnv::default();
@@ -2094,6 +2108,7 @@ mod tests {
         assert_eq!(env.cfg_env.spec, OpSpecId::KARST);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn resolve_execution_spec_honors_explicit_precedence() {
@@ -2130,7 +2145,9 @@ mod tests {
         );
         assert_eq!(env.cfg_env.spec, foundry_evm_hardforks::MonadHardfork::MonadEight);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "monad")]
     async fn fork_context_preserves_source_chain_with_execution_override() {
@@ -2173,6 +2190,7 @@ mod tests {
             Some(FoundryHardfork::Monad(foundry_evm_hardforks::MonadHardfork::MonadEight))
         );
     }
+    */
 
     #[tokio::test(flavor = "multi_thread")]
     async fn infer_network_default_and_custom_anvil_selects_ethereum() {
@@ -2189,10 +2207,14 @@ mod tests {
 
             assert_eq!(evm_opts.env.chain_id, Some(chain_id));
             assert!(!evm_opts.networks.is_tempo());
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             assert!(!evm_opts.networks.is_optimism());
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             assert!(!evm_opts.networks.is_base());
+            */
             assert!(!evm_opts.networks.is_celo());
             assert_eq!(evm_opts.networks, NetworkConfigs::default());
         }
@@ -2216,13 +2238,19 @@ mod tests {
 
     #[tokio::test]
     async fn clearing_fork_restores_inferred_network_defaults() {
-        let mut profiles = vec![NetworkConfigs::with_celo(), NetworkConfigs::with_tempo()];
+        let profiles = vec![NetworkConfigs::with_celo(), NetworkConfigs::with_tempo()];
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         profiles.push(NetworkConfigs::with_optimism());
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         profiles.push(NetworkConfigs::with_monad());
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         profiles.push(NetworkConfigs::with_base());
+        */
 
         for networks in profiles {
             let mut evm_opts = EvmOpts {
@@ -2280,6 +2308,7 @@ mod tests {
         assert_eq!(evm_opts.fork_network().await.unwrap(), (chain_id, NetworkVariant::Ethereum));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     #[cfg(feature = "base")]
     async fn base_endpoint_identity_uses_generic_chain_profile() {
@@ -2304,6 +2333,7 @@ mod tests {
         assert_eq!(identity.reported_hardfork, None);
         assert_eq!(identity.hardfork, None);
     }
+    */
 
     #[tokio::test(flavor = "multi_thread")]
     async fn fork_non_anvil_node_info_rpc_error_is_optional() {
@@ -2373,6 +2403,7 @@ mod tests {
         assert_eq!(NetworkVariant::from_known_chain_id(98_765_432).unwrap(), None);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn known_network_variant_classifies_monad() {
@@ -2381,9 +2412,10 @@ mod tests {
             Some(NetworkVariant::Monad)
         );
     }
+    */
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn known_network_variant_rejects_disabled_monad() {
         assert_eq!(
             NetworkVariant::from_known_chain_id(NamedChain::Monad as u64).unwrap_err(),
@@ -2391,6 +2423,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     async fn infer_network_tempo_anvil_via_node_info() {
         let (_api, handle) = anvil::spawn(anvil::NodeConfig::test_tempo()).await;
@@ -2405,6 +2438,7 @@ mod tests {
 
         assert!(evm_opts.networks.is_tempo(), "should detect tempo via anvil_nodeInfo");
     }
+    */
 
     #[tokio::test(flavor = "multi_thread")]
     async fn infer_network_tempo_propagates_unavailable_rpc() {
@@ -2541,6 +2575,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "monad")]
     async fn infer_network_monad_anvil_via_node_info() {
@@ -2562,7 +2597,9 @@ mod tests {
             );
         }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "monad")]
     async fn fork_context_carries_exact_monad_anvil_hardfork() {
@@ -2600,7 +2637,9 @@ mod tests {
         );
         assert_eq!(evm_env.cfg_env.spec, foundry_evm_hardforks::MonadHardfork::MonadEight);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "monad")]
     async fn fork_context_refreshes_identity_after_same_url_reset() {
@@ -2660,6 +2699,7 @@ mod tests {
             Some(FoundryHardfork::Monad(foundry_evm_hardforks::MonadHardfork::MonadNine))
         );
     }
+    */
 
     #[tokio::test(flavor = "multi_thread")]
     async fn expected_fork_endpoint_detects_same_url_reset() {
@@ -2703,6 +2743,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn unknown_endpoint_hardfork_is_optional_only_for_remote_execution() {
@@ -2732,7 +2773,9 @@ mod tests {
             Some(FoundryHardfork::Monad(foundry_evm_hardforks::MonadHardfork::MonadNine))
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "base")]
     fn unknown_base_endpoint_hardfork_is_optional_only_for_remote_execution() {
@@ -2755,7 +2798,9 @@ mod tests {
             Some(FoundryHardfork::Base(BaseUpgrade::Beryl))
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "monad")]
     async fn fork_network_detects_monad_anvil() {
@@ -2767,7 +2812,9 @@ mod tests {
             (NamedChain::AnvilHardhat as u64, NetworkVariant::Monad)
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "monad")]
     async fn infer_network_monad_propagates_unavailable_rpc() {
@@ -2781,7 +2828,9 @@ mod tests {
         assert!(error.to_string().contains("failed to retrieve chain ID"));
         assert!(evm_opts.networks.is_monad());
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "base")]
     async fn infer_network_base_propagates_unavailable_rpc() {
@@ -2797,6 +2846,7 @@ mod tests {
         assert!(evm_opts.networks.is_base());
         assert_eq!(evm_opts.fork_endpoint, None);
     }
+    */
 
     #[tokio::test(flavor = "multi_thread")]
     async fn flaky_infer_network_tempo_moderato_rpc() {

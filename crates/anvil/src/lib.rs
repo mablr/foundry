@@ -41,8 +41,10 @@ use tokio::{
 };
 use tracing_subscriber::EnvFilter;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_rpc_types as _;
+*/
 
 pub use foundry_evm::hardfork::EthereumHardfork;
 

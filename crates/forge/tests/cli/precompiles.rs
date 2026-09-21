@@ -1,7 +1,7 @@
 //! Contains various tests for `forge test` with precompiles.
 
 use foundry_evm_networks::NetworkConfigs;
-use foundry_test_utils::{str, util::OutputExt};
+use foundry_test_utils::str;
 
 forgetest_init!(precompile_trace_decoding, |prj, cmd| {
     prj.add_test(
@@ -369,6 +369,7 @@ contract PrecompileCheatcodeLoadTest is Test {
     cmd.args(["test", "--match-contract", "PrecompileCheatcodeLoadTest"]).assert_success();
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_init!(tempo_t5_hardfork_precompile_smoke, |prj, cmd| {
     prj.update_config(|config| {
         config.networks = NetworkConfigs::with_tempo();
@@ -420,7 +421,9 @@ contract TempoT5PrecompileSmokeTest is Test {
     assert!(stdout.contains("AddressRegistry::isImplicitlyApproved"), "{stdout}");
     assert!(stdout.contains("TIP20ChannelReserve::domainSeparator"), "{stdout}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_init!(tempo_t6_keychain_helpers_and_decoding, |prj, cmd| {
     prj.update_config(|config| {
         config.networks = NetworkConfigs::with_tempo();
@@ -578,7 +581,9 @@ contract TempoT6KeychainHelpersTest is Test {
     assert!(stdout.contains("TIP403Registry::validateReceivePolicy"), "{stdout}");
     assert!(stdout.contains("ReceivePolicyGuard::balanceOf"), "{stdout}");
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_init!(tempo_t8_current_committee_decoding, |prj, cmd| {
     prj.update_config(|config| {
         config.networks = NetworkConfigs::with_tempo();
@@ -635,6 +640,7 @@ contract TempoT8CurrentCommitteeTest is Test {
     assert!(stdout.contains("CurrentCommittee::setCommitteeMembers(1"), "{stdout}");
     assert!(stdout.contains("← [Revert] Unauthorized()"), "{stdout}");
 });
+*/
 
 // tests transfer using celo precompile.
 // <https://github.com/foundry-rs/foundry/issues/11622>

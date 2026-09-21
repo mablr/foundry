@@ -17,8 +17,10 @@ use foundry_evm_networks::NetworkConfigs;
 use revm::{Inspector, inspector::NoOpInspector, interpreter::CreateInputs};
 use revm_inspectors::access_list::AccessListInspector;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_rpc_types as _;
+*/
 
 /// Map keyed by breakpoints char to their location (contract address, pc)
 pub type Breakpoints = HashMap<char, (Address, usize)>;
@@ -47,7 +49,8 @@ pub mod ic;
 pub mod opts;
 pub mod precompiles;
 pub mod state_snapshot;
-pub mod tempo;
+// Disabled for the Ethereum-only EVM2 migration.
+// pub mod tempo;
 pub mod utils;
 
 /// Foundry-specific inspector methods, decoupled from any particular EVM context type.

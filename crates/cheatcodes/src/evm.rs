@@ -1105,8 +1105,10 @@ impl Cheatcode for deleteSnapshotCall {
         let result = ccx.ecx.db_mut().delete_state_snapshot(*snapshotId);
         ccx.state.env_overrides_snapshots.remove(snapshotId);
         ccx.state.fork_block_number_override_snapshots.remove(snapshotId);
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         ccx.state.context_snapshots.remove(snapshotId);
+        */
         ccx.state.delete_created_accounts_snapshot(*snapshotId);
         Ok(result.abi_encode())
     }
@@ -1118,8 +1120,10 @@ impl Cheatcode for deleteStateSnapshotCall {
         let result = ccx.ecx.db_mut().delete_state_snapshot(*snapshotId);
         ccx.state.env_overrides_snapshots.remove(snapshotId);
         ccx.state.fork_block_number_override_snapshots.remove(snapshotId);
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         ccx.state.context_snapshots.remove(snapshotId);
+        */
         ccx.state.delete_created_accounts_snapshot(*snapshotId);
         Ok(result.abi_encode())
     }
@@ -1132,8 +1136,10 @@ impl Cheatcode for deleteSnapshotsCall {
         ccx.ecx.db_mut().delete_state_snapshots();
         ccx.state.env_overrides_snapshots.clear();
         ccx.state.fork_block_number_override_snapshots.clear();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         ccx.state.context_snapshots.clear();
+        */
         ccx.state.clear_created_accounts_snapshots();
         Ok(Default::default())
     }
@@ -1145,8 +1151,10 @@ impl Cheatcode for deleteStateSnapshotsCall {
         ccx.ecx.db_mut().delete_state_snapshots();
         ccx.state.env_overrides_snapshots.clear();
         ccx.state.fork_block_number_override_snapshots.clear();
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         ccx.state.context_snapshots.clear();
+        */
         ccx.state.clear_created_accounts_snapshots();
         Ok(Default::default())
     }
@@ -1590,6 +1598,7 @@ fn inner_snapshot_state<FEN: FoundryEvmNetwork>(ccx: &mut CheatsCtxt<'_, '_, FEN
     // `Cheatcodes::env_overrides_snapshots`.
     ccx.state.env_overrides_snapshots.insert(id, all_env_overrides);
     ccx.state.fork_block_number_override_snapshots.insert(id, ccx.state.fork_block_number_override);
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     {
         use foundry_evm_core::FoundryJournal as _;
@@ -1598,6 +1607,7 @@ fn inner_snapshot_state<FEN: FoundryEvmNetwork>(ccx: &mut CheatsCtxt<'_, '_, FEN
             .context_snapshots
             .insert(id, (ccx.ecx.chain().clone(), ccx.ecx.journal().capture_reserve_balance()));
     }
+    */
     ccx.state.snapshot_created_accounts(id, fork_id);
     Ok(id.abi_encode())
 }
@@ -1661,6 +1671,7 @@ fn inner_revert_to_state<FEN: FoundryEvmNetwork>(
         RevertStateSnapshotAction::RevertKeep,
     ) {
         ccx.ecx.set_journal_inner(restored);
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         {
             use foundry_evm_core::FoundryJournal as _;
@@ -1670,6 +1681,7 @@ fn inner_revert_to_state<FEN: FoundryEvmNetwork>(
                 ccx.ecx.journal_mut().restore_reserve_balance(state.clone());
             }
         }
+        */
         refresh_chain_journal(ccx.ecx);
         ccx.ecx.set_evm(evm_env);
         // `RevertKeep` keeps the backend snapshot alive for further
@@ -1705,6 +1717,7 @@ fn inner_revert_to_state_and_delete<FEN: FoundryEvmNetwork>(
         RevertStateSnapshotAction::RevertRemove,
     ) {
         ccx.ecx.set_journal_inner(restored);
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         {
             use foundry_evm_core::FoundryJournal as _;
@@ -1714,6 +1727,7 @@ fn inner_revert_to_state_and_delete<FEN: FoundryEvmNetwork>(
                 ccx.ecx.journal_mut().restore_reserve_balance(state);
             }
         }
+        */
         refresh_chain_journal(ccx.ecx);
         ccx.ecx.set_evm(evm_env);
         if let Some(snap) = ccx.state.env_overrides_snapshots.remove(&snapshot_id) {

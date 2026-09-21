@@ -164,6 +164,7 @@ casttest!(mktx_eip7702_auth_disclosure_forced, async |_prj, cmd| {
     .stderr_eq(str![""]);
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(mktx_sponsor_hash_supports_address_auth, async |_prj, cmd| {
     let (_api, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
 
@@ -186,6 +187,7 @@ casttest!(mktx_sponsor_hash_supports_address_auth, async |_prj, cmd| {
 "#]])
     .stderr_eq(str![""]);
 });
+*/
 
 casttest!(mktx_signature, |_prj, cmd| {
     cmd.args([
@@ -510,6 +512,7 @@ casttest!(mktx_ethsign, async |_prj, cmd| {
 
 // tests that `cast mktx --tempo.lane <name>` resolves the lane against a `tempo.lanes.toml` file at
 // the project root, sets the corresponding `nonce_key` on the produced Tempo AA transaction.
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(mktx_tempo_lane_resolves_nonce_key, |prj, cmd| {
     // Write a shared lanes file at the project root.
     let lanes_path = prj.root().join("tempo.lanes.toml");
@@ -556,7 +559,9 @@ casttest!(mktx_tempo_lane_resolves_nonce_key, |prj, cmd| {
     assert!(envelope.is_aa(), "expected Tempo AA transaction, got: {envelope:?}");
     assert_eq!(envelope.nonce_key(), Some(U256::from(42_u64)));
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(batch_mktx_eip7702_auth_disclosure, async |_prj, cmd| {
     let args = [
         "batch-mktx",
@@ -595,6 +600,7 @@ Building batch transaction with 1 call(s)...
 
 "#]]);
 });
+*/
 
 casttest!(batch_mktx_ethsign_eip7702_auth_disclosure_declined, |_prj, cmd| {
     cmd.args([
@@ -714,6 +720,7 @@ casttest!(cast_mktx_eip7594_blob, |prj, cmd| {
     .assert_success();
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 casttest!(mktx_tempo_access_key_uses_alloy_wallet, async |_prj, cmd| {
     let (_, handle) = anvil::spawn(NodeConfig::test_tempo()).await;
     let output = cmd
@@ -760,3 +767,4 @@ casttest!(mktx_tempo_access_key_uses_alloy_wallet, async |_prj, cmd| {
         address!("0x70997970C51812dc3A010C7d01b50e0d17dc79C8")
     );
 });
+*/

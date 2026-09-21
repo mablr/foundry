@@ -91,10 +91,14 @@ impl<N: Network> Db for ForkedDatabase<N> {
             best_block_number: Some(best_number),
             blocks,
             transactions,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             monad_block_participants: Default::default(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             monad_block_replay_profiles: Default::default(),
+            */
             historical_states,
         }))
     }

@@ -132,7 +132,7 @@ alloy-signer-local.workspace = true
 rexpect.workspace = true
 
 [features]
-default = ["jemalloc", "asm-keccak", "optimism"]
+default = ["jemalloc", "asm-keccak", ]
 asm-keccak = ["alloy-primitives/asm-keccak", "revm/asm-keccak"]
 jemalloc = ["foundry-cli/jemalloc"]
 mimalloc = ["foundry-cli/mimalloc"]
@@ -141,38 +141,44 @@ aws-kms = ["foundry-wallets/aws-kms"]
 gcp-kms = ["foundry-wallets/gcp-kms"]
 turnkey = ["foundry-wallets/turnkey"]
 touch-id = ["foundry-wallets/touch-id"]
-monad = [
-    "anvil/monad",
-    "foundry-config/monad",
-    "foundry-evm/monad",
-    "foundry-evm-networks/monad",
-    "foundry-common/monad",
-    "foundry-cli/monad",
-    "forge-script/monad",
-    "forge-verify/monad",
-]
-base = [
-    "anvil/base",
-    "foundry-evm/base",
-    "foundry-evm-networks/base",
-    "foundry-evm-symbolic/base",
-    "foundry-common/base",
-    "foundry-config/base",
-    "foundry-cli/base",
-    "foundry-debugger/base",
-    "foundry-test-utils/base",
-    "forge-script/base",
-    "forge-verify/base",
-]
-optimism = [
-    "foundry-evm/optimism",
-    "foundry-evm-networks/optimism",
-    "foundry-common/optimism",
-    "foundry-cli/optimism",
-    "forge-script/optimism",
-    "forge-verify/optimism",
-    "forge-doc/optimism",
-    "forge-fmt/optimism",
-    "forge-lint/optimism",
-    "forge-sol-macro-gen/optimism",
-]
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = [
+#     "anvil/monad",
+#     "foundry-config/monad",
+#     "foundry-evm/monad",
+#     "foundry-evm-networks/monad",
+#     "foundry-common/monad",
+#     "foundry-cli/monad",
+#     "forge-script/monad",
+#     "forge-verify/monad",
+# ]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "anvil/base",
+#     "foundry-evm/base",
+#     "foundry-evm-networks/base",
+#     "foundry-evm-symbolic/base",
+#     "foundry-common/base",
+#     "foundry-config/base",
+#     "foundry-cli/base",
+#     "foundry-debugger/base",
+#     "foundry-test-utils/base",
+#     "forge-script/base",
+#     "forge-verify/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "foundry-evm/optimism",
+#     "foundry-evm-networks/optimism",
+#     "foundry-common/optimism",
+#     "foundry-cli/optimism",
+#     "forge-script/optimism",
+#     "forge-verify/optimism",
+#     "forge-doc/optimism",
+#     "forge-fmt/optimism",
+#     "forge-lint/optimism",
+#     "forge-sol-macro-gen/optimism",
+# ]
+optimism = []

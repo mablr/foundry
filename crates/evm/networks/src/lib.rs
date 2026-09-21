@@ -40,19 +40,27 @@ use tempo_contracts::precompiles::{
     VALIDATOR_CONFIG_ADDRESS, VALIDATOR_CONFIG_V2_ADDRESS,
 };
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_precompiles::{
     ActivationRegistryStorage, B20FactoryStorage, NonceManagerStorage, PolicyRegistryStorage,
     TxContextStorage,
 };
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm_hardforks::BaseUpgrade;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm_hardforks::OpHardfork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 type MonadHardfork = foundry_evm_hardforks::MonadHardfork;
+*/
 
 /// The Monad cheatcode handler address.
 pub const MONAD_CHEATCODE_ADDRESS: Address = address!("0xc0FFeeCD43A10e1C2b0De63c6CDCFe5B7d0e0CEA");
@@ -60,8 +68,10 @@ pub const MONAD_CHEATCODE_ADDRESS: Address = address!("0xc0FFeeCD43A10e1C2b0De63
 pub mod arbitrum;
 pub mod celo;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 mod optimism;
+*/
 
 const TEMPO_PRECOMPILES: &[(&str, Address)] = &[
     ("Nonce", NONCE_PRECOMPILE_ADDRESS),
@@ -80,18 +90,23 @@ const TEMPO_PRECOMPILES: &[(&str, Address)] = &[
     ("CurrentCommittee", CURRENT_COMMITTEE_ADDRESS),
 ];
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 const MONAD_PRECOMPILE_LABELS: &[(&str, Address)] = &[
     ("Staking", monad_revm::staking::STAKING_ADDRESS),
     ("ReserveBalance", monad_revm::reserve_balance::abi::RESERVE_BALANCE_ADDRESS),
 ];
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 const MONAD_PRECOMPILES: &[(&str, Address)] = &[
     ("MonadStaking", monad_revm::staking::STAKING_ADDRESS),
     ("MonadReserveBalance", monad_revm::reserve_balance::abi::RESERVE_BALANCE_ADDRESS),
 ];
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 const BASE_PRECOMPILES: &[(&str, Address)] = &[
     ("B20Factory", B20FactoryStorage::ADDRESS),
@@ -100,7 +115,9 @@ const BASE_PRECOMPILES: &[(&str, Address)] = &[
     ("TxContext", TxContextStorage::ADDRESS),
     ("NonceManager", NonceManagerStorage::ADDRESS),
 ];
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// All fixed Base precompile addresses.
 #[cfg(feature = "base")]
 pub const BASE_PRECOMPILE_ADDRESSES: &[Address] = &[
@@ -110,7 +127,9 @@ pub const BASE_PRECOMPILE_ADDRESSES: &[Address] = &[
     TxContextStorage::ADDRESS,
     NonceManagerStorage::ADDRESS,
 ];
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Fixed Base precompiles that expose at least one function returning no data.
 ///
 /// Solidity guards high-level calls to such functions with an `extcodesize` check, which a
@@ -125,6 +144,7 @@ pub const BASE_PRECOMPILE_ADDRESSES: &[Address] = &[
 #[cfg(feature = "base")]
 pub const BASE_CODE_SENTINEL_ADDRESSES: &[Address] =
     &[ActivationRegistryStorage::ADDRESS, PolicyRegistryStorage::ADDRESS];
+*/
 
 /// BSC secp256r1 precompile address introduced by the Haber hardfork.
 const BSC_P256_ADDRESS: Address = address!("0000000000000000000000000000000000000100");
@@ -173,13 +193,19 @@ pub const TEMPO_PRECOMPILE_ADDRESSES: &[Address] = &[
 pub enum NetworkVariant {
     #[default]
     Ethereum,
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     Base,
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     Optimism,
+    */
     Tempo,
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     Monad,
+    */
 }
 
 /// Runtime and initcode byte-size limits for a configured network.
@@ -197,13 +223,19 @@ impl std::str::FromStr for NetworkVariant {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "ethereum" => Ok(Self::Ethereum),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             "base" => Ok(Self::Base),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             "optimism" => Ok(Self::Optimism),
+            */
             "tempo" => Ok(Self::Tempo),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             "monad" => Ok(Self::Monad),
+            */
             _ => Err(format!("unknown network variant: {s}")),
         }
     }
@@ -227,20 +259,26 @@ impl NetworkVariant {
         // IDs, and that is what shipped binaries resolve them to today, so erroring here would
         // regress builds that never asked for Base. Monad errors instead because no shipped EVM
         // approximates it.
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if matches!(chain.named(), Some(NamedChain::Base | NamedChain::BaseSepolia)) {
             return Ok(Some(Self::Base));
         }
+        */
         if matches!(chain.named(), Some(NamedChain::Monad | NamedChain::MonadTestnet)) {
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             return Ok(Some(Self::Monad));
-            #[cfg(not(feature = "monad"))]
+            */
+            // EVM2 migration: unconditional Ethereum fallback.
             return Err("network family `monad` is not enabled in this build".to_string());
         }
         if chain.is_optimism() {
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             return Ok(Some(Self::Optimism));
-            #[cfg(not(feature = "optimism"))]
+            */
+            // EVM2 migration: unconditional Ethereum fallback.
             return Err("network family `optimism` is not enabled in this build".to_string());
         }
         Ok(chain.named().map(|_| Self::Ethereum))
@@ -250,18 +288,24 @@ impl NetworkVariant {
     pub fn from_node_info_name(network: &str) -> Result<Self, String> {
         match network {
             "ethereum" => Ok(Self::Ethereum),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             "base" => Ok(Self::Base),
-            #[cfg(not(feature = "base"))]
+            */
+            // EVM2 migration: unconditional Ethereum fallback.
             "base" => Err("network family `base` is not enabled in this build".to_string()),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             "optimism" => Ok(Self::Optimism),
-            #[cfg(not(feature = "optimism"))]
+            */
+            // EVM2 migration: unconditional Ethereum fallback.
             "optimism" => Err("network family `optimism` is not enabled in this build".to_string()),
             "tempo" => Ok(Self::Tempo),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             "monad" => Ok(Self::Monad),
-            #[cfg(not(feature = "monad"))]
+            */
+            // EVM2 migration: unconditional Ethereum fallback.
             "monad" => Err("network family `monad` is not enabled in this build".to_string()),
             network => {
                 Err(format!("unsupported network family `{network}` reported by fork endpoint"))
@@ -319,20 +363,25 @@ impl NetworkVariant {
             }
             Self::Tempo => {
                 TempoHardfork::from_chain_and_timestamp(chain_id, timestamp).map(Into::into)
-            }
-            #[cfg(feature = "optimism")]
-            Self::Optimism => {
-                OpHardfork::from_chain_and_timestamp(Chain::from_id(chain_id), timestamp)
-                    .map(Into::into)
-            }
-            #[cfg(feature = "monad")]
-            Self::Monad => {
-                MonadHardfork::from_chain_and_timestamp(chain_id, timestamp).map(Into::into)
-            }
-            #[cfg(feature = "base")]
-            Self::Base => {
-                BaseUpgrade::from_chain_and_timestamp(chain_id, timestamp).map(Into::into)
-            }
+            } /* EVM2 migration: disabled non-Ethereum execution.
+              #[cfg(feature = "optimism")]
+              Self::Optimism => {
+                  OpHardfork::from_chain_and_timestamp(Chain::from_id(chain_id), timestamp)
+                      .map(Into::into)
+              }
+              */
+              /* EVM2 migration: disabled non-Ethereum execution.
+              #[cfg(feature = "monad")]
+              Self::Monad => {
+                  MonadHardfork::from_chain_and_timestamp(chain_id, timestamp).map(Into::into)
+              }
+              */
+              /* EVM2 migration: disabled non-Ethereum execution.
+              #[cfg(feature = "base")]
+              Self::Base => {
+                  BaseUpgrade::from_chain_and_timestamp(chain_id, timestamp).map(Into::into)
+              }
+              */
         }
     }
 
@@ -344,12 +393,18 @@ impl NetworkVariant {
         self.historical_hardfork(chain_id, timestamp).unwrap_or_else(|| match self {
             Self::Ethereum => EthereumHardfork::default().into(),
             Self::Tempo => latest_active_tempo_hardfork().into(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Optimism => OpHardfork::default().into(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             Self::Monad => MonadHardfork::default().into(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base => BaseUpgrade::default().into(),
+            */
         })
     }
 
@@ -358,22 +413,24 @@ impl NetworkVariant {
         matches!(self, Self::Ethereum)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is the Base network variant.
     #[cfg(feature = "base")]
     pub const fn is_base(&self) -> bool {
         matches!(self, Self::Base)
     }
+    */
 
     /// Returns `true` if this is the Optimism network variant.
     pub const fn is_optimism(&self) -> bool {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         {
             matches!(self, Self::Optimism)
         }
-        #[cfg(not(feature = "optimism"))]
-        {
-            false
-        }
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
+        false
     }
 
     /// Returns `true` if this is the Tempo network variant.
@@ -381,14 +438,16 @@ impl NetworkVariant {
         matches!(self, Self::Tempo)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is the Monad network variant.
     #[cfg(feature = "monad")]
     pub const fn is_monad(&self) -> bool {
         matches!(self, Self::Monad)
     }
+    */
 
     /// Returns `false` when Monad support is not compiled in.
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     pub const fn is_monad(&self) -> bool {
         false
     }
@@ -397,13 +456,19 @@ impl NetworkVariant {
     pub const fn name(&self) -> &'static str {
         match self {
             Self::Ethereum => "ethereum",
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base => "base",
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Optimism => "optimism",
+            */
             Self::Tempo => "tempo",
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             Self::Monad => "monad",
+            */
         }
     }
 
@@ -411,13 +476,19 @@ impl NetworkVariant {
     pub const fn hardfork_namespace(&self) -> Option<&'static str> {
         match self {
             Self::Ethereum => None,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Base => Some("base"),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Optimism => Some("optimism"),
+            */
             Self::Tempo => Some("tempo"),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             Self::Monad => Some("monad"),
+            */
         }
     }
 }
@@ -438,16 +509,17 @@ impl From<ChainId> for NetworkVariant {
 pub struct NetworkConfigs {
     /// Enable a specific network family.
     #[arg(help_heading = "Networks", long, short, num_args = 1, value_name = "NETWORK", value_enum, conflicts_with_all = ["celo", "tempo"])]
-    #[cfg_attr(feature = "optimism", arg(conflicts_with = "optimism"))]
-    #[cfg_attr(feature = "monad", arg(conflicts_with = "monad"))]
+    #[cfg_attr(any(), arg(conflicts_with = "optimism"))]
+    #[cfg_attr(any(), arg(conflicts_with = "monad"))]
     #[serde(default)]
     pub(crate) network: Option<NetworkVariant>,
     /// Enable Celo network features.
     #[arg(help_heading = "Networks", long, conflicts_with_all = ["network", "tempo"])]
-    #[cfg_attr(feature = "optimism", arg(conflicts_with = "optimism"))]
-    #[cfg_attr(feature = "monad", arg(conflicts_with = "monad"))]
+    #[cfg_attr(any(), arg(conflicts_with = "optimism"))]
+    #[cfg_attr(any(), arg(conflicts_with = "monad"))]
     celo: bool,
     /// Enable Optimism network features (deprecated: use --network optimism).
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     #[arg(long, hide = true, conflicts_with_all = ["network", "celo", "tempo"])]
     #[cfg_attr(feature = "monad", arg(conflicts_with = "monad"))]
@@ -455,15 +527,17 @@ pub struct NetworkConfigs {
     // canonical form is `network = "optimism"`.
     #[serde(default)]
     pub(crate) optimism: bool,
+    */
     /// Enable Tempo network features (deprecated: use --network tempo).
     #[arg(long, hide = true, conflicts_with_all = ["network", "celo"])]
-    #[cfg_attr(feature = "optimism", arg(conflicts_with = "optimism"))]
-    #[cfg_attr(feature = "monad", arg(conflicts_with = "monad"))]
+    #[cfg_attr(any(), arg(conflicts_with = "optimism"))]
+    #[cfg_attr(any(), arg(conflicts_with = "monad"))]
     // Deserialize-only legacy alias: accepted in foundry.toml but never serialized — the
     // canonical form is `network = "tempo"`.
     #[serde(default)]
     tempo: bool,
     /// Enable Monad network features (deprecated: use --network monad).
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[arg(long, hide = true, conflicts_with_all = ["network", "celo", "tempo"])]
     #[cfg_attr(feature = "optimism", arg(conflicts_with = "optimism"))]
@@ -471,6 +545,7 @@ pub struct NetworkConfigs {
     // canonical form is `network = "monad"`.
     #[serde(default)]
     monad: bool,
+    */
     /// Whether to bypass prevrandao.
     #[arg(skip)]
     #[serde(default)]
@@ -504,17 +579,21 @@ impl NetworkConfigs {
         if self.celo {
             selectors.push(("celo", "celo = true".to_string()));
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if self.optimism {
             selectors.push(("optimism", "optimism = true".to_string()));
         }
+        */
         if self.tempo {
             selectors.push(("tempo", "tempo = true".to_string()));
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.monad {
             selectors.push(("monad", "monad = true".to_string()));
         }
+        */
 
         if let Some((family, selector)) = selectors.first()
             && let Some((_, conflicting)) =
@@ -541,15 +620,19 @@ impl NetworkConfigs {
         Self { network: Some(NetworkVariant::Tempo), tempo: true, ..Default::default() }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     pub fn with_monad() -> Self {
         Self { network: Some(NetworkVariant::Monad), monad: true, ..Default::default() }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     pub fn with_base() -> Self {
         Self { network: Some(NetworkVariant::Base), ..Default::default() }
     }
+    */
 
     pub const fn is_tempo(&self) -> bool {
         if let Some(network) = self.resolved_network() { network.is_tempo() } else { false }
@@ -562,20 +645,24 @@ impl NetworkConfigs {
         if let Some(network) = self.resolved_network() { network.is_optimism() } else { false }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     pub const fn is_monad(&self) -> bool {
         if let Some(network) = self.resolved_network() { network.is_monad() } else { false }
     }
+    */
 
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     pub const fn is_monad(&self) -> bool {
         false
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     pub const fn is_base(&self) -> bool {
         matches!(self.resolved_network(), Some(NetworkVariant::Base))
     }
+    */
 
     /// Coerces `hardfork` into this network's family.
     ///
@@ -587,14 +674,18 @@ impl NetworkConfigs {
         if self.is_tempo() {
             return TempoHardfork::from(hardfork).into();
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.is_monad() {
             return MonadHardfork::from(hardfork).into();
         }
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             return BaseUpgrade::from(hardfork).into();
         }
+        */
         hardfork
     }
 
@@ -607,17 +698,21 @@ impl NetworkConfigs {
         if let Some(n) = self.network {
             return Some(n);
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if self.optimism {
             return Some(NetworkVariant::Optimism);
         }
+        */
         if self.tempo {
             return Some(NetworkVariant::Tempo);
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.monad {
             return Some(NetworkVariant::Monad);
         }
+        */
         None
     }
 
@@ -659,10 +754,12 @@ impl NetworkConfigs {
     /// Monad boundary. Base execution requires a Base source, while existing Ethereum, Optimism,
     /// and Tempo execution can continue using Base as a state source without switching engines.
     pub const fn supports_fork_source(&self, source: &Self) -> bool {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() && !source.is_base() {
             return false;
         }
+        */
         self.is_monad() == source.is_monad()
     }
 
@@ -675,7 +772,8 @@ impl NetworkConfigs {
     ///
     /// For OP Stack networks, returns Canyon parameters if the Canyon hardfork is active at the
     /// given timestamp, otherwise returns pre-Canyon parameters.
-    pub fn base_fee_params(&self, timestamp: u64) -> BaseFeeParams {
+    pub const fn base_fee_params(&self, _timestamp: u64) -> BaseFeeParams {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             let canyon_active =
@@ -687,10 +785,13 @@ impl NetworkConfigs {
                 BaseFeeParams::new(50, 6)
             };
         }
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if self.is_optimism() {
             return self.op_base_fee_params(timestamp);
         }
+        */
         BaseFeeParams::ethereum()
     }
 
@@ -706,10 +807,12 @@ impl NetworkConfigs {
         parent_blob_gas_used: u64,
         parent_base_fee: u64,
     ) -> u64 {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             return 0;
         }
+        */
         if self.is_optimism() {
             return 0;
         }
@@ -720,6 +823,7 @@ impl NetworkConfigs {
         )
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns contract size limits for networks that override Ethereum defaults.
     #[cfg(feature = "monad")]
     pub fn contract_size_limits(&self) -> Option<NetworkContractSizeLimits> {
@@ -728,9 +832,10 @@ impl NetworkConfigs {
             initcode: monad_revm::MONAD_MAX_INITCODE_SIZE,
         })
     }
+    */
 
     /// Returns contract size limits for networks that override Ethereum defaults.
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     pub const fn contract_size_limits(&self) -> Option<NetworkContractSizeLimits> {
         None
     }
@@ -888,12 +993,18 @@ impl NetworkConfigs {
         let network = match hardfork {
             FoundryHardfork::Ethereum(_) => self,
             FoundryHardfork::Tempo(_) => Self::with_tempo(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             FoundryHardfork::Base(_) => Self::with_base(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             FoundryHardfork::Optimism(_) => Self::with_optimism(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "monad")]
             FoundryHardfork::Monad(_) => Self::with_monad(),
+            */
         };
 
         Ok(network)
@@ -929,6 +1040,7 @@ impl NetworkConfigs {
                     .map(|(label, address)| (address, label.to_string())),
             );
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.is_monad() {
             let monad_hardfork = hardfork.and_then(MonadHardfork::from_foundry_hardfork);
@@ -944,6 +1056,8 @@ impl NetworkConfigs {
                     .map(|(label, address)| (address, label.to_string())),
             );
         }
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             let base_upgrade = hardfork.and_then(|hardfork| match hardfork {
@@ -961,6 +1075,7 @@ impl NetworkConfigs {
                     .map(|(label, address)| (address, label.to_string())),
             );
         }
+        */
         labels
     }
 
@@ -985,6 +1100,7 @@ impl NetworkConfigs {
                     .map(|(label, address)| (label.to_string(), address)),
             );
         }
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if self.is_monad() {
             let monad_hardfork = hardfork.and_then(MonadHardfork::from_foundry_hardfork);
@@ -1000,6 +1116,8 @@ impl NetworkConfigs {
                     .map(|(label, address)| (label.to_string(), address)),
             );
         }
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if self.is_base() {
             let base_upgrade = hardfork.and_then(|hardfork| match hardfork {
@@ -1017,6 +1135,7 @@ impl NetworkConfigs {
                     .map(|(label, address)| (label.to_string(), address)),
             );
         }
+        */
         precompiles
     }
 }
@@ -1043,17 +1162,22 @@ impl From<NetworkVariant> for NetworkConfigs {
             NetworkVariant::Ethereum => Self::with_ethereum(),
             NetworkVariant::Tempo => {
                 Self { network: Some(network), tempo: true, ..Default::default() }
-            }
-            #[cfg(feature = "monad")]
-            NetworkVariant::Monad => {
-                Self { network: Some(network), monad: true, ..Default::default() }
-            }
-            #[cfg(feature = "base")]
-            NetworkVariant::Base => Self { network: Some(network), ..Default::default() },
-            #[cfg(feature = "optimism")]
-            NetworkVariant::Optimism => {
-                Self { network: Some(network), optimism: true, ..Default::default() }
-            }
+            } /* EVM2 migration: disabled non-Ethereum execution.
+              #[cfg(feature = "monad")]
+              NetworkVariant::Monad => {
+                  Self { network: Some(network), monad: true, ..Default::default() }
+              }
+              */
+              /* EVM2 migration: disabled non-Ethereum execution.
+              #[cfg(feature = "base")]
+              NetworkVariant::Base => Self { network: Some(network), ..Default::default() },
+              */
+              /* EVM2 migration: disabled non-Ethereum execution.
+              #[cfg(feature = "optimism")]
+              NetworkVariant::Optimism => {
+                  Self { network: Some(network), optimism: true, ..Default::default() }
+              }
+              */
         }
     }
 }
@@ -1085,18 +1209,22 @@ pub fn resolved_precompile_labels(hardfork: Option<FoundryHardfork>) -> AddressH
             .filter(|(_, address)| is_tempo_precompile_active_at(*address, hardfork))
             .map(|(label, address)| (*address, (*label).to_string()))
             .collect(),
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         Some(FoundryHardfork::Monad(hardfork)) => MONAD_PRECOMPILE_LABELS
             .iter()
             .filter(|(_, address)| is_monad_precompile_active_at(*address, hardfork))
             .map(|(label, address)| (*address, (*label).to_string()))
             .collect(),
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         Some(FoundryHardfork::Base(upgrade)) => BASE_PRECOMPILES
             .iter()
             .filter(|(_, address)| is_base_precompile_active_at(*address, upgrade))
             .map(|(label, address)| (*address, (*label).to_string()))
             .collect(),
+        */
         _ => AddressHashMap::default(),
     }
 }
@@ -1126,6 +1254,7 @@ pub fn active_tempo_precompile_addresses(hardfork: TempoHardfork) -> impl Iterat
         .filter(move |&address| is_tempo_precompile_active_at(address, hardfork))
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Returns whether a well-known Monad precompile address is active at `hardfork`.
 #[cfg(feature = "monad")]
 pub fn is_monad_precompile_active_at(address: Address, hardfork: MonadHardfork) -> bool {
@@ -1133,7 +1262,9 @@ pub fn is_monad_precompile_active_at(address: Address, hardfork: MonadHardfork) 
         || (address == monad_revm::reserve_balance::abi::RESERVE_BALANCE_ADDRESS
             && MonadHardfork::MonadNine.is_enabled_in(hardfork))
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Returns whether a fixed Base precompile is active at `upgrade`.
 #[cfg(feature = "base")]
 pub fn is_base_precompile_active_at(address: Address, upgrade: BaseUpgrade) -> bool {
@@ -1150,7 +1281,9 @@ pub fn is_base_precompile_active_at(address: Address, upgrade: BaseUpgrade) -> b
         false
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Returns the fixed Base precompiles active at `upgrade`.
 #[cfg(feature = "base")]
 pub fn active_base_precompiles(
@@ -1161,6 +1294,7 @@ pub fn active_base_precompiles(
         .copied()
         .filter(move |(_, address)| is_base_precompile_active_at(*address, upgrade))
 }
+*/
 
 #[cfg(test)]
 mod tests {
@@ -1181,6 +1315,7 @@ mod tests {
         assert!(!NetworkVariant::Tempo.is_ethereum());
         assert!(!NetworkVariant::Tempo.is_optimism());
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         {
             assert!(!NetworkVariant::Ethereum.is_monad());
@@ -1190,7 +1325,9 @@ mod tests {
             assert!(!NetworkVariant::Monad.is_optimism());
             assert!(!NetworkVariant::Monad.is_tempo());
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         {
             assert!(NetworkVariant::Optimism.is_optimism());
@@ -1200,7 +1337,9 @@ mod tests {
             #[cfg(feature = "monad")]
             assert!(!NetworkVariant::Optimism.is_monad());
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         {
             assert!(NetworkVariant::Base.is_base());
@@ -1208,8 +1347,10 @@ mod tests {
             assert!(!NetworkVariant::Base.is_optimism());
             assert!(!NetworkVariant::Base.is_tempo());
         }
+        */
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(all(feature = "base", feature = "optimism"))]
     fn historical_hardfork_uses_selected_execution_family() {
@@ -1232,7 +1373,9 @@ mod tests {
             None
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn fork_sources_only_isolate_monad() {
@@ -1254,7 +1397,9 @@ mod tests {
         }
         assert!(NetworkConfigs::with_monad().supports_fork_source(&NetworkConfigs::with_monad()));
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "base")]
     fn fork_sources_preserve_base_state_source_compatibility() {
@@ -1283,6 +1428,7 @@ mod tests {
             );
         }
     }
+    */
 
     #[test]
     fn known_chain_identity_does_not_guess_unknown_networks() {
@@ -1301,7 +1447,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn fallible_chain_id_inference_rejects_disabled_monad() {
         for chain_id in [NamedChain::Monad as u64, NamedChain::MonadTestnet as u64] {
             let unavailable = "network family `monad` is not enabled in this build";
@@ -1315,7 +1461,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "optimism"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn fallible_chain_id_inference_rejects_disabled_optimism() {
         let chain_id = NamedChain::Optimism as u64;
         assert_eq!(
@@ -1344,6 +1490,7 @@ mod tests {
         assert!(inferred.bypass_prevrandao(NamedChain::Mainnet as u64));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "optimism")]
     fn fallible_chain_id_inference_detects_optimism() {
@@ -1351,6 +1498,7 @@ mod tests {
         assert_eq!(NetworkVariant::from(chain_id), NetworkVariant::Optimism);
         assert!(NetworkConfigs::default().try_with_chain_id(chain_id).unwrap().is_optimism());
     }
+    */
 
     #[test]
     fn rpc_identity_preserves_orthogonal_configuration() {
@@ -1389,11 +1537,13 @@ mod tests {
             NetworkVariant::from_rpc_identity(98_765_432, Some(None)).unwrap(),
             Some(NetworkVariant::Ethereum)
         );
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         assert_eq!(
             NetworkVariant::from_rpc_identity(NamedChain::Optimism as u64, Some(None)).unwrap(),
             Some(NetworkVariant::Optimism)
         );
+        */
         assert_eq!(
             NetworkVariant::from_rpc_identity(NamedChain::Celo as u64, Some(None)).unwrap(),
             Some(NetworkVariant::Ethereum)
@@ -1490,7 +1640,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn explicit_ethereum_overrides_disabled_monad_without_node_info() {
         assert_eq!(
             NetworkConfigs::from_rpc_identity_profile_with_fallback(
@@ -1504,7 +1654,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn explicit_ethereum_overrides_disabled_monad_with_legacy_node_info() {
         assert_eq!(
             NetworkConfigs::from_rpc_identity_profile_with_fallback(
@@ -1518,7 +1668,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn disabled_monad_without_explicit_profile_still_errors() {
         for node_info in [None, Some(None)] {
             assert_eq!(
@@ -1533,6 +1683,7 @@ mod tests {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn rpc_identity_fallback_preserves_explicit_custom_networks() {
@@ -1568,6 +1719,7 @@ mod tests {
             Some(NetworkVariant::Tempo)
         );
     }
+    */
 
     #[test]
     fn network_selection_distinguishes_default_and_explicit_ethereum() {
@@ -1592,16 +1744,20 @@ mod tests {
     fn authoritative_execution_profile_preserves_orthogonal_settings() {
         let inline = NetworkConfigs { bypass_prevrandao: true, ..NetworkConfigs::with_tempo() };
 
-        #[cfg_attr(not(any(feature = "optimism", feature = "monad")), allow(unused_mut))]
-        let mut profiles = vec![
+        #[cfg_attr(not(any(any(), any())), allow(unused_mut))]
+        let profiles = vec![
             NetworkConfigs::with_ethereum(),
             NetworkConfigs::with_tempo(),
             NetworkConfigs::with_celo(),
         ];
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         profiles.push(NetworkVariant::Optimism.into());
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         profiles.push(NetworkConfigs::with_monad());
+        */
 
         for profile in profiles {
             let resolved = inline.with_execution_profile(profile);
@@ -1641,20 +1797,25 @@ mod tests {
             assert_eq!(networks.try_with_chain_id(NamedChain::Celo as u64).unwrap(), networks);
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         {
             let monad = NetworkConfigs::with_monad();
             assert_eq!(monad.try_with_chain_id(NamedChain::Celo as u64).unwrap(), monad);
         }
+        */
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn rpc_metadata_identifies_custom_monad_networks() {
         assert_eq!(NetworkVariant::from_node_info_name("monad").unwrap(), NetworkVariant::Monad);
         assert!(NetworkConfigs::default().with_rpc_network(NetworkVariant::Monad).is_monad());
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn parses_endpoint_hardfork_in_network_namespace() {
@@ -1663,6 +1824,7 @@ mod tests {
             FoundryHardfork::Monad(MonadHardfork::MonadEight)
         );
     }
+    */
 
     #[test]
     fn rpc_metadata_rejects_unknown_network_family() {
@@ -1674,10 +1836,12 @@ mod tests {
 
     #[test]
     fn explicit_ethereum_families_reject_namespaced_hardforks() {
-        #[cfg_attr(not(feature = "monad"), allow(unused_mut))]
-        let mut incompatible = vec![FoundryHardfork::Tempo(TempoHardfork::T0)];
+        #[cfg_attr(not(any()), allow(unused_mut))]
+        let incompatible = vec![FoundryHardfork::Tempo(TempoHardfork::T0)];
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         incompatible.push(FoundryHardfork::Monad(MonadHardfork::MonadEight));
+        */
 
         for networks in [NetworkConfigs::with_ethereum(), NetworkConfigs::with_celo()] {
             for hardfork in &incompatible {
@@ -1702,6 +1866,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn base_precompile_labels_follow_upgrade_boundaries() {
@@ -1747,6 +1912,7 @@ mod tests {
                 .is_empty()
         );
     }
+    */
 
     #[test]
     fn new_tempo_flag_equivalent_to_legacy() {
@@ -1844,6 +2010,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn canonical_monad_network_reports_hardfork_gated_precompiles() {
@@ -1875,6 +2042,7 @@ mod tests {
                 .contains_key(&monad_revm::reserve_balance::abi::RESERVE_BALANCE_ADDRESS)
         );
     }
+    */
 
     #[test]
     fn storage_credits_precompile_activates_at_t7() {
@@ -1907,6 +2075,7 @@ mod tests {
         assert_eq!(cfg.active_network_name(), Some("tempo"));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn active_network_name_monad() {
@@ -1914,7 +2083,9 @@ mod tests {
         assert_eq!(cfg.active_network_name(), Some("monad"));
         assert!(cfg.is_monad());
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn contract_size_limits_monad() {
@@ -1923,6 +2094,7 @@ mod tests {
         assert_eq!(limits.initcode, monad_revm::MONAD_MAX_INITCODE_SIZE);
         assert!(NetworkConfigs::default().contract_size_limits().is_none());
     }
+    */
 
     #[test]
     fn active_network_name_default_is_none() {
@@ -1935,7 +2107,7 @@ mod tests {
     /// covers them, so a build without the `base` feature must keep resolving them rather than
     /// erroring. Shipped release binaries are exactly that build.
     #[test]
-    #[cfg(all(not(feature = "base"), feature = "optimism"))]
+    #[cfg(all(not(any()), any()))]
     fn chain_id_inference_falls_back_to_optimism_without_base() {
         for chain_id in [NamedChain::Base as u64, NamedChain::BaseSepolia as u64] {
             let configs = NetworkConfigs::default()
@@ -1946,7 +2118,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "base"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     fn node_info_rejects_disabled_base() {
         assert_eq!(
             NetworkVariant::from_node_info_name("base").unwrap_err(),
@@ -1972,6 +2144,7 @@ mod tests {
         assert!(cfg.is_tempo());
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn serde_roundtrip_monad() {
@@ -1981,7 +2154,9 @@ mod tests {
         assert!(restored.is_monad());
         assert!(!restored.is_tempo());
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn serde_legacy_monad_bool_deserialized() {
@@ -1989,13 +2164,16 @@ mod tests {
         let cfg: NetworkConfigs = serde_json::from_str(json).unwrap();
         assert!(cfg.is_monad());
     }
+    */
 
     #[test]
     fn serde_serializes_legacy_alias_as_canonical_network() {
-        #[cfg_attr(not(feature = "monad"), allow(unused_mut))]
-        let mut cases = vec![(NetworkConfigs { tempo: true, ..Default::default() }, "tempo")];
+        #[cfg_attr(not(any()), allow(unused_mut))]
+        let cases = vec![(NetworkConfigs { tempo: true, ..Default::default() }, "tempo")];
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         cases.push((NetworkConfigs { monad: true, ..Default::default() }, "monad"));
+        */
 
         for (cfg, expected) in cases {
             let json = serde_json::to_value(cfg).unwrap();
@@ -2011,12 +2189,14 @@ mod tests {
         let cfg_tempo: NetworkConfigs = serde_json::from_str(json_tempo).unwrap();
         assert!(cfg_tempo.is_tempo());
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         {
             let json_monad = r#"{"network": "monad", "celo": false, "bypass_prevrandao": false}"#;
             let cfg_monad: NetworkConfigs = serde_json::from_str(json_monad).unwrap();
             assert!(cfg_monad.is_monad());
         }
+        */
     }
 
     #[test]
@@ -2055,6 +2235,7 @@ mod tests {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn validates_flattened_monad_network_selectors() {
@@ -2099,7 +2280,9 @@ mod tests {
             assert!(networks.validate().unwrap_err().contains(expected));
         }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn chain_id_detects_monad_network() {
@@ -2108,7 +2291,9 @@ mod tests {
 
         assert!(NetworkConfigs::default().try_with_chain_id(143).unwrap().is_monad());
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     mod base {
         use super::*;
@@ -2177,7 +2362,9 @@ mod tests {
             );
         }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     mod optimism {
         use super::*;
@@ -2234,6 +2421,7 @@ mod tests {
             assert!(cfg_optimism.is_optimism());
         }
     }
+    */
 
     #[test]
     fn executed_hardfork_follows_the_network_family() {

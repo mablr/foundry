@@ -49,8 +49,8 @@ revm = { workspace = true, default-features = false, features = [
     "c-kzg",
 ] }
 revm-inspectors.workspace = true
-tempo-precompiles.workspace = true
-tempo-primitives.workspace = true
+# tempo-precompiles.workspace = true
+# tempo-primitives.workspace = true
 
 eyre.workspace = true
 parking_lot.workspace = true
@@ -66,34 +66,40 @@ rayon.workspace = true
 tokio.workspace = true
 
 [features]
-default = ["optimism"]
-monad = [
-    "foundry-evm-core/monad",
-    "foundry-evm-hardforks/monad",
-    "foundry-evm-networks/monad",
-    "foundry-cheatcodes/monad",
-    "foundry-evm-coverage/monad",
-    "foundry-evm-fuzz/monad",
-    "foundry-evm-traces/monad",
-]
-base = [
-    "foundry-cheatcodes/base",
-    "foundry-common/base",
-    "foundry-config/base",
-    "foundry-evm-core/base",
-    "foundry-evm-coverage/base",
-    "foundry-evm-fuzz/base",
-    "foundry-evm-hardforks/base",
-    "foundry-evm-networks/base",
-    "foundry-evm-traces/base",
-]
-optimism = [
-    "foundry-evm-core/optimism",
-    "foundry-evm-hardforks/optimism",
-    "foundry-evm-networks/optimism",
-    "foundry-common/optimism",
-    "foundry-cheatcodes/optimism",
-    "foundry-evm-coverage/optimism",
-    "foundry-evm-fuzz/optimism",
-    "foundry-evm-traces/optimism",
-]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = [
+#     "foundry-evm-core/monad",
+#     "foundry-evm-hardforks/monad",
+#     "foundry-evm-networks/monad",
+#     "foundry-cheatcodes/monad",
+#     "foundry-evm-coverage/monad",
+#     "foundry-evm-fuzz/monad",
+#     "foundry-evm-traces/monad",
+# ]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "foundry-cheatcodes/base",
+#     "foundry-common/base",
+#     "foundry-config/base",
+#     "foundry-evm-core/base",
+#     "foundry-evm-coverage/base",
+#     "foundry-evm-fuzz/base",
+#     "foundry-evm-hardforks/base",
+#     "foundry-evm-networks/base",
+#     "foundry-evm-traces/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "foundry-evm-core/optimism",
+#     "foundry-evm-hardforks/optimism",
+#     "foundry-evm-networks/optimism",
+#     "foundry-common/optimism",
+#     "foundry-cheatcodes/optimism",
+#     "foundry-evm-coverage/optimism",
+#     "foundry-evm-fuzz/optimism",
+#     "foundry-evm-traces/optimism",
+# ]
+optimism = []

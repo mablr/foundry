@@ -18,11 +18,15 @@ use std::{
 };
 use tempo_hardfork::{TempoHardfork, constants::gas::tempo_t7_next_block_base_fee};
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::hardfork::OpHardfork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 mod optimism;
+*/
 
 /// Maximum number of entries in the fee history cache
 pub const MAX_FEE_HISTORY_CACHE_SIZE: u64 = 2048u64;
@@ -69,17 +73,20 @@ struct FeeRules {
 #[derive(Clone, Copy, Debug)]
 enum BaseFeeRules {
     Standard(BaseFeeParams),
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     Optimism {
         inherited: Option<optimism::OptimismBaseFeeRules>,
         fallback: BaseFeeParams,
     },
+    */
 }
 
 impl BaseFeeRules {
     const fn params(self) -> BaseFeeParams {
         match self {
             Self::Standard(params) => params,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Optimism { inherited, fallback } => {
                 if let Some(rules) = inherited {
@@ -88,6 +95,7 @@ impl BaseFeeRules {
                     fallback
                 }
             }
+            */
         }
     }
 
@@ -95,10 +103,12 @@ impl BaseFeeRules {
     fn extra_data(self) -> Bytes {
         match self {
             Self::Standard(_) => Bytes::new(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Optimism { inherited, .. } => {
                 inherited.map_or_else(Bytes::new, optimism::OptimismBaseFeeRules::extra_data)
             }
+            */
         }
     }
 
@@ -113,6 +123,7 @@ impl BaseFeeRules {
                 ),
                 ..Default::default()
             },
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::Optimism { fallback, .. } => {
                 let inherited = optimism::OptimismBaseFeeRules::decode(header.extra_data());
@@ -133,6 +144,7 @@ impl BaseFeeRules {
                     optimism_jovian: inherited.map(optimism::OptimismBaseFeeRules::is_jovian),
                 }
             }
+            */
         }
     }
 }
@@ -239,6 +251,7 @@ impl FeeManager {
             FeeRules { spec_id, base_fee: BaseFeeRules::Standard(base_fee_params), tempo_hardfork };
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Applies the dynamic EIP-1559 parameters encoded in an Optimism-family parent header.
     #[cfg(feature = "optimism")]
     pub(crate) fn set_optimism_base_fee_rules(&self, extra_data: &[u8]) {
@@ -253,7 +266,9 @@ impl FeeManager {
             fallback,
         };
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Initializes Optimism-family fee rules for a node that is not inheriting a fork header.
     #[cfg(feature = "optimism")]
     pub(crate) fn set_optimism_hardfork(&self, hardfork: OpHardfork) {
@@ -264,6 +279,7 @@ impl FeeManager {
             fallback,
         };
     }
+    */
 
     /// Returns the Optimism-family EIP-1559 parameters inherited by locally built blocks.
     pub(crate) fn base_fee_extra_data(&self) -> Bytes {
@@ -844,6 +860,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     #[test]
     fn pre_london_parent_fees_preserve_optimism_metadata() {
@@ -860,6 +877,7 @@ mod tests {
         assert_eq!(parent_fees.extra_data.as_ref(), jovian);
         assert_eq!(parent_fees.optimism_jovian, Some(true));
     }
+    */
 
     #[test]
     fn reward_percentile_sweep_preserves_boundaries_and_empty_results() {

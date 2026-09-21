@@ -421,6 +421,7 @@ fn create_fork_request<FEN: FoundryEvmNetwork>(
     Ok(fork)
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 /// Applies a fork/roll/transact context update to the active EVM context.
 #[cfg(feature = "monad")]
 fn apply_context_update<FEN: FoundryEvmNetwork>(
@@ -438,6 +439,7 @@ fn apply_context_update<FEN: FoundryEvmNetwork>(
         }
     }
 }
+*/
 
 /// Clones the EVM and tx environments, runs a fork operation that may modify them, then writes
 /// them back. This is the common pattern for all fork-switching cheatcodes (rollFork, selectFork,
@@ -457,10 +459,12 @@ fn fork_env_op<FEN: FoundryEvmNetwork, T: SolValue>(
     let (result, context_update) = f(db, &mut evm_env, &mut tx_env, inner)?;
     ecx.set_evm(evm_env);
     ecx.set_tx(tx_env);
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     let _ = context_update;
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     apply_context_update::<FEN>(ecx, context_update);
+    */
     Ok(result.abi_encode())
 }
 
@@ -516,10 +520,12 @@ fn transact<FEN: FoundryEvmNetwork>(
     fork_id: Option<U256>,
 ) -> Result {
     let context_update = executor.transact_on_db(ccx.state, ccx.ecx, fork_id, transaction)?;
-    #[cfg(not(feature = "monad"))]
+    // EVM2 migration: unconditional Ethereum fallback.
     let _ = context_update;
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     apply_context_update::<FEN>(ccx.ecx, context_update);
+    */
     Ok(Default::default())
 }
 

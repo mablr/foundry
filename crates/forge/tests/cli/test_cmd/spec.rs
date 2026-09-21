@@ -1,7 +1,7 @@
 use foundry_compilers::artifacts::EvmVersion;
-use foundry_evm::hardforks::{FoundryHardfork, TempoHardfork};
-use foundry_test_utils::{rpc, util::OTHER_SOLC_VERSION};
+use foundry_test_utils::rpc;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 async fn rpc_request(endpoint: &str, method: &str, params: serde_json::Value) -> serde_json::Value {
     reqwest::Client::new()
@@ -19,7 +19,9 @@ async fn rpc_request(endpoint: &str, method: &str, params: serde_json::Value) ->
         .await
         .unwrap()
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 fn monad_staking_reward_input(block_author: alloy_primitives::Address) -> Vec<u8> {
     let mut input = alloy_primitives::keccak256("syscallReward(address)")[..4].to_vec();
@@ -27,7 +29,9 @@ fn monad_staking_reward_input(block_author: alloy_primitives::Address) -> Vec<u8
     input.extend_from_slice(block_author.as_slice());
     input
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 fn monad_staking_validator_id_key(address: alloy_primitives::Address) -> alloy_primitives::U256 {
     let mut key = [0u8; 32];
@@ -35,7 +39,9 @@ fn monad_staking_validator_id_key(address: alloy_primitives::Address) -> alloy_p
     key[1..21].copy_from_slice(address.as_slice());
     alloy_primitives::U256::from_be_bytes(key)
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 fn monad_staking_validator_key(
     namespace: u8,
@@ -47,14 +53,18 @@ fn monad_staking_validator_key(
     key[1..9].copy_from_slice(&validator_id.to_be_bytes());
     alloy_primitives::U256::from_be_bytes(key) + alloy_primitives::U256::from(offset)
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 fn left_aligned_u64(value: u64) -> alloy_primitives::U256 {
     let mut bytes = [0u8; 32];
     bytes[..8].copy_from_slice(&value.to_be_bytes());
     alloy_primitives::U256::from_be_bytes(bytes)
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 fn address_and_flags(address: alloy_primitives::Address, flags: u64) -> alloy_primitives::U256 {
     let mut bytes = [0u8; 32];
@@ -62,12 +72,16 @@ fn address_and_flags(address: alloy_primitives::Address, flags: u64) -> alloy_pr
     bytes[20..28].copy_from_slice(&flags.to_be_bytes());
     alloy_primitives::U256::from_be_bytes(bytes)
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 fn storage_value(value: alloy_primitives::U256) -> alloy_primitives::B256 {
     alloy_primitives::B256::from(value.to_be_bytes::<32>())
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 fn override_rpc_transaction_chain_id(value: &mut serde_json::Value, target: &str, chain_id: &str) {
     match value {
@@ -88,6 +102,7 @@ fn override_rpc_transaction_chain_id(value: &mut serde_json::Value, target: &str
         _ => {}
     }
 }
+*/
 
 // Test evm version switch during tests / scripts.
 // <https://github.com/foundry-rs/foundry/issues/9840>
@@ -268,6 +283,7 @@ Traces:
 "#]]);
 });
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest_init!(test_set_evm_version_monad_hardfork, |prj, cmd| {
     prj.add_test(
@@ -423,7 +439,9 @@ contract MonadEvmVersionTest is Test {
 
     cmd.args(["test", "--network", "monad", "--mc", "MonadEvmVersionTest"]).assert_success();
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest_async!(fork_resolves_monad_hardfork_from_timestamp, |prj, cmd| {
     let monad_nine_activation =
@@ -607,7 +625,9 @@ contract MonadForkHardforkTest {
         ])
         .assert_success();
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest_init!(test_monad_memory_limit, |prj, cmd| {
     prj.update_config(|config| {
@@ -671,7 +691,9 @@ contract MonadMemoryLimitTest is Test {
 ...
 "#]]);
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest_async!(execute_transaction_uses_monad_fork_context, |prj, cmd| {
     use alloy_consensus::SignableTransaction as _;
@@ -882,7 +904,9 @@ contract ExecuteTransactionMonadContextTest {
     cmd.args(["test", "--network", "monad", "--mc", "ExecuteTransactionMonadContextTest"])
         .assert_success();
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest_async!(transaction_fork_excludes_future_monad_participants, |prj, cmd| {
     use alloy_consensus::SignableTransaction as _;
@@ -1132,7 +1156,9 @@ contract TransactionForkMonadContextTest {
     cmd.args(["test", "--network", "monad", "--mc", "TransactionForkMonadContextTest"])
         .assert_success();
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest_async!(monad_fork_aux_lifecycle_tracks_outer_context, |prj, cmd| {
     use alloy_consensus::SignableTransaction as _;
@@ -1774,7 +1800,9 @@ contract MonadForkAuxLifecycleTest {
         ])
         .assert_success();
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 forgetest_async!(transact_replays_monad_protocol_system_target_forks, |prj, cmd| {
     use alloy_network::{ReceiptResponse as _, TransactionBuilder as _};
@@ -2071,7 +2099,9 @@ contract MonadProtocolSystemTargetTest {
     cmd.args(["test", "--network", "monad", "--mc", "MonadProtocolSystemTargetTest"])
         .assert_success();
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_init!(test_set_evm_version_tempo_hardfork, |prj, cmd| {
     prj.update_config(|config| {
         config.solc = Some(OTHER_SOLC_VERSION.into());
@@ -2105,7 +2135,9 @@ contract TempoEvmVersionTest is Test {
 
     cmd.args(["test", "--network", "tempo", "--mc", "TempoEvmVersionTest"]).assert_success();
 });
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_init!(test_network_tempo_defaults_to_latest_hardfork, |prj, cmd| {
     prj.update_config(|config| {
         config.solc = Some(OTHER_SOLC_VERSION.into());
@@ -2138,10 +2170,12 @@ contract TempoDefaultEvmVersionTest is Test {{
 
     cmd.args(["test", "--network", "tempo", "--mc", "TempoDefaultEvmVersionTest"]).assert_success();
 });
+*/
 
 // Validates T5 implicit-approval wiring: the cheatcodes, the AddressRegistry selector,
 // unchanged standard approve/transferFrom behavior, an implicit pull through StablecoinDEX,
 // and a non-implicit spender control case.
+/* EVM2 migration: disabled non-Ethereum execution.
 forgetest_init!(test_tempo_implicit_approval_t5, |prj, cmd| {
     prj.update_config(|config| {
         config.solc = Some(OTHER_SOLC_VERSION.into());
@@ -2156,6 +2190,7 @@ forgetest_init!(test_tempo_implicit_approval_t5, |prj, cmd| {
 
     cmd.args(["test", "--network", "tempo", "--mc", "TempoImplicitApprovalTest"]).assert_success();
 });
+*/
 
 // Regression test for <https://github.com/foundry-rs/foundry/issues/13040>:
 // configured evm_version must be preserved after createSelectFork / rollFork.

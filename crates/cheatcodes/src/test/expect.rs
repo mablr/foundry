@@ -21,8 +21,7 @@ use revm::{
         interpreter_types::LoopControl,
     },
 };
-use tempo_contracts::precompiles::ISignatureVerifier;
-use tempo_precompiles::SIGNATURE_VERIFIER_ADDRESS;
+use tempo_contracts::precompiles::{ISignatureVerifier, SIGNATURE_VERIFIER_ADDRESS};
 
 use super::revert_handlers::RevertParameters;
 /// Tracks the expected calls per address.

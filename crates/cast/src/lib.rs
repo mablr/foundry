@@ -9,8 +9,10 @@ extern crate foundry_common;
 #[macro_use]
 extern crate tracing;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_consensus as _;
+*/
 
 pub use foundry_evm::*;
 

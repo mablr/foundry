@@ -59,11 +59,15 @@ use std::{
 use tempo_alloy::TempoNetwork;
 use tempo_contracts::precompiles::{ITIP20ChannelReserve, TIP20_CHANNEL_RESERVE_ADDRESS};
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_network::Base as BaseNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_network::Optimism;
+*/
 
 /// Runs `$body` with `$provider` bound to a provider for the selected `--network`.
 /// Optionally binds `$network_type` to the selected network type.
@@ -80,13 +84,13 @@ macro_rules! with_network_provider {
     };
     ($network:expr, $config:expr, |$provider:ident $(, $network_type:ident)?| $body:expr, _ => $default:expr) => {
         match $network {
-            #[cfg(feature = "base")]
+            #[cfg(any())]
             Some(NetworkVariant::Base) => {
                 $(type $network_type = BaseNetwork;)?
                 let $provider = ProviderBuilder::<BaseNetwork>::from_config($config)?.build()?;
                 $body
             }
-            #[cfg(feature = "optimism")]
+            #[cfg(any())]
             Some(NetworkVariant::Optimism) => {
                 $(type $network_type = Optimism;)?
                 let $provider = ProviderBuilder::<Optimism>::from_config($config)?.build()?;
@@ -555,6 +559,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::Block { block, full, fields, raw, rpc, network } => {
             let config = rpc.load_config()?;
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             let network = if network.is_none() && (raw || fields.iter().any(|f| f == "raw")) {
                 crate::cmd::resolve_transaction_network(&config, false)
@@ -564,6 +569,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
             } else {
                 network
             };
+            */
             let block = block.unwrap_or_default();
             // Can use either --raw or specify raw as a field
             let output = if raw || fields.contains(&"raw".into()) {
@@ -1032,6 +1038,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         }
         CastSubcommand::Tx { tx_hash, from, nonce, field, raw, lane, rpc, to_request, network } => {
             let config = rpc.load_config()?;
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             let network = match network {
                 Some(network) => Some(network),
@@ -1040,6 +1047,7 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
                     .is_base()
                     .then_some(NetworkVariant::Base),
             };
+            */
             // Can use either --raw or specify raw as a field
             let is_raw = raw || field.as_deref() == Some("raw");
             let output = if is_raw || lane {
@@ -1268,14 +1276,20 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         CastSubcommand::DecodeTransaction { tx, network } => {
             let tx = stdin::unwrap_line(tx)?;
             let decoded_tx = match network {
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "optimism")]
                 Some(NetworkVariant::Optimism) => decode_raw_transaction::<Optimism>(&tx)?,
+                */
                 Some(NetworkVariant::Tempo) => decode_raw_transaction::<TempoNetwork>(&tx)?,
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "base")]
                 Some(NetworkVariant::Base) => decode_raw_transaction::<BaseNetwork>(&tx)?,
+                */
                 Some(NetworkVariant::Ethereum) => decode_raw_transaction::<Ethereum>(&tx)?,
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "monad")]
                 Some(NetworkVariant::Monad) => decode_raw_transaction::<Ethereum>(&tx)?,
+                */
                 // Without an explicit `--network` override, decode with the Foundry envelope,
                 // which dispatches on the EIP-2718 type byte for the transaction types compiled
                 // into `FoundryNetwork`, including Tempo txs (`0x76`).
@@ -1298,8 +1312,10 @@ pub async fn run_command(args: CastArgs) -> Result<()> {
         CastSubcommand::KeyAuthorization { command } => command.run().await?,
         CastSubcommand::Tempo(args) => args.run().await?,
         CastSubcommand::VirtualAddress { command } => command.run().await?,
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(any(feature = "base", feature = "optimism"))]
         CastSubcommand::DAEstimate(cmd) => cmd.run().await?,
+        */
         CastSubcommand::Trace(cmd) => cmd.run().await?,
     };
 

@@ -1,26 +1,26 @@
-use crate::{
-    executors::Executor,
-    inspectors::{InspectorStackBuilder, TempoLabels},
-};
+use crate::{executors::Executor, inspectors::InspectorStackBuilder};
 use alloy_primitives::Address;
 use foundry_evm_core::{
     backend::Backend,
-    evm::{
-        BlockEnvFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TempoEvmNetwork,
-        TxEnvFor,
-    },
+    evm::{BlockEnvFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
 };
 use foundry_evm_networks::NetworkConfigs;
 use revm::context::{Block, Transaction};
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm_core::evm::BaseEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use foundry_evm_core::{constants::MONAD_CHEATCODE_ADDRESS, evm::MonadEvmNetwork};
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm_core::evm::OpEvmNetwork;
+*/
 
 /// The builder that allows to configure an evm [`Executor`] which a stack of optional
 /// [`revm::Inspector`]s, such as [`Cheatcodes`].
@@ -136,6 +136,7 @@ impl ExecutorBuilder<EthEvmNetwork> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl ExecutorBuilder<BaseEvmNetwork> {
     /// Creates the default Base executor builder.
@@ -144,7 +145,9 @@ impl ExecutorBuilder<BaseEvmNetwork> {
         Self::default()
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 impl ExecutorBuilder<OpEvmNetwork> {
     /// Creates the default OP executor builder.
@@ -153,7 +156,9 @@ impl ExecutorBuilder<OpEvmNetwork> {
         Self::default()
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 impl ExecutorBuilder<TempoEvmNetwork> {
     /// Creates a Tempo executor builder with its native label inspector.
     #[inline]
@@ -161,7 +166,9 @@ impl ExecutorBuilder<TempoEvmNetwork> {
         Self::default().inspectors(|stack| stack.tempo_labels(TempoLabels::default()))
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 impl ExecutorBuilder<MonadEvmNetwork> {
     /// Creates a Monad executor builder with MonadVM cheatcode support.
@@ -171,3 +178,4 @@ impl ExecutorBuilder<MonadEvmNetwork> {
             .inspectors(|stack| stack.extra_cheatcode_addresses(&[MONAD_CHEATCODE_ADDRESS]))
     }
 }
+*/

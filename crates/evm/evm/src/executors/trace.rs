@@ -252,10 +252,14 @@ mod tests {
     use foundry_evm_core::{FoundryTransaction, evm::EthEvmNetwork};
     use revm::context::Transaction;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_evm_core::evm::BaseEvmNetwork;
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_evm_hardforks::{BaseSpecId, BaseUpgrade};
+    */
 
     fn assert_trace_spec_authority<FEN>(
         networks: NetworkConfigs,
@@ -302,6 +306,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     fn trace_spec_tempo_override_reports_executed_hardfork() {
         let spec = evm_spec_id::<foundry_evm_hardforks::TempoHardfork>(EvmVersion::Cancun);
@@ -313,7 +318,9 @@ mod tests {
             Some(spec.into()),
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[test]
     fn trace_spec_base_override_reports_executed_hardfork() {
@@ -325,6 +332,7 @@ mod tests {
             Some(FoundryHardfork::Base(BaseUpgrade::Ecotone)),
         );
     }
+    */
 
     #[test]
     fn state_override_nonce_does_not_modify_transaction_nonce() {

@@ -32,14 +32,18 @@ tracing.workspace = true
 serde.workspace = true
 
 [features]
-default = ["optimism"]
-base = [
-    "foundry-common/base",
-    "foundry-evm-core/base",
-    "foundry-evm-traces/base",
-]
-optimism = [
-    "foundry-common/optimism",
-    "foundry-evm-core/optimism",
-    "foundry-evm-traces/optimism",
-]
+default = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "foundry-common/base",
+#     "foundry-evm-core/base",
+#     "foundry-evm-traces/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "foundry-common/optimism",
+#     "foundry-evm-core/optimism",
+#     "foundry-evm-traces/optimism",
+# ]
+optimism = []

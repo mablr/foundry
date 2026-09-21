@@ -97,27 +97,33 @@ pub(crate) fn source_hardfork(
     chain_id: u64,
     timestamp: u64,
 ) -> Option<FoundryHardfork> {
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     if _execution_network.is_base() {
         return _execution_network.historical_hardfork(chain_id, timestamp);
     }
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     if _execution_network.is_optimism()
         && let Some(hardfork) = _execution_network.historical_hardfork(chain_id, timestamp)
     {
         return Some(hardfork);
     }
-    #[cfg(feature = "base")]
-    if matches!(NamedChain::try_from(chain_id), Ok(NamedChain::Base | NamedChain::BaseSepolia)) {
-        #[cfg(feature = "optimism")]
-        return foundry_evm::hardfork::OpHardfork::from_chain_and_timestamp(
-            Chain::from_id(chain_id),
-            timestamp,
-        )
-        .map(FoundryHardfork::Optimism);
-        #[cfg(not(feature = "optimism"))]
-        return None;
-    }
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
+    #[cfg(any())]
+        if matches!(NamedChain::try_from(chain_id), Ok(NamedChain::Base | NamedChain::BaseSepolia)) {
+            #[cfg(any())]
+            return foundry_evm::hardfork::OpHardfork::from_chain_and_timestamp(
+                Chain::from_id(chain_id),
+                timestamp,
+            )
+            .map(FoundryHardfork::Optimism);
+            // EVM2 migration: unconditional Ethereum fallback.
+            return None;
+        }
+    */
     FoundryHardfork::from_chain_and_timestamp(chain_id, timestamp)
 }
 
@@ -339,9 +345,11 @@ pub struct NodeConfig {
     pub precompile_factory: Option<Arc<dyn PrecompileFactory>>,
     /// Networks to enable features for.
     pub networks: NetworkConfigs,
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Overrides the Base activation-registry administrator.
     #[cfg(feature = "base")]
     pub base_activation_admin: Option<Address>,
+    */
     /// The account used to sponsor Tempo fee-payer requests.
     ///
     /// Must be an unlocked signer account. Defaults to the last dev account on Tempo networks.
@@ -601,13 +609,16 @@ impl NodeConfig {
         Self { networks: NetworkConfigs::with_tempo(), ..Self::test() }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns a test config with Monad network enabled.
     #[cfg(feature = "monad")]
     #[doc(hidden)]
     pub fn test_monad() -> Self {
         Self { networks: NetworkConfigs::with_monad(), ..Self::test() }
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns a test config with Base network enabled.
     #[cfg(feature = "base")]
     #[doc(hidden)]
@@ -616,6 +627,7 @@ impl NodeConfig {
             .with_networks(NetworkConfigs::with_base())
             .with_chain_id(Some(NamedChain::Base as u64))
     }
+    */
 
     /// Returns a new config which does not initialize any accounts on node startup.
     pub fn empty_state() -> Self {
@@ -697,8 +709,10 @@ impl Default for NodeConfig {
             memory_limit: None,
             precompile_factory: None,
             networks: Default::default(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             base_activation_admin: None,
+            */
             tempo_fee_payer: None,
             silent: false,
             cache_path: None,
@@ -1356,6 +1370,7 @@ impl NodeConfig {
         self.tempo_fee_payer.or_else(|| self.genesis_accounts.last().map(|wallet| wallet.address()))
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Enable Monad network features.
     #[cfg(feature = "monad")]
     #[must_use]
@@ -1365,7 +1380,9 @@ impl NodeConfig {
         self.chain_id_network_base = None;
         self
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Enable Base network features.
     #[cfg(feature = "base")]
     #[must_use]
@@ -1375,7 +1392,9 @@ impl NodeConfig {
         self.chain_id_network_base = None;
         self
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Sets the Base activation-registry administrator override.
     #[cfg(feature = "base")]
     #[must_use]
@@ -1383,7 +1402,9 @@ impl NodeConfig {
         self.base_activation_admin = admin;
         self
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Enable Optimism network features.
     #[cfg(feature = "optimism")]
     #[must_use]
@@ -1393,6 +1414,7 @@ impl NodeConfig {
         self.chain_id_network_base = None;
         self
     }
+    */
 
     /// Makes the node silent to not emit anything on stdout
     #[must_use]
@@ -1436,6 +1458,11 @@ impl NodeConfig {
                 ReceiptEnvelope = foundry_primitives::FoundryReceiptEnvelope,
             >,
     {
+        eyre::ensure!(
+            !self.networks.is_tempo(),
+            "Tempo execution is disabled on the Ethereum-only EVM2 migration branch"
+        );
+
         // configure the revm environment
 
         let mut cfg = CfgEnv::default();
@@ -1486,10 +1513,12 @@ impl NodeConfig {
             base_fee_params,
             tempo_hardfork,
         );
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if self.networks.is_optimism() {
             fees.set_optimism_hardfork(self.get_hardfork().into());
         }
+        */
 
         let (db, fork, fork_transaction_replay) =
             if let Some(eth_rpc_url) = self.fork_urls.first().cloned() {
@@ -2112,10 +2141,12 @@ latest block number: {latest_block}"
             self.networks.base_fee_params(block.header.timestamp()),
             self.networks.is_tempo().then(|| TempoHardfork::from(effective_hardfork)),
         );
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if self.networks.is_optimism() {
             fees.set_optimism_base_fee_rules(block.header.extra_data());
         }
+        */
 
         // if not set explicitly we use the base fee of the latest block
         self.base_fee = fork_overrides.base_fee.or_else(|| block.header.base_fee_per_gas());
@@ -2618,12 +2649,17 @@ mod tests {
     use super::*;
     use foundry_evm::{hardfork::EthereumHardfork, hardforks::latest_active_tempo_hardfork};
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     use foundry_evm::hardforks::BaseUpgrade;
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     use foundry_evm::hardfork::OpHardfork;
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
     #[tokio::test(flavor = "multi_thread")]
     async fn base_chain_inference_uses_native_base_forks() {
@@ -2656,6 +2692,7 @@ mod tests {
             }
         }
     }
+    */
 
     #[tokio::test(flavor = "multi_thread")]
     async fn fork_output_redacts_endpoint_credentials() {
@@ -2821,6 +2858,7 @@ mod tests {
         );
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     #[test]
     fn set_chain_id_updates_network_config() {
@@ -2829,6 +2867,7 @@ mod tests {
 
         assert!(config.networks.is_optimism());
     }
+    */
 
     #[test]
     fn chain_id_network_inference_is_replaceable_and_clearable() {
@@ -2879,6 +2918,7 @@ mod tests {
         assert_eq!(config.get_hardfork(), FoundryHardfork::Ethereum(EthereumHardfork::Shanghai));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "optimism")]
     fn get_hardfork_on_optimism_uses_genesis_timestamp() {
@@ -2891,6 +2931,7 @@ mod tests {
 
         assert_eq!(config.get_hardfork(), FoundryHardfork::Optimism(OpHardfork::Canyon));
     }
+    */
 
     #[test]
     fn get_hardfork_on_local_tempo_defaults_to_latest_active() {
@@ -2899,6 +2940,7 @@ mod tests {
         assert_eq!(config.get_hardfork(), FoundryHardfork::Tempo(latest_active_tempo_hardfork()));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "base")]
     fn test_base_config_uses_base_network_and_chain_id() {
@@ -2907,7 +2949,9 @@ mod tests {
         assert!(config.networks.is_base());
         assert_eq!(config.get_chain_id(), NamedChain::Base as u64);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "base")]
     fn get_hardfork_on_base_fork_uses_source_chain_timestamp_mapping() {
@@ -2919,7 +2963,9 @@ mod tests {
         assert_eq!(config.get_chain_id(), 1);
         assert_eq!(config.get_hardfork(), FoundryHardfork::Base(BaseUpgrade::Beryl));
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn get_hardfork_on_monad_fork_uses_source_chain_timestamp_mapping() {
@@ -2934,6 +2980,7 @@ mod tests {
             FoundryHardfork::Monad(foundry_evm::hardfork::MonadHardfork::MonadEight)
         );
     }
+    */
 
     #[test]
     fn account_generator_rejects_harden_bit_overflow_path() {

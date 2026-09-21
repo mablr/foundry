@@ -1,3 +1,6 @@
+// Disabled for the Ethereum-only EVM2 migration.
+#![cfg(any())]
+
 use alloy_evm::{Evm, EvmEnv, FromRecoveredTx};
 use alloy_primitives::{Address, Bytes, TxKind, U256};
 use alloy_signer::Signer;

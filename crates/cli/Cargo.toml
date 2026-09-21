@@ -72,25 +72,31 @@ tempfile.workspace = true
 tikv-jemallocator = { workspace = true, optional = true }
 
 [features]
-default = ["optimism"]
+default = []
 tracy = ["dep:tracing-tracy"]
 tracy-allocator = ["tracy"]
 jemalloc = ["dep:tikv-jemallocator"]
 mimalloc = ["dep:mimalloc"]
-monad = [
-    "foundry-common/monad",
-    "foundry-config/monad",
-    "foundry-evm-networks/monad",
-    "foundry-evm/monad",
-]
-base = [
-    "foundry-config/base",
-    "foundry-evm-networks/base",
-    "foundry-common/base",
-    "foundry-evm/base",
-]
-optimism = [
-    "foundry-evm-networks/optimism",
-    "foundry-common/optimism",
-    "foundry-evm/optimism",
-]
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = [
+#     "foundry-common/monad",
+#     "foundry-config/monad",
+#     "foundry-evm-networks/monad",
+#     "foundry-evm/monad",
+# ]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "foundry-config/base",
+#     "foundry-evm-networks/base",
+#     "foundry-common/base",
+#     "foundry-evm/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "foundry-evm-networks/optimism",
+#     "foundry-common/optimism",
+#     "foundry-evm/optimism",
+# ]
+optimism = []

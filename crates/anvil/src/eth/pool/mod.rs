@@ -44,8 +44,10 @@ use futures::channel::mpsc::{Receiver, Sender, channel};
 use parking_lot::{Mutex, RwLock};
 use std::{collections::VecDeque, fmt, sync::Arc};
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use alloy_consensus::Typed2718;
+*/
 
 pub mod transactions;
 
@@ -76,6 +78,7 @@ impl<T> Pool<T> {
         self.inner.read().pending_transactions.transactions().collect()
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns every ready and queued transaction.
     #[cfg(feature = "base")]
     pub fn all_transactions(&self) -> Vec<Arc<PoolTransaction<T>>> {
@@ -85,6 +88,7 @@ impl<T> Pool<T> {
             .chain(pool.ready_transactions.get_transactions())
             .collect()
     }
+    */
 
     /// Returns the number of tx that are ready and queued for further execution
     pub fn txpool_status(&self) -> TxpoolStatus {
@@ -119,6 +123,7 @@ impl<T> Pool<T> {
             .any(|tx| tx.pending_transaction.nonce() == nonce)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns a transaction from `sender` that provides exactly `markers`.
     #[cfg(feature = "base")]
     pub fn transaction_with_markers(
@@ -128,6 +133,7 @@ impl<T> Pool<T> {
     ) -> Option<Arc<PoolTransaction<T>>> {
         self.inner.read().transactions_by_sender(sender).find(|tx| tx.provides == markers)
     }
+    */
 
     /// Removes all transactions from the pool
     pub fn clear(&self) {
@@ -272,6 +278,7 @@ impl<T: Transaction> Pool<T> {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 impl<T: Typed2718> Pool<T> {
     /// Removes every transaction with the given EIP-2718 type.
@@ -289,6 +296,7 @@ impl<T: Typed2718> Pool<T> {
         self.remove_invalid(hashes)
     }
 }
+*/
 
 /// A Transaction Pool
 ///

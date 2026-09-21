@@ -623,7 +623,7 @@ forgetest_async!(can_verify_bytecode_without_explorer, |prj, cmd| {
     assert!(stdout.contains("Runtime code matched"), "{stdout}");
     assert!(stderr.contains("Creation data is unavailable"), "{stderr}");
 
-    #[cfg(feature = "base")]
+    #[cfg(any())]
     {
         cmd.forge_fuse();
         cmd.unset_env("ETHERSCAN_API_KEY");

@@ -19,9 +19,7 @@ use foundry_common::{compile::ProjectCompiler, sh_eprintln, sh_println};
 use foundry_compilers::compilers::multi::MultiCompiler;
 use foundry_config::{Config, InlineConfig};
 use foundry_evm::{
-    core::evm::{
-        BlockEnvFor, EthEvmNetwork, FoundryEvmNetwork, SpecFor, TempoEvmNetwork, TxEnvFor,
-    },
+    core::evm::{BlockEnvFor, EthEvmNetwork, FoundryEvmNetwork, SpecFor, TxEnvFor},
     executors::ExecutorBuilder,
     fork::ResolvedFork,
     opts::EvmOpts,
@@ -42,14 +40,20 @@ use std::{
 };
 use tempfile::TempDir;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm::core::evm::BaseEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use foundry_evm::core::evm::MonadEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::core::evm::OpEvmNetwork;
+*/
 
 const MUTATION_STACK_SIZE: usize = 16 * 1024 * 1024;
 
@@ -676,62 +680,72 @@ fn compile_and_test(
     isolate: bool,
 ) -> Result<bool> {
     if evm.opts.networks.is_tempo() {
-        compile_and_test_inner::<TempoEvmNetwork>(
-            config,
-            evm,
-            filter_args,
-            rerun_failures,
-            selected_sources_relative,
-            isolate,
-            ExecutorBuilder::<TempoEvmNetwork>::new(),
-        )
-    } else {
-        #[cfg(feature = "base")]
-        if evm.opts.networks.is_base() {
-            return compile_and_test_inner::<BaseEvmNetwork>(
-                config,
-                evm,
-                filter_args,
-                rerun_failures,
-                selected_sources_relative,
-                isolate,
-                ExecutorBuilder::<BaseEvmNetwork>::new(),
-            );
-        }
-        #[cfg(feature = "monad")]
-        if evm.opts.networks.is_monad() {
-            return compile_and_test_inner::<MonadEvmNetwork>(
-                config,
-                evm,
-                filter_args,
-                rerun_failures,
-                selected_sources_relative,
-                isolate,
-                ExecutorBuilder::<MonadEvmNetwork>::new(),
-            );
-        }
-        #[cfg(feature = "optimism")]
-        if evm.opts.networks.is_optimism() {
-            return compile_and_test_inner::<OpEvmNetwork>(
-                config,
-                evm,
-                filter_args,
-                rerun_failures,
-                selected_sources_relative,
-                isolate,
-                ExecutorBuilder::<OpEvmNetwork>::new(),
-            );
-        }
-        compile_and_test_inner::<EthEvmNetwork>(
-            config,
-            evm,
-            filter_args,
-            rerun_failures,
-            selected_sources_relative,
-            isolate,
-            ExecutorBuilder::<EthEvmNetwork>::new(),
-        )
+        /* EVM2 migration: disabled non-Ethereum execution.
+
+                compile_and_test_inner::<TempoEvmNetwork>(
+                    config,
+                    evm,
+                    filter_args,
+                    rerun_failures,
+                    selected_sources_relative,
+                    isolate,
+                    ExecutorBuilder::<TempoEvmNetwork>::new(),
+                )
+
+        */
+        eyre::bail!("Tempo execution is disabled on the Ethereum-only EVM2 migration branch");
     }
+    /* EVM2 migration: disabled non-Ethereum execution.
+    #[cfg(feature = "base")]
+    if evm.opts.networks.is_base() {
+        return compile_and_test_inner::<BaseEvmNetwork>(
+            config,
+            evm,
+            filter_args,
+            rerun_failures,
+            selected_sources_relative,
+            isolate,
+            ExecutorBuilder::<BaseEvmNetwork>::new(),
+        );
+    }
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
+    #[cfg(feature = "monad")]
+    if evm.opts.networks.is_monad() {
+        return compile_and_test_inner::<MonadEvmNetwork>(
+            config,
+            evm,
+            filter_args,
+            rerun_failures,
+            selected_sources_relative,
+            isolate,
+            ExecutorBuilder::<MonadEvmNetwork>::new(),
+        );
+    }
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
+    #[cfg(feature = "optimism")]
+    if evm.opts.networks.is_optimism() {
+        return compile_and_test_inner::<OpEvmNetwork>(
+            config,
+            evm,
+            filter_args,
+            rerun_failures,
+            selected_sources_relative,
+            isolate,
+            ExecutorBuilder::<OpEvmNetwork>::new(),
+        );
+    }
+    */
+    compile_and_test_inner::<EthEvmNetwork>(
+        config,
+        evm,
+        filter_args,
+        rerun_failures,
+        selected_sources_relative,
+        isolate,
+        ExecutorBuilder::<EthEvmNetwork>::new(),
+    )
 }
 
 fn compile_and_test_inner<FEN: FoundryEvmNetwork>(

@@ -15,27 +15,41 @@ use alloy_primitives::{Address, B256, Bytes, Signature, TxHash};
 use alloy_rpc_types::ConversionError;
 use revm::context::TxEnv;
 use tempo_primitives::{AASigned, TEMPO_TX_TYPE_ID, TempoSignature, TempoTransaction};
+/* EVM2 migration: disabled non-Ethereum execution.
 use tempo_revm::TempoTxEnv;
+*/
 
-#[cfg(all(feature = "base", not(feature = "optimism")))]
+#[cfg(all(any(), not(any())))]
 use op_alloy_consensus::{DEPOSIT_TX_TYPE_ID, TxDeposit};
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(any(feature = "base", feature = "optimism"))]
 use alloy_consensus::Sealed;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_consensus::{BaseTxEnvelope, Eip8130Signed, TxEip8130};
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_evm::EIP8130_TRANSACTION_TYPE;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use base_common_rpc_types::Transaction;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use alloy_consensus::Transaction as _;
+*/
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use op_alloy_consensus::{
     DEPOSIT_TX_TYPE_ID, POST_EXEC_TX_TYPE_ID, PostExecPayload, TxDeposit, TxPostExec,
 };
+*/
 
 //
 /// Container type for signed, typed transactions.
@@ -70,20 +84,26 @@ pub enum FoundryTxEnvelope {
     /// [EIP-7702]: https://eips.ethereum.org/EIPS/eip-7702
     #[envelope(ty = 4)]
     Eip7702(Signed<TxEip7702>),
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// OP stack deposit transaction.
     ///
     /// See <https://docs.optimism.io/op-stack/bridging/deposit-flow>.
     #[cfg(any(feature = "base", feature = "optimism"))]
     #[envelope(ty = 126)]
     Deposit(Sealed<TxDeposit>),
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// OP stack post-execution synthetic transaction.
     #[cfg(feature = "optimism")]
     #[envelope(ty = 0x7D)]
     PostExec(Sealed<TxPostExec>),
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Base EIP-8130 account-abstraction transaction.
     #[cfg(feature = "base")]
     #[envelope(ty = 0x79, typed = TxEip8130)]
     Eip8130(Eip8130Signed),
+    */
     /// Tempo transaction type.
     ///
     /// See <https://docs.tempo.xyz/protocol/transactions>.
@@ -122,26 +142,32 @@ impl FoundryTxEnvelope {
         matches!(self, Self::Eip7702(_))
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is an OP stack deposit transaction.
     #[cfg(any(feature = "base", feature = "optimism"))]
     #[inline]
     pub const fn is_deposit(&self) -> bool {
         matches!(self, Self::Deposit(_))
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is an OP stack post-execution synthetic transaction.
     #[cfg(feature = "optimism")]
     #[inline]
     pub const fn is_post_exec(&self) -> bool {
         matches!(self, Self::PostExec(_))
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is a Base EIP-8130 transaction.
     #[cfg(feature = "base")]
     #[inline]
     pub const fn is_eip8130(&self) -> bool {
         matches!(self, Self::Eip8130(_))
     }
+    */
 
     /// Converts the transaction into an Ethereum [`TxEnvelope`].
     ///
@@ -153,12 +179,18 @@ impl FoundryTxEnvelope {
             Self::Eip1559(tx) => Ok(TxEnvelope::Eip1559(tx)),
             Self::Eip4844(tx) => Ok(TxEnvelope::Eip4844(tx)),
             Self::Eip7702(tx) => Ok(TxEnvelope::Eip7702(tx)),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             Self::Deposit(_) => Err(self),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::PostExec(_) => Err(self),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Eip8130(_) => Err(self),
+            */
             Self::Tempo(_) => Err(self),
         }
     }
@@ -209,12 +241,18 @@ impl FoundryTxEnvelope {
             Self::Eip1559(tx) => tx.recover_signer()?,
             Self::Eip4844(tx) => tx.recover_signer()?,
             Self::Eip7702(tx) => tx.recover_signer()?,
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             Self::Deposit(tx) => tx.from,
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::PostExec(tx) => tx.inner().signer_address(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Eip8130(tx) => tx.recover_sender()?,
+            */
             Self::Tempo(tx) => tx.signature().recover_signer(&tx.signature_hash())?,
         })
     }
@@ -261,23 +299,29 @@ impl FoundryTxType {
         matches!(self, Self::Eip7702)
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is an OP stack deposit transaction type.
     #[cfg(any(feature = "base", feature = "optimism"))]
     pub const fn is_deposit(&self) -> bool {
         matches!(self, Self::Deposit)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is an OP stack post-execution synthetic transaction type.
     #[cfg(feature = "optimism")]
     pub const fn is_post_exec(&self) -> bool {
         matches!(self, Self::PostExec)
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is a Base EIP-8130 transaction type.
     #[cfg(feature = "base")]
     pub const fn is_eip8130(&self) -> bool {
         matches!(self, Self::Eip8130)
     }
+    */
 
     /// Returns `true` if this is a Tempo transaction type.
     pub const fn is_tempo(&self) -> bool {
@@ -301,16 +345,22 @@ impl FoundryTypedTx {
             Self::Eip1559(tx) => FoundryTxEnvelope::Eip1559(tx.into_signed(signature)),
             Self::Eip7702(tx) => FoundryTxEnvelope::Eip7702(tx.into_signed(signature)),
             Self::Eip4844(tx) => FoundryTxEnvelope::Eip4844(tx.into_signed(signature)),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             Self::Deposit(tx) => FoundryTxEnvelope::Deposit(Sealed::new(tx)),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::PostExec(_) => {
                 unreachable!("op post-exec txs should not be impersonated")
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Eip8130(_) => {
                 unreachable!("EIP-8130 requires a signed raw transaction envelope")
             }
+            */
             Self::Tempo(tx) => {
                 let tempo_sig: TempoSignature = signature.into();
                 FoundryTxEnvelope::Tempo(tx.into_signed(tempo_sig))
@@ -318,23 +368,29 @@ impl FoundryTypedTx {
         }
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is an OP stack deposit transaction.
     #[cfg(any(feature = "base", feature = "optimism"))]
     pub const fn is_deposit(&self) -> bool {
         matches!(self, Self::Deposit(_))
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is an OP stack post-execution synthetic transaction.
     #[cfg(feature = "optimism")]
     pub const fn is_post_exec(&self) -> bool {
         matches!(self, Self::PostExec(_))
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// Returns `true` if this is a Base EIP-8130 transaction.
     #[cfg(feature = "base")]
     pub const fn is_eip8130(&self) -> bool {
         matches!(self, Self::Eip8130(_))
     }
+    */
 
     /// Returns `true` if this is a Tempo transaction.
     pub const fn is_tempo(&self) -> bool {
@@ -350,12 +406,18 @@ impl TxHashRef for FoundryTxEnvelope {
             Self::Eip1559(t) => t.hash(),
             Self::Eip4844(t) => t.hash(),
             Self::Eip7702(t) => t.hash(),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             Self::Deposit(t) => t.hash_ref(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::PostExec(t) => t.hash_ref(),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Eip8130(t) => t.hash(),
+            */
             Self::Tempo(t) => t.hash(),
         }
     }
@@ -407,6 +469,7 @@ impl TryFrom<AnyRpcTransaction> for FoundryTxEnvelope {
     type Error = ConversionError;
 
     fn try_from(value: AnyRpcTransaction) -> Result<Self, Self::Error> {
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if value.ty() == EIP8130_TRANSACTION_TYPE {
             let rpc = serde_json::from_value::<Transaction>(
@@ -419,6 +482,7 @@ impl TryFrom<AnyRpcTransaction> for FoundryTxEnvelope {
                 _ => Err(ConversionError::Custom("expected Base EIP-8130 transaction".to_string())),
             };
         }
+        */
         let transaction = value.into_inner();
         let from = transaction.from();
         match transaction.into_inner() {
@@ -439,7 +503,7 @@ impl TryFrom<AnyRpcTransaction> for FoundryTxEnvelope {
                     return Ok(Self::Tempo(tempo_tx));
                 }
 
-                #[cfg(all(feature = "base", not(feature = "optimism")))]
+                #[cfg(all(any(), not(any())))]
                 {
                     let mut tx = tx;
                     if tx.ty() == DEPOSIT_TX_TYPE_ID {
@@ -459,6 +523,7 @@ impl TryFrom<AnyRpcTransaction> for FoundryTxEnvelope {
                         "Unknown transaction type: 0x{tx_type:02X}"
                     )))
                 }
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "optimism")]
                 {
                     let mut tx = tx;
@@ -510,7 +575,8 @@ impl TryFrom<AnyRpcTransaction> for FoundryTxEnvelope {
                         "Unknown transaction type: 0x{tx_type:02X}"
                     )))
                 }
-                #[cfg(not(any(feature = "base", feature = "optimism")))]
+                */
+                #[cfg(not(any(any(), any())))]
                 {
                     let _ = from;
                     let tx_type = tx.ty();
@@ -531,6 +597,7 @@ impl FromRecoveredTx<FoundryTxEnvelope> for TxEnv {
             FoundryTxEnvelope::Eip1559(signed_tx) => Self::from_recovered_tx(signed_tx, caller),
             FoundryTxEnvelope::Eip4844(signed_tx) => Self::from_recovered_tx(signed_tx, caller),
             FoundryTxEnvelope::Eip7702(signed_tx) => Self::from_recovered_tx(signed_tx, caller),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             FoundryTxEnvelope::Deposit(sealed_tx) => {
                 let tx = sealed_tx.inner();
@@ -544,6 +611,8 @@ impl FromRecoveredTx<FoundryTxEnvelope> for TxEnv {
                     ..Default::default()
                 }
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             FoundryTxEnvelope::PostExec(sealed_tx) => {
                 let tx = sealed_tx.inner();
@@ -555,10 +624,13 @@ impl FromRecoveredTx<FoundryTxEnvelope> for TxEnv {
                     ..Default::default()
                 }
             }
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             FoundryTxEnvelope::Eip8130(_) => {
                 unreachable!("EIP-8130 transaction in Ethereum context")
             }
+            */
             FoundryTxEnvelope::Tempo(_) => unreachable!("Tempo tx in Ethereum context"),
         }
     }
@@ -570,6 +642,7 @@ impl FromTxWithEncoded<FoundryTxEnvelope> for TxEnv {
     }
 }
 
+/* EVM2 migration: disabled non-Ethereum execution.
 impl FromRecoveredTx<FoundryTxEnvelope> for TempoTxEnv {
     fn from_recovered_tx(tx: &FoundryTxEnvelope, caller: Address) -> Self {
         match tx {
@@ -588,24 +661,33 @@ impl FromRecoveredTx<FoundryTxEnvelope> for TempoTxEnv {
             FoundryTxEnvelope::Eip7702(signed_tx) => {
                 Self::from(TxEnv::from_recovered_tx(signed_tx, caller))
             }
-            #[cfg(any(feature = "base", feature = "optimism"))]
-            FoundryTxEnvelope::Deposit(_) => unreachable!("Deposit tx in Tempo context"),
-            #[cfg(feature = "optimism")]
-            FoundryTxEnvelope::PostExec(_) => unreachable!("Post-exec tx in Tempo context"),
-            #[cfg(feature = "base")]
-            FoundryTxEnvelope::Eip8130(_) => {
-                unreachable!("EIP-8130 transaction in Tempo context")
-            }
+            /* EVM2 migration: disabled non-Ethereum execution.
+            #[cfg(any(any(), any()))]
+                        FoundryTxEnvelope::Deposit(_) => unreachable!("Deposit tx in Tempo context"),
+            */
+                        /* EVM2 migration: disabled non-Ethereum execution.
+            #[cfg(any())]
+                        FoundryTxEnvelope::PostExec(_) => unreachable!("Post-exec tx in Tempo context"),
+            */
+                        /* EVM2 migration: disabled non-Ethereum execution.
+            #[cfg(any())]
+                        FoundryTxEnvelope::Eip8130(_) => {
+                            unreachable!("EIP-8130 transaction in Tempo context")
+                        }
+            */
             FoundryTxEnvelope::Tempo(aa_signed) => Self::from_recovered_tx(aa_signed, caller),
         }
     }
 }
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 impl FromTxWithEncoded<FoundryTxEnvelope> for TempoTxEnv {
     fn from_encoded_tx(tx: &FoundryTxEnvelope, sender: Address, _encoded: Bytes) -> Self {
         Self::from_recovered_tx(tx, sender)
     }
 }
+*/
 
 impl std::fmt::Display for FoundryTxType {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -615,12 +697,18 @@ impl std::fmt::Display for FoundryTxType {
             Self::Eip1559 => write!(f, "eip1559"),
             Self::Eip4844 => write!(f, "eip4844"),
             Self::Eip7702 => write!(f, "eip7702"),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             Self::Deposit => write!(f, "deposit"),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             Self::PostExec => write!(f, "post-exec"),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Eip8130 => write!(f, "eip8130"),
+            */
             Self::Tempo => write!(f, "tempo"),
         }
     }
@@ -646,12 +734,18 @@ impl From<FoundryTxEnvelope> for FoundryTypedTx {
             FoundryTxEnvelope::Eip1559(signed_tx) => Self::Eip1559(signed_tx.strip_signature()),
             FoundryTxEnvelope::Eip4844(signed_tx) => Self::Eip4844(signed_tx.strip_signature()),
             FoundryTxEnvelope::Eip7702(signed_tx) => Self::Eip7702(signed_tx.strip_signature()),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(any(feature = "base", feature = "optimism"))]
             FoundryTxEnvelope::Deposit(sealed_tx) => Self::Deposit(sealed_tx.into_inner()),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "optimism")]
             FoundryTxEnvelope::PostExec(sealed_tx) => Self::PostExec(sealed_tx.into_inner()),
+            */
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             FoundryTxEnvelope::Eip8130(signed_tx) => Self::Eip8130(signed_tx.into_tx()),
+            */
             FoundryTxEnvelope::Tempo(signed_tx) => Self::Tempo(signed_tx.strip_signature()),
         }
     }
@@ -671,11 +765,13 @@ mod tests {
     /// A plain Ethereum transaction in its JSON-RPC form.
     const ETH_RPC_TX: &str = r#"{"type":"0x0","chainId":"0x1","nonce":"0x15","gasPrice":"0x4a817c800","gas":"0xc350","to":"0xf02c1c8e6114b1dbe8937a39260b5b0a374432bb","value":"0xf3dbb76162000","input":"0x68656c6c6f21","r":"0x1b5e176d927f8e9ab405058b2d2457392da3e20f328b16ddabcebc33eaac5fea","s":"0x4ba69724e8f69de52f0125ad8b3c5c2cef33019bac3249e2c0a2192766d1721c","v":"0x25","hash":"0x88df016429689c079f3b2f6ad39fa052532c56795b733da78a91ebe6a713944b","blockHash":"0x1d59ff54b1eb26b013ce3cb5fc9dab3705b415a67127a003c3e61eb445bb8df2","blockNumber":"0x5daf3b","transactionIndex":"0x41","from":"0xa7d9ddbe1f17865597fbd27ec712455208b6b76d"}"#;
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// An OP-stack post-exec transaction (SDM, type `0x7D`) as returned by
     /// `eth_getTransactionByHash`. The RLP-encoded `PostExecPayload` is carried in `input`; the
     /// remaining fields are derived placeholders.
     #[cfg(feature = "optimism")]
     const OP_POST_EXEC_RPC_TX: &str = r#"{"blockHash":"0x72edd91c1b181b566e08846b9fe67e3d746c4e6555e6fb81f0d1acd9465f7322","blockNumber":"0x44ee2d","blockTimestamp":"0x6aadaad9","from":"0x0000000000000000000000000000000000000000","gas":"0x0","gasPrice":"0xfb","hash":"0x748fc6eb383fc0f2a92089556f639d4bdb1d363cb50e1be8acae2df338ba6963","input":"0xf83d018344ee2df7c4028207d0c4038207d0c4048207d0c4058207d0c4068207d0c4078207d0c4088207d0c4098207d0c40a8207d0c40b8207d0c40c8207d0","transactionIndex":"0xd","type":"0x7d","value":"0x0"}"#;
+    */
 
     /// An `ArbitrumInternalTx`, a type alloy models only as [`AnyTxEnvelope::Unknown`].
     const ARBITRUM_INTERNAL_RPC_TX: &str = r#"{"type":"0x6a","chainId":"0xa4b1","nonce":"0x0","gasPrice":"0x0","gas":"0x0","to":"0x00000000000000000000000000000000000a4b05","value":"0x0","input":"0x6bf6a42d","r":"0x0","s":"0x0","v":"0x0","hash":"0xe5ad4cc44e5cd67a464c038af87169fde2bd475f2c00306bd2d55ca2c5e4452e","blockHash":"0x0ce1511da42af573bac6870ef058d63bc4c8552440e97c149d4d539c482b5f7a","blockNumber":"0x1dc83ddc","transactionIndex":"0x0","from":"0x00000000000000000000000000000000000a4b05"}"#;
@@ -698,6 +794,7 @@ mod tests {
         assert!(FoundryTxEnvelope::encode_rpc_2718(&tx).is_err());
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "optimism")]
     #[test]
     fn encode_rpc_2718_post_exec_tx() {
@@ -711,7 +808,9 @@ mod tests {
         );
         assert_eq!(encoded, expected[..]);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// The RPC form carries the payload as RLP in `input`, not as a `PostExecPayload` object, and
     /// the recomputed hash matches the one the node reported.
     #[cfg(feature = "optimism")]
@@ -733,6 +832,7 @@ mod tests {
         assert_eq!(payload.block_number, 0x44ee2d);
         assert_eq!(payload.gas_refund_entries.len(), 11);
     }
+    */
 
     #[test]
     fn tx_type_predicates() {
@@ -744,15 +844,21 @@ mod tests {
         assert!(FoundryTxType::Tempo.is_tempo());
         assert!(!FoundryTxType::Tempo.is_legacy());
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(any(feature = "base", feature = "optimism"))]
         assert!(FoundryTxType::Deposit.is_deposit());
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         assert!(FoundryTxType::Eip8130.is_eip8130());
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         {
             assert!(FoundryTxType::PostExec.is_post_exec());
             assert!(!FoundryTxType::Deposit.is_post_exec());
         }
+        */
     }
 
     #[test]
@@ -766,14 +872,20 @@ mod tests {
         assert!(FoundryTypedTx::Eip7702(TxEip7702::default()).is_eip7702());
         assert!(FoundryTypedTx::Tempo(TempoTransaction::default()).is_tempo());
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(any(feature = "base", feature = "optimism"))]
         assert!(FoundryTypedTx::Deposit(TxDeposit::default()).is_deposit());
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         assert!(FoundryTypedTx::Eip8130(TxEip8130::default()).is_eip8130());
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         {
             assert!(FoundryTypedTx::PostExec(TxPostExec::default()).is_post_exec());
         }
+        */
     }
 
     #[test]
@@ -787,8 +899,11 @@ mod tests {
         );
         assert!(FoundryTxEnvelope::Eip7702(signed(TxEip7702::default())).is_eip7702());
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(any(feature = "base", feature = "optimism"))]
         assert!(FoundryTxEnvelope::Deposit(Sealed::new(TxDeposit::default())).is_deposit());
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         assert!(
             FoundryTxEnvelope::Eip8130(Eip8130Signed::new(
@@ -798,10 +913,13 @@ mod tests {
             ))
             .is_eip8130()
         );
+        */
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         {
             assert!(FoundryTxEnvelope::PostExec(Sealed::new(TxPostExec::default())).is_post_exec());
         }
+        */
     }
 
     #[test]

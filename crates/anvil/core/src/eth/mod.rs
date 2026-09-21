@@ -47,9 +47,11 @@ pub enum TransactionCountParams {
     Address((Address,)),
     /// Standard address and block query.
     Standard((Address, Option<BlockId>)),
+    /* EVM2 migration: disabled non-Ethereum execution.
     /// EIP-8130 address, block, and nonce-key query.
     #[cfg(feature = "base")]
     Eip8130((Address, Option<BlockId>, U256)),
+    */
 }
 
 impl TransactionCountParams {
@@ -58,8 +60,10 @@ impl TransactionCountParams {
         match self {
             Self::Address((address,)) => (address, None, None),
             Self::Standard((address, block)) => (address, block, None),
+            /* EVM2 migration: disabled non-Ethereum execution.
             #[cfg(feature = "base")]
             Self::Eip8130((address, block, nonce_key)) => (address, block, Some(nonce_key)),
+            */
         }
     }
 }
@@ -2138,6 +2142,7 @@ true}]}"#;
         let request = r#"{"method":"eth_getTransactionCount","params":["0x295a70b2de5e3953354a6a8344e616ed314d7251","latest","0x7"]}"#;
         let result = serde_json::from_str::<EthRequest>(request);
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         {
             let EthRequest::EthGetTransactionCount(params) = result.unwrap() else {
@@ -2147,7 +2152,8 @@ true}]}"#;
             assert_eq!(block, Some(BlockId::latest()));
             assert_eq!(nonce_key, Some(U256::from(7)));
         }
-        #[cfg(not(feature = "base"))]
+        */
+        // EVM2 migration: unconditional Ethereum fallback.
         assert!(result.is_err());
     }
 

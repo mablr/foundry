@@ -1195,7 +1195,7 @@ where
 mod tests {
     use super::*;
     use crate::CheatsConfig;
-    use alloy_primitives::{address, b256};
+
     use foundry_common::ContractsByArtifact;
     use foundry_compilers::{
         ArtifactId,
@@ -1203,7 +1203,9 @@ mod tests {
             BytecodeObject, CompactBytecode, CompactContractBytecode, remappings::Remapping,
         },
     };
+    /* EVM2 migration: disabled non-Ethereum execution.
     use foundry_evm_core::evm::TempoEvmNetwork;
+    */
     use std::{env, fs as stdfs, str::FromStr, sync::Arc};
     use tempfile::TempDir;
 
@@ -1626,13 +1628,16 @@ mod tests {
         assert_eq!(parsed.version, None);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     fn unique_temp_dir(prefix: &str) -> PathBuf {
         env::temp_dir().join(format!(
             "foundry-cheatcodes-{prefix}-{}",
             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
         ))
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     fn test_latest_broadcast_reads_tempo_sequences() {
         let root = unique_temp_dir("tempo-broadcast");
@@ -1720,4 +1725,5 @@ mod tests {
 
         stdfs::remove_dir_all(root).unwrap();
     }
+    */
 }

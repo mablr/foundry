@@ -66,24 +66,30 @@ foundry-test-utils.workspace = true
 rexpect.workspace = true
 
 [features]
-default = ["jemalloc", "asm-keccak", "optimism"]
+default = ["jemalloc", "asm-keccak", ]
 asm-keccak = ["alloy-primitives/asm-keccak"]
 jemalloc = ["foundry-cli/jemalloc"]
 mimalloc = ["foundry-cli/mimalloc"]
 tracy-allocator = ["foundry-cli/tracy-allocator"]
-monad = [
-    "foundry-common/monad",
-    "foundry-config/monad",
-    "foundry-evm/monad",
-    "foundry-cli/monad",
-]
-base = [
-    "foundry-common/base",
-    "foundry-evm/base",
-    "foundry-cli/base",
-]
-optimism = [
-    "foundry-common/optimism",
-    "foundry-evm/optimism",
-    "foundry-cli/optimism",
-]
+# Disabled for the Ethereum-only EVM2 migration.
+# monad = [
+#     "foundry-common/monad",
+#     "foundry-config/monad",
+#     "foundry-evm/monad",
+#     "foundry-cli/monad",
+# ]
+monad = []
+# Disabled for the Ethereum-only EVM2 migration.
+# base = [
+#     "foundry-common/base",
+#     "foundry-evm/base",
+#     "foundry-cli/base",
+# ]
+base = []
+# Disabled for the Ethereum-only EVM2 migration.
+# optimism = [
+#     "foundry-common/optimism",
+#     "foundry-evm/optimism",
+#     "foundry-cli/optimism",
+# ]
+optimism = []

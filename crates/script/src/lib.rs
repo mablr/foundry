@@ -49,8 +49,8 @@ use foundry_debugger::DebuggerLayout;
 use foundry_evm::{
     backend::Backend,
     core::{
-        Breakpoints, FoundryTransaction,
-        evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TempoEvmNetwork, TxEnvFor},
+        Breakpoints,
+        evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
         fork::ResolvedFork,
     },
     executors::ExecutorBuilder,
@@ -67,14 +67,20 @@ use foundry_wallets::MultiWalletOpts;
 use serde::Serialize;
 use std::path::PathBuf;
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]
 use foundry_evm::core::evm::BaseEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "monad")]
 use foundry_evm::core::evm::MonadEvmNetwork;
+*/
 
+/* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "optimism")]
 use foundry_evm::core::evm::OpEvmNetwork;
+*/
 
 mod broadcast;
 mod build;
@@ -418,36 +424,42 @@ impl ScriptArgs {
         // Box each branch's future to keep its large async state off `run_script`'s future;
         // otherwise `run_command` trips `clippy::large_stack_frames` by a small margin.
         if is_tempo {
-            let batch = self.batch;
-            return Box::pin(async move {
-                let bundled = match self
-                    .prepare_bundled::<TempoEvmNetwork>(
-                        config,
-                        evm_opts,
-                        ExecutorBuilder::<TempoEvmNetwork>::new(),
-                    )
-                    .await?
-                {
-                    Some(bundled) => bundled,
-                    None => return Ok(()),
-                };
-                // batch mode owns its own pending recovery inside broadcast_batch(); running the
-                // generic wait_for_pending() first would race with that and could double-process
-                // an already-confirmed batch hash.
-                let bundled = if batch { bundled } else { bundled.wait_for_pending().await? };
-                let broadcasted = if batch {
-                    bundled.broadcast_batch().await?
-                } else {
-                    bundled.broadcast().await?
-                };
-                if broadcasted.args.verify {
-                    broadcasted.verify().await?;
-                }
-                Ok(())
-            })
-            .await;
+            /* EVM2 migration: disabled non-Ethereum execution.
+
+                        let batch = self.batch;
+                        return Box::pin(async move {
+                            let bundled = match self
+                                .prepare_bundled::<TempoEvmNetwork>(
+                                    config,
+                                    evm_opts,
+                                    ExecutorBuilder::<TempoEvmNetwork>::new(),
+                                )
+                                .await?
+                            {
+                                Some(bundled) => bundled,
+                                None => return Ok(()),
+                            };
+                            // batch mode owns its own pending recovery inside broadcast_batch(); running the
+                            // generic wait_for_pending() first would race with that and could double-process
+                            // an already-confirmed batch hash.
+                            let bundled = if batch { bundled } else { bundled.wait_for_pending().await? };
+                            let broadcasted = if batch {
+                                bundled.broadcast_batch().await?
+                            } else {
+                                bundled.broadcast().await?
+                            };
+                            if broadcasted.args.verify {
+                                broadcasted.verify().await?;
+                            }
+                            Ok(())
+                        })
+                        .await;
+
+            */
+            eyre::bail!("Tempo execution is disabled on the Ethereum-only EVM2 migration branch");
         }
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "base")]
         if evm_opts.networks.is_base() {
             return Box::pin(self.run_generic_script::<BaseEvmNetwork>(
@@ -457,7 +469,9 @@ impl ScriptArgs {
             ))
             .await;
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
         if evm_opts.networks.is_monad() {
             return Box::pin(async move {
@@ -478,7 +492,9 @@ impl ScriptArgs {
             })
             .await;
         }
+        */
 
+        /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "optimism")]
         if evm_opts.networks.is_optimism() {
             return Box::pin(self.run_generic_script::<OpEvmNetwork>(
@@ -488,6 +504,7 @@ impl ScriptArgs {
             ))
             .await;
         }
+        */
 
         Box::pin(self.run_generic_script::<EthEvmNetwork>(
             config,
@@ -1142,7 +1159,7 @@ impl<FEN: FoundryEvmNetwork> ScriptConfig<FEN> {
         restricted: bool,
     ) -> Result<ScriptRunner<FEN>> {
         trace!("preparing script runner");
-        let (resolved, evm_env, mut tx_env) = self.resolve_execution_env().await?;
+        let (resolved, evm_env, tx_env) = self.resolve_execution_env().await?;
 
         let db = if self.evm_opts.fork_url.is_some() {
             let resolved = resolved.context("fork must be resolved")?;
@@ -1200,7 +1217,7 @@ impl<FEN: FoundryEvmNetwork> ScriptConfig<FEN> {
 
         // Propagate fee token to the transaction environment so that internal EVM calls
         // (e.g. script deployment, setUp) use the correct fee token for Tempo networks.
-        tx_env.set_fee_token(self.tempo.fee_token);
+        //         tx_env.set_fee_token(self.tempo.fee_token);
 
         let mut runner = ScriptRunner::new(
             builder.build(evm_env, tx_env, db, self.evm_opts.networks),
@@ -1258,13 +1275,10 @@ mod tests {
     use alloy_primitives::{B256, address};
     use alloy_provider::Provider as _;
     use alloy_rpc_types::TransactionRequest;
-    use alloy_signer::SignerSync as _;
+
     use anvil::{NodeConfig, spawn};
     use foundry_cli::opts::TEMPO_SESSION_ID_ENV;
-    use foundry_common::tempo::{
-        GeneratedSessionKey, SessionAuthorizationRequest, SessionEntry, TEMPO_HOME_ENV,
-        upsert_session_entry,
-    };
+    use foundry_common::tempo::TEMPO_HOME_ENV;
     use foundry_config::UnresolvedEnvVarError;
     use foundry_evm::{
         revm::context::Block as _,
@@ -1272,15 +1286,19 @@ mod tests {
             CallKind, CallTrace, CallTraceArena, CallTraceNode, SparsedTraceArena, TraceKind,
         },
     };
-    use semver::Version;
-    use std::{fs, num::NonZeroU64, sync::LazyLock};
+    // use semver::Version;
+    use std::{fs, sync::LazyLock};
     use tempfile::tempdir;
     use tokio::sync::{Mutex, MutexGuard};
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     const SESSION_PRIVATE_KEY: &str =
-        "0x59c6995e998f97a5a004497e5da3b5d2b2b66a87f064d39c44da0b6d6e4f8ff0";
+            "0x59c6995e998f97a5a004497e5da3b5d2b2b66a87f064d39c44da0b6d6e4f8ff0";
+    */
+    /* EVM2 migration: disabled non-Ethereum execution.
     const SESSION_ROOT_PRIVATE_KEY: &str =
-        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    */
     const SESSION_ID_HEX: &str =
         "0x1111111111111111111111111111111111111111111111111111111111111111";
     const SESSION_ROOT_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
@@ -1334,6 +1352,7 @@ mod tests {
         assert_ne!(first, second);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "monad")]
     #[tokio::test(flavor = "multi_thread")]
     async fn script_explicit_network_is_preserved_for_a_new_rpc() {
@@ -1367,6 +1386,7 @@ mod tests {
         assert_eq!(second.context().network_profile, NetworkConfigs::with_monad());
         assert_eq!(config.evm_opts.networks, NetworkConfigs::with_ethereum());
     }
+    */
 
     #[tokio::test(flavor = "multi_thread")]
     async fn script_explicit_fork_block_is_preserved_for_a_new_rpc() {
@@ -1821,39 +1841,41 @@ mod tests {
         assert!(result.get_created_contracts(&ContractsByArtifact::default()).is_empty());
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     fn active_session_entry(
-        session_id: B256,
-        root_account: Address,
-        chain_id: u64,
-    ) -> SessionEntry {
-        let foundry_wallets::WalletSigner::Local(root) =
-            foundry_wallets::utils::create_private_key_signer(SESSION_ROOT_PRIVATE_KEY).unwrap()
-        else {
-            unreachable!("a raw private key always creates a local signer")
-        };
-        assert_eq!(root.address(), root_account);
-        let key = GeneratedSessionKey::from_private_key(SESSION_PRIVATE_KEY).unwrap();
-        let prepared = SessionAuthorizationRequest {
-            session_id,
-            root_account,
-            chain_id,
-            key_address: key.address(),
-            expiry: NonZeroU64::new(u64::MAX).unwrap(),
-            scope: vec![tempo_primitives::transaction::CallScope {
-                target: Address::repeat_byte(0xaa),
-                selector_rules: vec![],
-            }],
-            spend_limits: vec![],
+            session_id: B256,
+            root_account: Address,
+            chain_id: u64,
+        ) -> SessionEntry {
+            let foundry_wallets::WalletSigner::Local(root) =
+                foundry_wallets::utils::create_private_key_signer(SESSION_ROOT_PRIVATE_KEY).unwrap()
+            else {
+                unreachable!("a raw private key always creates a local signer")
+            };
+            assert_eq!(root.address(), root_account);
+            let key = GeneratedSessionKey::from_private_key(SESSION_PRIVATE_KEY).unwrap();
+            let prepared = SessionAuthorizationRequest {
+                session_id,
+                root_account,
+                chain_id,
+                key_address: key.address(),
+                expiry: NonZeroU64::new(u64::MAX).unwrap(),
+                scope: vec![tempo_primitives::transaction::CallScope {
+                    target: Address::repeat_byte(0xaa),
+                    selector_rules: vec![],
+                }],
+                spend_limits: vec![],
+            }
+            .prepare(0)
+            .unwrap();
+            let signature = root.sign_hash_sync(&prepared.authorization.signature_hash()).unwrap();
+            let authorization = prepared
+                .authorization
+                .clone()
+                .into_signed(tempo_primitives::transaction::PrimitiveSignature::Secp256k1(signature));
+            prepared.into_active_entry(key, &authorization).unwrap()
         }
-        .prepare(0)
-        .unwrap();
-        let signature = root.sign_hash_sync(&prepared.authorization.signature_hash()).unwrap();
-        let authorization = prepared
-            .authorization
-            .clone()
-            .into_signed(tempo_primitives::transaction::PrimitiveSignature::Secp256k1(signature));
-        prepared.into_active_entry(key, &authorization).unwrap()
-    }
+    */
 
     struct TempoHomeGuard {
         _guard: MutexGuard<'static, ()>,
@@ -2036,6 +2058,7 @@ mod tests {
         assert_eq!(config.sender_nonce, 7);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(feature = "monad")]
     async fn script_runner_preserves_nested_fork_source_chain() {
@@ -2076,7 +2099,9 @@ mod tests {
             Some(FoundryHardfork::Monad(foundry_evm::hardforks::MonadHardfork::MonadNine))
         );
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test(flavor = "multi_thread")]
     async fn tempo_runner_fee_charge_matches_execution_context() {
         let (_api, handle) = spawn(NodeConfig::test_tempo()).await;
@@ -2122,6 +2147,7 @@ mod tests {
             .unwrap();
         assert!(synthetic_runner.executor.evm_env().cfg_env.disable_fee_charge);
     }
+    */
 
     #[test]
     fn can_parse_shared_tempo_opts() {
@@ -2176,6 +2202,7 @@ mod tests {
         assert_eq!(args.tempo.session, Some(B256::from([0x11; 32])),);
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     async fn tempo_session_sets_script_sender_to_root_account() {
         let temp = tempdir().unwrap();
@@ -2208,7 +2235,9 @@ mod tests {
             .unwrap();
         assert_eq!(state.script_config.evm_opts.sender, root);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     async fn tempo_session_resume_multi_defers_session_sender_until_reexecution() {
         let temp = tempdir().unwrap();
@@ -2239,7 +2268,9 @@ mod tests {
             .unwrap();
         assert_ne!(state.script_config.evm_opts.sender, root);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     async fn tempo_session_resume_defers_session_sender_until_reexecution() {
         let temp = tempdir().unwrap();
@@ -2269,7 +2300,9 @@ mod tests {
             .unwrap();
         assert_ne!(state.script_config.evm_opts.sender, root);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     async fn tempo_session_non_resume_multi_sets_sender_without_chain_validation() {
         let temp = tempdir().unwrap();
@@ -2299,7 +2332,9 @@ mod tests {
             .unwrap();
         assert_eq!(state.script_config.evm_opts.sender, root);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     async fn tempo_session_initial_broadcast_sets_sender_without_chain_validation() {
         let temp = tempdir().unwrap();
@@ -2329,6 +2364,7 @@ mod tests {
             .unwrap();
         assert_eq!(state.script_config.evm_opts.sender, root);
     }
+    */
 
     #[tokio::test]
     async fn tempo_options_preserve_explicit_script_network() {
@@ -2346,8 +2382,10 @@ mod tests {
             for (networks, name) in [
                 (NetworkConfigs::with_ethereum(), "ethereum"),
                 (NetworkConfigs::with_celo(), "celo"),
+                /* EVM2 migration: disabled non-Ethereum execution.
                 #[cfg(feature = "base")]
                 (NetworkConfigs::with_base(), "base"),
+                */
             ] {
                 let evm_opts = EvmOpts { networks, ..Default::default() };
                 let err = args.resolved_evm_opts(Config::default(), evm_opts).await.unwrap_err();
@@ -2374,6 +2412,7 @@ mod tests {
         assert!(evm_opts.networks.is_tempo());
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[tokio::test]
     async fn tempo_session_rejects_explicit_script_wallet_signer() {
         let temp = tempdir().unwrap();
@@ -2411,6 +2450,7 @@ mod tests {
         };
         assert!(err.to_string().contains("explicit wallet signer"), "{err}");
     }
+    */
 
     #[test]
     fn can_parse_unlocked() {
@@ -2516,6 +2556,7 @@ mod tests {
         assert_eq!(args.evm.env.code_size_limit, Some(2147483647));
     }
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn contract_size_limits_use_resolved_monad_network() {
@@ -2528,7 +2569,9 @@ mod tests {
         assert!(limits.runtime > ContractSizeLimits::default().runtime);
         assert!(limits.initcode > ContractSizeLimits::default().initcode);
     }
+    */
 
+    /* EVM2 migration: disabled non-Ethereum execution.
     #[test]
     #[cfg(feature = "monad")]
     fn contract_size_limits_prefer_cli_then_config_over_network() {
@@ -2554,6 +2597,7 @@ mod tests {
             ContractSizeLimits::with_runtime_limit(128)
         );
     }
+    */
 
     #[test]
     fn can_extract_script_etherscan_key() {
