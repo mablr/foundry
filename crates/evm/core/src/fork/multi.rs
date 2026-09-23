@@ -4,9 +4,8 @@
 //! concurrently active pairs at once.
 
 use super::{CreateFork, ResolvedFork};
-use crate::{FoundryBlock, opts::ForkContext};
+use crate::{EvmEnv, FoundryBlock, opts::ForkContext};
 use alloy_eips::BlockNumHash;
-use alloy_evm::EvmEnv;
 use alloy_network::{AnyNetwork, Network};
 use alloy_primitives::{U256, map::HashMap};
 use foundry_config::Config;

@@ -3,13 +3,13 @@
 //! Each network module owns its network marker and concrete EVM implementations.
 
 use crate::{
-    FoundryBlock, FoundryChain, FoundryContextExt, FoundryInspectorExt, FoundryJournal,
+    EvmEnv, FoundryBlock, FoundryChain, FoundryContextExt, FoundryInspectorExt, FoundryJournal,
     FoundryTransaction, FromAnyRpcTransaction,
     backend::{DatabaseExt, JournaledState},
     refresh_chain_journal,
 };
 use alloy_consensus::{SignableTransaction, Signed, transaction::SignerRecoverable};
-use alloy_evm::{Evm, EvmEnv, EvmFactory, FromRecoveredTx, precompiles::PrecompilesMap};
+use alloy_evm::{Evm, EvmFactory, FromRecoveredTx, precompiles::PrecompilesMap};
 use alloy_network::Network;
 use alloy_primitives::{Address, Signature, U256};
 use alloy_rlp::Decodable;
@@ -85,7 +85,29 @@ pub trait FoundryEvmNetwork: Copy + Debug + Default + 'static {
                                     + Serialize,
             ReceiptResponse: FoundryReceiptResponse,
         >;
-    type EvmFactory: FoundryEvmFactory<Tx: FromRecoveredTx<<Self::Network as Network>::TxEnvelope>>;
+    type Spec: Into<SpecId>
+        + ExecutionSpec
+        + Default
+        + Copy
+        + Debug
+        + Eq
+        + std::hash::Hash
+        + Unpin
+        + Send
+        + Sync
+        + 'static;
+    type Block: FoundryBlock + ForkBlockEnv + Default + Debug + Unpin;
+    type Tx: Clone
+        + Debug
+        + FoundryTransaction
+        + FromAnyRpcTransaction
+        + Default
+        + Send
+        + Sync
+        + FromRecoveredTx<<Self::Network as Network>::TxEnvelope>;
+
+    // TODO(evm2): Remove the legacy factory association when fork and inspector contexts migrate.
+    type EvmFactory: FoundryEvmFactory<Spec = Self::Spec, BlockEnv = Self::Block, Tx = Self::Tx>;
 }
 
 pub trait FoundryEvmFactory:
@@ -223,10 +245,10 @@ pub trait IntoInstructionResult {
 pub type EvmFactoryFor<FEN> = <FEN as FoundryEvmNetwork>::EvmFactory;
 pub type FoundryContextFor<'db, FEN> =
     <EvmFactoryFor<FEN> as FoundryEvmFactory>::FoundryContext<'db>;
-pub type TxEnvFor<FEN> = <EvmFactoryFor<FEN> as EvmFactory>::Tx;
+pub type TxEnvFor<FEN> = <FEN as FoundryEvmNetwork>::Tx;
 pub type HaltReasonFor<FEN> = <EvmFactoryFor<FEN> as EvmFactory>::HaltReason;
-pub type SpecFor<FEN> = <EvmFactoryFor<FEN> as EvmFactory>::Spec;
-pub type BlockEnvFor<FEN> = <EvmFactoryFor<FEN> as EvmFactory>::BlockEnv;
+pub type SpecFor<FEN> = <FEN as FoundryEvmNetwork>::Spec;
+pub type BlockEnvFor<FEN> = <FEN as FoundryEvmNetwork>::Block;
 pub type PrecompilesFor<FEN> = <EvmFactoryFor<FEN> as EvmFactory>::Precompiles;
 pub type EvmEnvFor<FEN> = EvmEnv<SpecFor<FEN>, BlockEnvFor<FEN>>;
 pub type NetworkFor<FEN> = <FEN as FoundryEvmNetwork>::Network;

@@ -250,9 +250,7 @@ impl<BLOCK: Clone> InspectorStackBuilder<BLOCK> {
     }
 
     /// Builds the stack of inspectors to use when transacting/committing on the EVM.
-    pub fn build<FEN: FoundryEvmNetwork<EvmFactory: FoundryEvmFactory<BlockEnv = BLOCK>>>(
-        self,
-    ) -> InspectorStack<FEN> {
+    pub fn build<FEN: FoundryEvmNetwork<Block = BLOCK>>(self) -> InspectorStack<FEN> {
         let Self {
             analysis,
             block,

@@ -26,7 +26,39 @@ use tempo_revm::{TempoBlockEnv, TempoTxEnv};
 use op_revm::transaction::deposit::DEPOSIT_TRANSACTION_TYPE;
 */
 
-pub use alloy_evm::EvmEnv;
+/// Foundry-owned execution configuration, independent of an EVM factory.
+///
+/// TODO(evm2): Replace the remaining REVM configuration and block fields with native inputs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EvmEnv<Spec = SpecId, B = BlockEnv> {
+    pub cfg_env: CfgEnv<Spec>,
+    pub block_env: B,
+}
+
+impl<Spec, B> EvmEnv<Spec, B> {
+    pub const fn new(cfg_env: CfgEnv<Spec>, block_env: B) -> Self {
+        Self { cfg_env, block_env }
+    }
+}
+
+impl<Spec: Default + Into<SpecId> + Clone, B: Default> Default for EvmEnv<Spec, B> {
+    fn default() -> Self {
+        Self::new(CfgEnv::new_with_spec(Spec::default()), B::default())
+    }
+}
+
+// TODO(evm2): Delete these conversions with legacy factory and inspector execution.
+impl<Spec, B> From<EvmEnv<Spec, B>> for alloy_evm::EvmEnv<Spec, B> {
+    fn from(env: EvmEnv<Spec, B>) -> Self {
+        Self::new(env.cfg_env, env.block_env)
+    }
+}
+
+impl<Spec, B> From<alloy_evm::EvmEnv<Spec, B>> for EvmEnv<Spec, B> {
+    fn from(env: alloy_evm::EvmEnv<Spec, B>) -> Self {
+        Self::new(env.cfg_env, env.block_env)
+    }
+}
 
 /// Extension of [`Block`] with mutable setters, allowing EVM-agnostic mutation of block fields.
 pub trait FoundryBlock: Block {
@@ -1178,7 +1210,8 @@ mod tests {
 
     #[test]
     fn eth_evm_foundry_context_ext_implementation() {
-        let mut evm = EthEvmFactory::default().create_evm(EmptyDB::default(), EvmEnv::default());
+        let mut evm =
+            EthEvmFactory::default().create_evm(EmptyDB::default(), EvmEnv::default().into());
 
         // Test EVM Context Block mutation
         evm.ctx_mut().block_mut().set_number(U256::from(123));

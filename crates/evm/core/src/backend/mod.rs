@@ -1,7 +1,8 @@
 //! Foundry's main executor backend abstraction and implementation.
 
 use crate::{
-    FoundryBlock, FoundryChain, FoundryInspectorExt, FoundryTransaction, FromAnyRpcTransaction,
+    EvmEnv, FoundryBlock, FoundryChain, FoundryInspectorExt, FoundryTransaction,
+    FromAnyRpcTransaction,
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, TEST_CONTRACT_ADDRESS},
     evm::{
         BlockEnvFor, ChainFor, EthEvmNetwork, EvmEnvFor, FoundryContextFor, FoundryEvmFactory,
@@ -17,7 +18,7 @@ use crate::{
 use alloy_chains::Chain;
 use alloy_consensus::{BlockHeader, Typed2718};
 use alloy_eips::BlockNumHash;
-use alloy_evm::{Evm, EvmEnv, EvmFactory, precompiles::PrecompilesMap};
+use alloy_evm::{Evm, precompiles::PrecompilesMap};
 use alloy_genesis::GenesisAccount;
 use alloy_network::{
     AnyNetwork, AnyRpcBlock, AnyRpcTransaction, BlockResponse, Network, TransactionResponse,
@@ -34,9 +35,9 @@ pub use foundry_fork_db::{
 use revm::{
     Database, DatabaseCommit, JournalEntry,
     bytecode::Bytecode,
-    context::{Block, BlockEnv, CfgEnv, ContextTr, JournalInner, Transaction},
+    context::{Block, BlockEnv, ContextTr, JournalInner, Transaction},
     context_interface::{journaled_state::account::JournaledAccountTr, result::ResultAndState},
-    database::{AccountState, CacheDB, DatabaseRef, EmptyDB},
+    database::{AccountState, CacheDB, DatabaseRef},
     database_interface::bal::BalState,
     inspector::NoOpInspector,
     primitives::{AddressMap, HashMap as Map, KECCAK_EMPTY, Log, hardfork::SpecId},
@@ -1130,10 +1131,10 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         let mut evm =
             factory.create_foundry_evm_with_inspector(self, evm_env.to_owned(), inspector);
         *evm.chain_mut() = chain_context;
-        let res = evm.transact(tx_env.clone()).wrap_err("EVM error")?;
+        let res = evm.transact_raw(tx_env.clone()).wrap_err("EVM error")?;
 
         *tx_env = evm.tx().clone();
-        *evm_env = evm.finish().1;
+        *evm_env = evm.finish().1.into();
 
         Ok(res)
     }
@@ -1974,7 +1975,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
                         };
                         result.state
                     } else {
-                        evm.transact(tx_env.clone())
+                        evm.transact_raw(tx_env.clone())
                             .wrap_err("backend: failed replaying transaction")?
                             .state
                     };
@@ -3267,11 +3268,26 @@ impl<FEN: FoundryEvmNetwork> BackendInner<FEN> {
     }
 
     pub fn precompile_addresses(&self) -> AddressSet {
-        let evm = FEN::EvmFactory::default().create_evm(
-            EmptyDB::default(),
-            EvmEnv::new(CfgEnv::new_with_spec(self.spec_id), Default::default()),
-        );
-        evm.precompiles().addresses().copied().collect()
+        let spec: SpecId = self.spec_id.into();
+        // Only activation points that change the precompile registry matter here.
+        let native = if spec >= SpecId::AMSTERDAM {
+            evm2::SpecId::AMSTERDAM
+        } else if spec >= SpecId::OSAKA {
+            evm2::SpecId::OSAKA
+        } else if spec >= SpecId::PRAGUE {
+            evm2::SpecId::PRAGUE
+        } else if spec >= SpecId::CANCUN {
+            evm2::SpecId::CANCUN
+        } else if spec >= SpecId::BERLIN {
+            evm2::SpecId::BERLIN
+        } else if spec >= SpecId::ISTANBUL {
+            evm2::SpecId::ISTANBUL
+        } else if spec >= SpecId::BYZANTIUM {
+            evm2::SpecId::BYZANTIUM
+        } else {
+            evm2::SpecId::FRONTIER
+        };
+        evm2::Precompiles::<evm2::BaseEvmTypes>::base(native).as_map().addresses().collect()
     }
 
     /// Returns a new, empty, `JournaledState` with set precompiles
@@ -3520,6 +3536,7 @@ fn inject_replay_precompiles(
 mod tests {
     use super::{Fork, ForkAccountField, ReplayInputs, apply_state_changeset, update_env_block};
     use crate::{
+        EvmEnv,
         backend::{Backend, DatabaseExt, ForkPosition},
         evm::EthEvmNetwork,
         fork::{CreateFork, ForkId, MultiFork},
@@ -3527,7 +3544,6 @@ mod tests {
     };
     use alloy_consensus::{Signed, TxEnvelope, TxLegacy, transaction::Recovered};
     use alloy_eips::BlockNumHash;
-    use alloy_evm::EvmEnv;
     use alloy_network::{
         AnyHeader, AnyNetwork, AnyRpcBlock, AnyRpcHeader, AnyRpcTransaction, AnyTxEnvelope,
         AnyTxType, TransactionBuilder, UnknownTxEnvelope, UnknownTypedTransaction,
@@ -4418,5 +4434,31 @@ mod tests {
         assert!(db.accounts().read().contains_key(&address));
         assert!(db.storage().read().contains_key(&address));
         assert_eq!(db.storage().read().get(&address).unwrap().len(), num_slots as usize);
+    }
+}
+
+#[cfg(test)]
+mod native_config_tests {
+    use super::*;
+
+    #[test]
+    fn native_precompile_registry_tracks_activation() {
+        for (spec, count, p256) in [
+            (SpecId::FRONTIER, 4, false),
+            (SpecId::BYZANTIUM, 8, false),
+            (SpecId::ISTANBUL, 9, false),
+            (SpecId::CANCUN, 10, false),
+            (SpecId::PRAGUE, 17, false),
+            (SpecId::OSAKA, 18, true),
+        ] {
+            let inner = BackendInner::<EthEvmNetwork> { spec_id: spec, ..Default::default() };
+            let addresses = inner.precompile_addresses();
+            assert_eq!(addresses.len(), count, "{spec:?}");
+            assert_eq!(
+                addresses.contains(&Address::from_word(U256::from(256).into())),
+                p256,
+                "{spec:?}"
+            );
+        }
     }
 }

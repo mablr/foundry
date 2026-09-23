@@ -1,5 +1,4 @@
-use crate::backend::JournaledState;
-use alloy_evm::EvmEnv;
+use crate::{EvmEnv, backend::JournaledState};
 use alloy_primitives::{
     B256, U256,
     map::{AddressHashMap, U256Map},

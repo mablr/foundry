@@ -148,3 +148,10 @@ outputs through script, fuzz and failure-reporting consumers. The partial conver
 into REVM instruction results is gone; native halts such as `OpcodeNotFound` reach
 error reporting without a migration-adapter failure. Legacy trace decoding retains
 its separate REVM status entry point until inspectors migrate.
+
+Foundry now owns its execution-environment container and selects block, transaction
+and hardfork types directly through the network interface. The legacy factory
+association remains only as a migration constraint for fork/inspector contexts; the
+configuration fields still use REVM types and must be replaced. Backend initialization
+reads evm2 precompile addresses directly rather than constructing a REVM instance.
+Anvil converts at shared normalization boundaries and retains its legacy environment.

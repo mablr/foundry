@@ -3,7 +3,6 @@ use crate::{
     json::json_value_to_token,
 };
 use alloy_dyn_abi::DynSolValue;
-use alloy_evm::EvmEnv;
 use alloy_network::AnyNetwork;
 use alloy_primitives::{Address, B256, U256, map::AddressHashMap};
 use alloy_provider::Provider;
@@ -11,7 +10,7 @@ use alloy_rpc_types::Filter;
 use alloy_sol_types::SolValue;
 use foundry_common::provider::ProviderBuilder;
 use foundry_evm_core::{
-    FoundryContextExt,
+    EvmEnv, FoundryContextExt,
     backend::{ContextUpdateFor, ForkAccountField, JournaledState, LocalForkId},
     evm::{BlockEnvFor, EvmFactoryFor, FoundryContextFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
     fork::CreateFork,

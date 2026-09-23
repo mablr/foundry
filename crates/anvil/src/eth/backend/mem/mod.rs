@@ -2038,11 +2038,9 @@ impl<N: Network> Backend<N> {
             hardfork
         };
         */
-        apply_chain_specific_tx_replay_env_changes_for_chain(
-            &mut evm_env,
-            self.protocol_chain_id(),
-        );
-        (evm_env, hardfork)
+        let mut env = foundry_evm::core::EvmEnv::from(evm_env);
+        apply_chain_specific_tx_replay_env_changes_for_chain(&mut env, self.protocol_chain_id());
+        (env.into(), hardfork)
     }
 
     /// Creates the database and environment for replaying a locally mined block.
@@ -5713,13 +5711,14 @@ where
             self.cheats.take_next_block_prevrandao().unwrap_or_else(|| keccak256(prevrandao_input)),
         );
 
-        let mut replay_env = evm_env.clone();
+        let mut replay_env = foundry_evm::core::EvmEnv::from(evm_env.clone());
         let arbitrum_rpc_block_number = arbitrum_block_numbers.map(|(rpc, evm)| {
             replay_env.block_env.number = evm;
             rpc
         });
         replay_env.cfg_env.chain_id = execution_chain_id;
         apply_chain_specific_tx_replay_env_changes_for_chain(&mut replay_env, source_chain_id);
+        let mut replay_env = alloy_evm::EvmEnv::from(replay_env);
         let inspector_tx_config = self.inspector_tx_config();
 
         let scheduled_hardfork =
@@ -6149,10 +6148,12 @@ where
                 // mining. Keep this exception local to the disposable mining environment.
                 let mut mining_evm_env = evm_env.clone();
                 if pool_transactions.iter().any(|tx| tx.is_replay) {
+                    let mut env = foundry_evm::core::EvmEnv::from(mining_evm_env);
                     apply_chain_specific_tx_replay_env_changes_for_chain(
-                        &mut mining_evm_env,
+                        &mut env,
                         self.protocol_chain_id(),
                     );
+                    mining_evm_env = env.into();
                 }
 
                 let inspector_tx_config = self.inspector_tx_config();

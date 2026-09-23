@@ -113,10 +113,10 @@ impl<'a, FEN: FoundryEvmNetwork> CowBackend<'a, FEN> {
         let mut evm = factory.create_foundry_evm_with_inspector(self, evm_env.clone(), inspector);
         *evm.chain_mut() = chain_context;
 
-        let res = evm.transact(tx_env.clone()).wrap_err("EVM error")?;
+        let res = evm.transact_raw(tx_env.clone()).wrap_err("EVM error")?;
 
         *tx_env = evm.tx().clone();
-        *evm_env = evm.finish().1;
+        *evm_env = evm.finish().1.into();
 
         Ok(res)
     }
