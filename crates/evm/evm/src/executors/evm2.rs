@@ -548,4 +548,17 @@ mod tests {
         release_tx.send(()).unwrap();
         worker.join().unwrap();
     }
+
+    #[test]
+    fn native_block_number_advances_for_sequential_simulation() {
+        let mut executor = executor();
+        let target = Address::with_last_byte(0x42);
+        executor.set_code(target, Bytecode::new_raw(bytes!("4360005260206000f3"))).unwrap();
+        executor.evm_env_mut().block_env.number = U256::from(41);
+        let before = executor.call_raw(CALLER, target, Bytes::new(), U256::ZERO).unwrap();
+        assert_eq!(U256::from_be_slice(&before.result), U256::from(41));
+        executor.increment_block_number();
+        let after = executor.call_raw(CALLER, target, Bytes::new(), U256::ZERO).unwrap();
+        assert_eq!(U256::from_be_slice(&after.result), U256::from(42));
+    }
 }

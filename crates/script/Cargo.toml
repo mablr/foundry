@@ -20,7 +20,6 @@ foundry-config.workspace = true
 foundry-common.workspace = true
 foundry-evm.workspace = true
 foundry-evm-networks.workspace = true
-alloy-evm.workspace = true
 foundry-debugger.workspace = true
 foundry-cheatcodes.workspace = true
 foundry-wallets = { workspace = true, features = ["browser", "tempo"] }

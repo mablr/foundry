@@ -395,6 +395,12 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         &mut self.evm_env
     }
 
+    /// Increments the block number for sequential transaction simulation.
+    pub fn increment_block_number(&mut self) {
+        let block = &mut self.evm_env.block_env;
+        block.set_number(block.number() + U256::from(1));
+    }
+
     /// Returns a reference to the transaction environment.
     pub const fn tx_env(&self) -> &TxEnvFor<FEN> {
         &self.tx_env

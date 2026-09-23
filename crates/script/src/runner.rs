@@ -1,7 +1,6 @@
 use super::{ScriptConfig, ScriptResult};
 use crate::build::ScriptPredeployLibraries;
 use alloy_eips::eip7702::SignedAuthorization;
-use alloy_evm::revm::context::Transaction;
 use alloy_network::TransactionBuilder;
 use alloy_primitives::{Address, Bytes, U256, map::AddressHashMap};
 use eyre::Result;
@@ -495,18 +494,17 @@ impl<FEN: FoundryEvmNetwork> ScriptRunner<FEN> {
     ) -> Result<u64> {
         let mut gas_used = res.gas_used;
         if res.exit_reason.is_some_and(ExecutionStatus::is_success) {
-            // Store the current gas limit and reset it later.
-            let init_gas_limit = self.executor.tx_env().gas_limit();
-
             let mut search = GasSearch::new(gas_used);
             while let Some(limit) = search.next_limit() {
-                self.executor.tx_env_mut().set_gas_limit(limit);
-                let res = self.executor.call_raw(from, to, calldata.0.clone().into(), value)?;
+                let (env, mut tx) =
+                    self.executor.prepare_call_env(from, to.into(), calldata.clone(), value);
+                // Set the probe limit after preparing the transaction, which applies the
+                // executor default. Keep the block limit and subsequent calls unchanged.
+                tx.set_gas_limit(limit);
+                let res = self.executor.call_with_env(env, tx)?;
                 search.record(limit, res.exit_reason);
             }
             gas_used = search.gas_used();
-            // Reset gas limit in the executor.
-            self.executor.tx_env_mut().set_gas_limit(init_gas_limit);
         }
         Ok(gas_used)
     }
@@ -568,6 +566,16 @@ impl GasSearch {
 #[cfg(test)]
 mod gas_search_tests {
     use super::*;
+    use alloy_primitives::bytes;
+    use foundry_evm::{
+        core::{
+            backend::Backend,
+            evm::{EthEvmNetwork, SpecFor},
+            state_changes::Bytecode,
+        },
+        executors::ExecutorBuilder,
+    };
+    use foundry_evm_networks::NetworkConfigs;
 
     #[test]
     fn successful_probes_keep_existing_ten_percent_stop() {
@@ -588,5 +596,41 @@ mod gas_search_tests {
         }
         assert_eq!(search.gas_used(), 100);
         assert_eq!(GasSearch::new(0).next_limit(), None);
+    }
+
+    #[test]
+    fn native_gas_search_applies_probe_limit_without_mutating_defaults() {
+        let target = Address::with_last_byte(0x42);
+        let mut executor = ExecutorBuilder::<EthEvmNetwork>::new()
+            .spec_id(SpecFor::<EthEvmNetwork>::CANCUN)
+            .gas_limit(1_000_000)
+            .build(
+                Default::default(),
+                Default::default(),
+                Backend::spawn(None).unwrap(),
+                NetworkConfigs::default(),
+            );
+        executor.set_balance(CALLER, U256::MAX).unwrap();
+        // Require more than 30,000 gas remaining; otherwise REVERT. Consumption alone cannot
+        // estimate this call's required limit.
+        executor
+            .set_code(target, Bytecode::new_raw(bytes!("6175305a11600d5760006000fd5b00")))
+            .unwrap();
+        let mut runner = ScriptRunner::new(executor, EvmOpts::default());
+        let tx_before = runner.executor.tx_env().clone();
+        let env_before = runner.executor.evm_env().clone();
+        let result = runner.executor.call_raw(CALLER, target, Bytes::new(), U256::ZERO).unwrap();
+        assert!(!result.reverted);
+        let estimate = runner
+            .search_optimal_gas_usage(&result, CALLER, target, &Bytes::new(), U256::ZERO)
+            .unwrap();
+        assert!(estimate > 51_000 && estimate < 63_000, "estimate: {estimate}");
+        let (env, mut tx) =
+            runner.executor.prepare_call_env(CALLER, target.into(), Bytes::new(), U256::ZERO);
+        tx.set_gas_limit(estimate);
+        assert!(!runner.executor.call_with_env(env, tx).unwrap().reverted);
+        assert_eq!(runner.executor.gas_limit(), 1_000_000);
+        assert_eq!(runner.executor.tx_env(), &tx_before);
+        assert_eq!(runner.executor.evm_env(), &env_before);
     }
 }

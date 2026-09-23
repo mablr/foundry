@@ -10,9 +10,8 @@ use crate::{
     sequence::get_commit_hash,
 };
 use alloy_chains::{Chain, NamedChain};
-use alloy_evm::revm::context::Block;
 use alloy_network::TransactionBuilder;
-use alloy_primitives::{Address, U256, map::HashMap, utils::format_units};
+use alloy_primitives::{Address, map::HashMap, utils::format_units};
 use alloy_provider::Provider;
 use dialoguer::Confirm;
 use eyre::{Context, Result};
@@ -24,7 +23,7 @@ use foundry_common::{
     tempo::known_fee_token_symbol,
 };
 use foundry_evm::{
-    core::{FoundryBlock, evm::FoundryEvmNetwork},
+    core::evm::FoundryEvmNetwork,
     traces::{
         CallTraceDecoder, Traces, debug::ContractSources, decode_trace_arena, prune_trace_depth,
         render_trace_arena_inner,
@@ -246,8 +245,7 @@ impl<FEN: FoundryEvmNetwork> PreSimulationState<FEN> {
 
                 // Simulate mining the transaction if the user passes `--slow`.
                 if self.args.slow {
-                    let block_number = runner.executor.evm_env().block_env.number() + U256::from(1);
-                    runner.executor.evm_env_mut().block_env.set_number(block_number);
+                    runner.executor.increment_block_number();
                 }
 
                 let is_noop_tx = if let Some(to) = to {
