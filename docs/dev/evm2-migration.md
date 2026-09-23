@@ -13,13 +13,15 @@ Unported handler source remains on disk for reference, outside the module tree.
 The unused suspended-frame execution, inherited-journal and child-state merge helpers
 have been removed. Fork-prefix replay now executes Ethereum envelopes with evm2, sharing
 the native database reads, environment conversion and write collector with the executor.
-Direct backend transaction APIs still use the legacy factory. The public executor still
+The unused legacy transaction-cheatcode APIs and `FoundryEvmFactory` have been removed.
+`FoundryEvmNetwork` now associates environment and chain-context types directly, without
+an EVM/context factory. Transaction cheatcodes need native implementations before enabling. The public executor still
 rejects fork execution until its remaining lifecycle support is migrated; custom-network
 precompiles are explicitly unsupported in native prefix replay.
 
-`EthEvmNetwork` is the only compiled Foundry EVM network implementation. The existing
-generic executor, backend, inspector, journal, and cheatcode interfaces remain so the
-engine migration can be developed separately from this preparation change.
+`EthEvmNetwork` is the only compiled Foundry EVM network implementation. Remaining
+legacy environment, observer and fork-journal types are compatibility boundaries to
+remove; native execution no longer requires a Foundry EVM/context factory.
 
 OP, Base, and Monad feature propagation and engine dependencies are commented out.
 Their feature names are retained as empty switches, so `--all-features` cannot restore
@@ -60,7 +62,7 @@ Use the Rust toolchain required by evm2 (currently at least 1.96).
 | State | load, store, deal, nonce setters/getters, ordinary etch | Etch of history-storage account |
 | Inspection | Logs, console and shared assertions, including non-reverting assertions | Traces, debugger, coverage, fuzz, invariants and opcode-interest selection |
 | Sessions | Block updates, diagnostics, deprecation observations | Pranks, expectations, mocks, snapshot/fork lifecycle |
-| Core ownership | Native transaction state changes, nonforked persistent cache, fork RPC database and cheatcode session | Native fork write cache; delete factory/context/REVM adapters |
+| Core ownership | Native transaction state changes, nonforked persistent cache, fork RPC database and cheatcode session | Native fork write cache; replace legacy environment, journal and observer types |
 | Tools | Bounded Forge test and local Script E2E | Broadcast, simulation, Cast and Chisel compatibility |
 
 Unmigrated cheatcodes fail the execution even if Solidity catches their revert. Unknown

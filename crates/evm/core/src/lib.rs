@@ -2,10 +2,8 @@
 //!
 //! Generic execution, environment, fork, backend, and state abstractions shared by Foundry tools.
 //!
-//! [`evm::FoundryEvmNetwork`] binds an Alloy network to an [`evm::FoundryEvmFactory`]. The factory
-//! owns the concrete execution types and constructs a Foundry-compatible EVM context, while
-//! `foundry-evm-networks` owns runtime family selection. Keeping those responsibilities separate
-//! allows one compiled binary to dispatch to different execution families at runtime.
+//! [`evm::FoundryEvmNetwork`] associates an Alloy network with environment and chain-context
+//! types. Native evm2 execution owns its interpreter, journal and precompiles directly.
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
