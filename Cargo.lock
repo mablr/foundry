@@ -5700,7 +5700,6 @@ dependencies = [
  "itertools 0.15.0",
  "parking_lot",
  "revm",
- "revm-inspectors",
  "serde",
  "serde_json",
  "thiserror 2.0.20",

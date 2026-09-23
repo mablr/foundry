@@ -359,7 +359,6 @@ pub struct InspectorStackInner {
     //     pub tempo_labels: Option<Box<TempoLabels>>,
     pub tracer: Option<Box<TracingInspector>>,
 
-    // FoundryInspectorExt and other internal data.
     /// Whether to collect sancov edge coverage from instrumented native crates.
     pub sancov_edges: bool,
     /// Whether to capture sancov trace-cmp operands for dictionary injection.

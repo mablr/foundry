@@ -185,3 +185,33 @@ Script ran successfully.
 
 "#]]);
 });
+
+forgetest!(evm2_native_console, |prj, cmd| {
+    prj.add_test("Basic.t.sol", include_str!("../../fixtures/evm2/Basic.t.sol"));
+    cmd.args([
+        "test",
+        "--no-isolate",
+        "--evm-version",
+        "cancun",
+        "--match-contract",
+        "^BasicConsoleTest$",
+        "--match-test",
+        r"^testConsole\(\)$",
+        "-vv",
+    ])
+    .assert_success()
+    .stdout_eq(str![[r#"
+...
+Ran 1 test for test/Basic.t.sol:BasicConsoleTest
+[PASS] testConsole() ([GAS])
+Logs:
+  before
+  native console
+  after
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]]);
+});

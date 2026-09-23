@@ -81,7 +81,6 @@ revm = { workspace = true, features = [
     "c-kzg",
     "blst",
 ] }
-revm-inspectors.workspace = true
 # monad-revm = { workspace = true, optional = true }
 # op-alloy-consensus = { workspace = true, features = ["k256"], optional = true }
 # op-alloy-network = { workspace = true, optional = true }

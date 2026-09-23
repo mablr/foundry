@@ -12,10 +12,7 @@ pub mod executors;
 pub mod inspectors;
 
 pub use foundry_evm_core as core;
-pub use foundry_evm_core::{
-    EvmEnv, FoundryInspectorExt, InspectorExt, backend, constants, decode, fork, hardfork, opts,
-    utils,
-};
+pub use foundry_evm_core::{EvmEnv, backend, constants, decode, fork, hardfork, opts, utils};
 pub use foundry_evm_coverage as coverage;
 pub use foundry_evm_fuzz as fuzz;
 pub use foundry_evm_hardforks as hardforks;

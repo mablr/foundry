@@ -10,6 +10,8 @@ are no longer compiled. The cheatcode crate has no direct REVM, alloy-evm or
 revm-inspectors dependency; its core/configuration/trace dependencies still pull legacy
 engine types transitively. Session block types remain part of that next migration boundary.
 Unported handler source remains on disk for reference, outside the module tree.
+The unused REVM context/journal extension traits have also been removed. Log collection
+is engine-independent, with REVM console-call outcomes constructed only in Anvil.
 The unused suspended-frame execution, inherited-journal and child-state merge helpers
 have been removed. Fork-prefix replay now executes Ethereum envelopes with evm2, sharing
 the native database reads, environment conversion and write collector with the executor.

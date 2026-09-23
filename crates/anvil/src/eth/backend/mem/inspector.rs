@@ -3,8 +3,10 @@
 use crate::eth::macros::node_info;
 use alloy_primitives::{Address, B256, Log, LogData, U256};
 use alloy_sol_types::SolValue;
+use foundry_common::ErrorExt;
 use foundry_evm::{
     call_inspectors,
+    constants::HARDHAT_CONSOLE_ADDRESS,
     decode::decode_console_logs,
     inspectors::{LogCollector, TracingInspector},
     traces::{
@@ -17,8 +19,8 @@ use revm::{
     context::{ContextTr, JournalTr},
     inspector::JournalExt,
     interpreter::{
-        CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, CreateScheme,
-        Interpreter, interpreter::EthInterpreter,
+        CallInputs, CallOutcome, CallScheme, CreateInputs, CreateOutcome, CreateScheme, Gas,
+        InstructionResult, Interpreter, InterpreterResult, interpreter::EthInterpreter,
     },
 };
 use revm_inspectors::transfer::{TRANSFER_EVENT_TOPIC, TRANSFER_LOG_EMITTER, TransferInspector};
@@ -312,9 +314,12 @@ where
 
     #[allow(clippy::redundant_clone)]
     fn log(&mut self, ecx: &mut CTX, log: Log) {
-        call_inspectors!([&mut self.tracer, &mut self.log_collector], |inspector| {
+        call_inspectors!([&mut self.tracer], |inspector| {
             inspector.log(ecx, log.clone());
         });
+        if let Some(collector) = &mut self.log_collector {
+            collector.push_raw_log(log.clone());
+        }
         if let Some(collector) = &mut self.simulation_logs {
             collector.push_canonical_log(log, ecx.journal().logs().len());
         }
@@ -322,9 +327,12 @@ where
 
     #[allow(clippy::redundant_clone)]
     fn log_full(&mut self, interp: &mut Interpreter, ecx: &mut CTX, log: Log) {
-        call_inspectors!([&mut self.tracer, &mut self.log_collector], |inspector| {
+        call_inspectors!([&mut self.tracer], |inspector| {
             inspector.log_full(interp, ecx, log.clone());
         });
+        if let Some(collector) = &mut self.log_collector {
+            collector.push_raw_log(log.clone());
+        }
         if let Some(collector) = &mut self.simulation_logs {
             collector.push_canonical_log(log, ecx.journal().logs().len());
         }
@@ -342,7 +350,29 @@ where
         }
         call_inspectors!(
             #[ret]
-            [&mut self.tracer, &mut self.log_collector, &mut self.transfer],
+            [&mut self.tracer],
+            |inspector| inspector.call(ecx, inputs).map(Some),
+        );
+        // REVM outcome construction belongs to Anvil; the shared collector only handles logs.
+        if inputs.target_address == HARDHAT_CONSOLE_ADDRESS
+            && let Some(collector) = &mut self.log_collector
+            && let Err(error) = collector.hardhat_log(&inputs.input.bytes(ecx))
+        {
+            return Some(CallOutcome {
+                result: InterpreterResult {
+                    result: InstructionResult::Revert,
+                    output: error.abi_encode_revert(),
+                    gas: Gas::new(inputs.gas_limit),
+                },
+                memory_offset: inputs.return_memory_offset.clone(),
+                was_precompile_called: true,
+                precompile_call_logs: vec![],
+                charged_new_account_state_gas: inputs.charged_new_account_state_gas,
+            });
+        }
+        call_inspectors!(
+            #[ret]
+            [&mut self.transfer],
             |inspector| inspector.call(ecx, inputs).map(Some),
         );
         None
@@ -404,5 +434,57 @@ where
 pub fn print_logs(logs: &[Log]) {
     for log in decode_console_logs(logs) {
         tracing::info!(target: crate::logging::EVM_CONSOLE_LOG_TARGET, "{}", log);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::{Bytes, keccak256};
+    use revm::{
+        Context, MainContext,
+        interpreter::{CallInput, CallValue},
+    };
+
+    #[test]
+    fn console_collector_preserves_revm_call_outcomes() {
+        let mut inspector = AnvilInspector {
+            log_collector: Some(LogCollector::Capture { logs: Vec::new() }),
+            ..Default::default()
+        };
+        let mut context = Context::mainnet();
+        let mut data = keccak256("log(string)")[..4].to_vec();
+        data.extend(("hello",).abi_encode_params());
+        let mut inputs = CallInputs {
+            input: CallInput::Bytes(data.into()),
+            return_memory_offset: 8..40,
+            gas_limit: 100_000,
+            reservoir: 0,
+            bytecode_address: HARDHAT_CONSOLE_ADDRESS,
+            known_bytecode: Default::default(),
+            target_address: HARDHAT_CONSOLE_ADDRESS,
+            caller: Address::ZERO,
+            value: CallValue::Transfer(U256::ZERO),
+            scheme: CallScheme::Call,
+            is_static: false,
+            charged_new_account_state_gas: true,
+        };
+        assert!(inspector.call(&mut context, &mut inputs).is_none());
+        let LogCollector::Capture { logs } = inspector.log_collector.as_ref().unwrap() else {
+            unreachable!()
+        };
+        assert_eq!(decode_console_logs(logs), vec!["hello"]);
+
+        inputs.input = CallInput::Bytes(Bytes::from_static(&[0x12]));
+        let outcome = inspector.call(&mut context, &mut inputs).unwrap();
+        assert_eq!(outcome.result.result, InstructionResult::Revert);
+        assert_eq!(outcome.result.gas.limit(), inputs.gas_limit);
+        assert_eq!(outcome.memory_offset, inputs.return_memory_offset);
+        assert!(outcome.was_precompile_called);
+        assert!(outcome.charged_new_account_state_gas);
+        let error = inspector.log_collector.as_mut().unwrap().hardhat_log(&[0x12]).unwrap_err();
+        assert_eq!(outcome.result.output, error.abi_encode_revert());
+        let logs = inspector.log_collector.take().unwrap().into_captured_logs().unwrap();
+        assert_eq!(decode_console_logs(&logs), vec!["hello"]);
     }
 }

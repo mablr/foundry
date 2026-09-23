@@ -1,4 +1,3 @@
-use crate::backend::JournaledState;
 use alloy_chains::NamedChain;
 use alloy_consensus::{Transaction as _, Typed2718};
 use alloy_evm::FromRecoveredTx;
@@ -6,14 +5,11 @@ use alloy_network::{AnyRpcTransaction, AnyTxEnvelope, TransactionResponse};
 use alloy_primitives::{Address, B256, Bytes, U256};
 use foundry_evm_networks::celo::CELO_DYNAMIC_FEE_TX_TYPE;
 use revm::{
-    Context, Database, Journal,
-    context::{Block, BlockEnv, Cfg, CfgEnv, Transaction, TxEnv},
+    context::{Block, BlockEnv, CfgEnv, Transaction, TxEnv},
     context_interface::{
-        ContextTr,
         either::Either,
         transaction::{AccessList, RecoveredAuthorization, SignedAuthorization},
     },
-    inspector::JournalExt,
     primitives::{TxKind, hardfork::SpecId},
 };
 use std::fmt::Debug;
@@ -487,264 +483,9 @@ pub trait FoundryChain<Tx>: Clone + Debug + Default + Send + Sync {
     ) -> Self {
         Self::default()
     }
-
-    /// Refreshes journal state derived from the active chain position.
-    fn refresh_journal<J: FoundryJournal>(&self, _journal: &mut J) {}
 }
 
 impl<Tx> FoundryChain<Tx> for () {}
-
-/// Access to a configuration's underlying environment and hardfork updates.
-pub trait FoundryCfg:
-    Cfg<Spec: Into<SpecId> + Copy + Debug> + Clone + From<CfgEnv<Self::Spec>> + Into<CfgEnv<Self::Spec>>
-{
-    /// Reference to the underlying configuration.
-    fn cfg_env(&self) -> &CfgEnv<Self::Spec>;
-
-    /// Mutable reference to the underlying configuration.
-    fn cfg_env_mut(&mut self) -> &mut CfgEnv<Self::Spec>;
-
-    /// Updates the hardfork and its gas parameters.
-    fn set_spec_and_gas_params(&mut self, spec: Self::Spec) {
-        self.cfg_env_mut().set_spec_and_mainnet_gas_params(spec);
-    }
-}
-
-impl<SPEC: Into<SpecId> + Copy + Debug> FoundryCfg for CfgEnv<SPEC> {
-    fn cfg_env(&self) -> &Self {
-        self
-    }
-
-    fn cfg_env_mut(&mut self) -> &mut Self {
-        self
-    }
-}
-
-/* EVM2 migration: disabled non-Ethereum execution.
-#[cfg(feature = "monad")]
-impl FoundryCfg for monad_revm::MonadCfgEnv {
-    fn cfg_env(&self) -> &CfgEnv<Self::Spec> {
-        self.inner()
-    }
-
-    fn cfg_env_mut(&mut self) -> &mut CfgEnv<Self::Spec> {
-        self.inner_mut()
-    }
-
-    fn set_spec_and_gas_params(&mut self, spec: Self::Spec) {
-        self.inner_mut().spec = spec;
-        self.inner_mut().set_gas_params(monad_revm::instructions::monad_gas_params(spec));
-    }
-}
-*/
-
-/// Foundry extension for Journal type
-pub trait FoundryJournal: JournalExt {
-    /// Mutable access to the database and journal inner.
-    fn db_journal_inner_mut(&mut self) -> (&mut Self::Database, &mut JournaledState);
-
-    /// Reference to the journal inner.
-    fn journal_inner(&self) -> &JournaledState;
-
-    /* EVM2 migration: disabled non-Ethereum execution.
-    /// Captures Monad's reserve-balance tracker for the active transaction.
-    #[cfg(feature = "monad")]
-    fn capture_reserve_balance(
-        &self,
-    ) -> monad_revm::reserve_balance::tracker::ReserveBalanceTracker {
-        monad_revm::reserve_balance::tracker::ReserveBalanceTracker::default()
-    }
-    */
-
-    /* EVM2 migration: disabled non-Ethereum execution.
-    /// Restores Monad's reserve-balance tracker for the active transaction.
-    #[cfg(feature = "monad")]
-    fn restore_reserve_balance(
-        &mut self,
-        _tracker: monad_revm::reserve_balance::tracker::ReserveBalanceTracker,
-    ) {
-    }
-    */
-
-    /* EVM2 migration: disabled non-Ethereum execution.
-    /// Whether transaction boundaries currently preserve the reserve-balance tracker, e.g. for
-    /// an isolated call that models an inner call of the enclosing transaction rather than a
-    /// new one.
-    #[cfg(feature = "monad")]
-    fn preserves_reserve_balance(&self) -> bool {
-        false
-    }
-    */
-
-    /* EVM2 migration: disabled non-Ethereum execution.
-    /// Sets whether transaction boundaries preserve the reserve-balance tracker.
-    #[cfg(feature = "monad")]
-    fn set_preserve_reserve_balance(&mut self, _preserve: bool) {}
-    */
-}
-
-impl<DB: Database> FoundryJournal for Journal<DB> {
-    fn db_journal_inner_mut(&mut self) -> (&mut DB, &mut JournaledState) {
-        (&mut self.database, &mut self.inner)
-    }
-
-    fn journal_inner(&self) -> &JournaledState {
-        &self.inner
-    }
-}
-
-/* EVM2 migration: disabled non-Ethereum execution.
-#[cfg(feature = "monad")]
-impl<DB: Database> FoundryJournal for monad_revm::MonadJournal<DB> {
-    fn db_journal_inner_mut(&mut self) -> (&mut DB, &mut JournaledState) {
-        Journal::db_journal_inner_mut(self)
-    }
-
-    fn journal_inner(&self) -> &JournaledState {
-        Journal::journal_inner(self)
-    }
-
-    fn capture_reserve_balance(
-        &self,
-    ) -> monad_revm::reserve_balance::tracker::ReserveBalanceTracker {
-        monad_revm::MonadJournalTr::reserve_balance(self).clone()
-    }
-
-    fn restore_reserve_balance(
-        &mut self,
-        tracker: monad_revm::reserve_balance::tracker::ReserveBalanceTracker,
-    ) {
-        *monad_revm::MonadJournalTr::reserve_balance_mut(self) = tracker;
-    }
-
-    fn preserves_reserve_balance(&self) -> bool {
-        monad_revm::MonadJournalTr::preserves_reserve_balance_tracker(self)
-    }
-
-    fn set_preserve_reserve_balance(&mut self, preserve: bool) {
-        monad_revm::MonadJournalTr::set_preserve_reserve_balance_tracker(self, preserve);
-    }
-}
-*/
-
-/// Extension trait providing mutable field access to block, tx, and cfg environments.
-///
-/// [`ContextTr`] only exposes immutable references for block, tx, and cfg.
-/// Cheatcodes like `vm.warp()`, `vm.roll()`, `vm.chainId()` need to mutate these fields.
-pub trait FoundryContextExt:
-    ContextTr<
-        Block: FoundryBlock + Clone,
-        Tx: FoundryTransaction + Clone,
-        Cfg: FoundryCfg<Spec = Self::Spec>,
-        Journal: FoundryJournal,
-        Chain: FoundryChain<Self::Tx>,
-    >
-{
-    /// Specification id type
-    ///
-    /// Bubbled-up from `ContextTr::Cfg` for convenience and simplified bounds.
-    type Spec: Into<SpecId> + Copy + Debug;
-
-    /// Mutable reference to the block environment.
-    fn block_mut(&mut self) -> &mut Self::Block;
-
-    /// Mutable reference to the transaction environment.
-    fn tx_mut(&mut self) -> &mut Self::Tx;
-
-    /// Mutable reference to the configuration environment.
-    fn cfg_mut(&mut self) -> &mut Self::Cfg;
-
-    /// Reference to the underlying [`CfgEnv`].
-    fn cfg_env(&self) -> &CfgEnv<Self::Spec> {
-        self.cfg().cfg_env()
-    }
-
-    /// Mutable reference to the underlying [`CfgEnv`].
-    fn cfg_env_mut(&mut self) -> &mut CfgEnv<Self::Spec> {
-        self.cfg_mut().cfg_env_mut()
-    }
-
-    /// Mutable reference to the db and the journal inner.
-    fn db_journal_inner_mut(&mut self) -> (&mut Self::Db, &mut JournaledState) {
-        self.journal_mut().db_journal_inner_mut()
-    }
-
-    /// Reference to the journal inner.
-    fn journal_inner(&self) -> &JournaledState {
-        self.journal().journal_inner()
-    }
-
-    /// Sets the spec and refreshes gas params for the concrete EVM family.
-    fn set_spec_and_gas_params(&mut self, spec: Self::Spec) {
-        self.cfg_mut().set_spec_and_gas_params(spec);
-    }
-
-    /// Sets block environment.
-    fn set_block(&mut self, block: Self::Block) {
-        *self.block_mut() = block;
-    }
-
-    /// Sets transaction environment.
-    fn set_tx(&mut self, tx: Self::Tx) {
-        *self.tx_mut() = tx;
-    }
-
-    /// Sets configuration environment.
-    fn set_cfg(&mut self, cfg: Self::Cfg) {
-        *self.cfg_mut() = cfg;
-    }
-
-    /// Sets journal inner.
-    fn set_journal_inner(&mut self, journal_inner: JournaledState) {
-        *self.db_journal_inner_mut().1 = journal_inner;
-    }
-
-    /// Sets EVM environment.
-    fn set_evm(&mut self, evm_env: EvmEnv<Self::Spec, Self::Block>) {
-        *self.cfg_mut() = evm_env.cfg_env.into();
-        *self.block_mut() = evm_env.block_env;
-    }
-
-    /// Cloned transaction environment.
-    fn tx_clone(&self) -> Self::Tx {
-        self.tx().clone()
-    }
-
-    /// Cloned EVM environment (Cfg + Block).
-    fn evm_clone(&self) -> EvmEnv<Self::Spec, Self::Block> {
-        EvmEnv::new(self.cfg().clone().into(), self.block().clone())
-    }
-}
-
-/// Refreshes journal state derived from a context's active chain position.
-pub fn refresh_chain_journal<CTX: FoundryContextExt>(context: &mut CTX) {
-    let chain = context.chain().clone();
-    chain.refresh_journal(context.journal_mut());
-}
-
-impl<
-    BLOCK: FoundryBlock + Clone,
-    TX: FoundryTransaction + Clone,
-    CFG: FoundryCfg,
-    DB: Database,
-    J: FoundryJournal<Database = DB>,
-    C: FoundryChain<TX>,
-> FoundryContextExt for Context<BLOCK, TX, CFG, DB, J, C>
-{
-    type Spec = <Self::Cfg as Cfg>::Spec;
-
-    fn block_mut(&mut self) -> &mut Self::Block {
-        &mut self.block
-    }
-
-    fn tx_mut(&mut self) -> &mut Self::Tx {
-        &mut self.tx
-    }
-
-    fn cfg_mut(&mut self) -> &mut Self::Cfg {
-        &mut self.cfg
-    }
-}
 
 /// Trait for converting an [`AnyRpcTransaction`] into a specific `TxEnv`.
 ///
@@ -1181,7 +922,6 @@ mod optimism {
 mod tests {
     use super::*;
     use alloy_consensus::{Signed, TxEip1559, transaction::Recovered};
-    use alloy_evm::{EthEvmFactory, EvmFactory};
     use alloy_network::{AnyTxType, UnknownTxEnvelope, UnknownTypedTransaction};
     use alloy_primitives::Signature;
     use alloy_rpc_types::{Transaction as RpcTransaction, TransactionInfo};
@@ -1189,7 +929,6 @@ mod tests {
     /* EVM2 migration: disabled non-Ethereum execution.
     use foundry_evm_hardforks::TempoHardfork;
     */
-    use revm::database::EmptyDB;
     /* EVM2 migration: disabled non-Ethereum execution.
     use std::num::NonZeroU64;
     */
@@ -1207,30 +946,6 @@ mod tests {
     #[cfg(feature = "base")]
     use base_common_evm::{BaseEvmFactory, BaseSpecId, BaseTransaction, BaseUpgrade};
     */
-
-    #[test]
-    fn eth_evm_foundry_context_ext_implementation() {
-        let mut evm =
-            EthEvmFactory::default().create_evm(EmptyDB::default(), EvmEnv::default().into());
-
-        // Test EVM Context Block mutation
-        evm.ctx_mut().block_mut().set_number(U256::from(123));
-        assert_eq!(evm.ctx().block().number(), U256::from(123));
-
-        // Test EVM Context Tx mutation
-        evm.ctx_mut().tx_mut().set_nonce(99);
-        assert_eq!(evm.ctx().tx().nonce(), 99);
-
-        // Test EVM Context Cfg mutation
-        evm.ctx_mut().cfg_mut().spec = SpecId::AMSTERDAM;
-        assert_eq!(evm.ctx().cfg().spec, SpecId::AMSTERDAM);
-
-        // Round-trip test to ensure no issues with cloning and setting tx_env and evm_env
-        let tx_env = evm.ctx().tx_clone();
-        evm.ctx_mut().set_tx(tx_env);
-        let evm_env = evm.ctx().evm_clone();
-        evm.ctx_mut().set_evm(evm_env);
-    }
 
     /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]
