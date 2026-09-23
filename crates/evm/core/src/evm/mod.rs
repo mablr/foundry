@@ -5,7 +5,6 @@
 
 use crate::{EvmEnv, FoundryBlock, FoundryChain, FoundryTransaction, FromAnyRpcTransaction};
 use alloy_consensus::{SignableTransaction, Signed, transaction::SignerRecoverable};
-use alloy_evm::FromRecoveredTx;
 use alloy_network::Network;
 use alloy_primitives::Signature;
 use alloy_rlp::Decodable;
@@ -78,14 +77,7 @@ pub trait FoundryEvmNetwork: Copy + Debug + Default + 'static {
         + Sync
         + 'static;
     type Block: FoundryBlock + ForkBlockEnv + Default + Debug + Unpin;
-    type Tx: Clone
-        + Debug
-        + FoundryTransaction
-        + FromAnyRpcTransaction
-        + Default
-        + Send
-        + Sync
-        + FromRecoveredTx<<Self::Network as Network>::TxEnvelope>;
+    type Tx: Clone + Debug + FoundryTransaction + FromAnyRpcTransaction + Default + Send + Sync;
 
     /// Transaction-position context owned by this network.
     type Chain: FoundryChain<Self::Tx>;

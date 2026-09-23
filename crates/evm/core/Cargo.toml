@@ -25,7 +25,6 @@ foundry-evm-networks.workspace = true
 
 alloy-chains.workspace = true
 alloy-dyn-abi = { workspace = true, features = ["arbitrary", "eip712"] }
-alloy-evm = { workspace = true, features = ["rpc"] }
 alloy-genesis.workspace = true
 alloy-hardforks.workspace = true
 alloy-json-abi.workspace = true
@@ -106,6 +105,7 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+alloy-evm = { workspace = true, features = ["rpc"] }
 alloy-serde.workspace = true
 alloy-signer.workspace = true
 alloy-signer-local.workspace = true

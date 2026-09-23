@@ -1,6 +1,5 @@
 use alloy_chains::NamedChain;
 use alloy_consensus::{Transaction as _, Typed2718};
-use alloy_evm::FromRecoveredTx;
 use alloy_network::{AnyRpcTransaction, AnyTxEnvelope, TransactionResponse};
 use alloy_primitives::{Address, B256, Bytes, U256};
 use foundry_evm_networks::celo::CELO_DYNAMIC_FEE_TX_TYPE;
@@ -40,19 +39,6 @@ impl<Spec, B> EvmEnv<Spec, B> {
 impl<Spec: Default + Into<SpecId> + Clone, B: Default> Default for EvmEnv<Spec, B> {
     fn default() -> Self {
         Self::new(CfgEnv::new_with_spec(Spec::default()), B::default())
-    }
-}
-
-// TODO(evm2): Delete these conversions with legacy factory and inspector execution.
-impl<Spec, B> From<EvmEnv<Spec, B>> for alloy_evm::EvmEnv<Spec, B> {
-    fn from(env: EvmEnv<Spec, B>) -> Self {
-        Self::new(env.cfg_env, env.block_env)
-    }
-}
-
-impl<Spec, B> From<alloy_evm::EvmEnv<Spec, B>> for EvmEnv<Spec, B> {
-    fn from(env: alloy_evm::EvmEnv<Spec, B>) -> Self {
-        Self::new(env.cfg_env, env.block_env)
     }
 }
 
@@ -489,7 +475,7 @@ impl<Tx> FoundryChain<Tx> for () {}
 
 /// Trait for converting an [`AnyRpcTransaction`] into a specific `TxEnv`.
 ///
-/// Ethereum envelopes delegate to [`FromRecoveredTx`]. Implementations may also explicitly
+/// Ethereum envelopes project their consensus fields. Implementations may also explicitly
 /// project compatible network-specific envelopes into their execution environment.
 pub trait FromAnyRpcTransaction: Sized {
     /// Tries to convert an [`AnyRpcTransaction`] into `Self`.
@@ -499,7 +485,29 @@ pub trait FromAnyRpcTransaction: Sized {
 impl FromAnyRpcTransaction for TxEnv {
     fn from_any_rpc_transaction(tx: &AnyRpcTransaction) -> eyre::Result<Self> {
         if let Some(envelope) = tx.as_envelope() {
-            return Ok(Self::from_recovered_tx(envelope, tx.from()));
+            // TODO(evm2): Replace TxEnv with native transaction inputs once all callers migrate.
+            return Ok(Self {
+                tx_type: envelope.ty(),
+                caller: tx.from(),
+                gas_limit: envelope.gas_limit(),
+                gas_price: envelope.max_fee_per_gas(),
+                gas_priority_fee: envelope.max_priority_fee_per_gas(),
+                kind: envelope.kind(),
+                value: envelope.value(),
+                data: envelope.input().clone(),
+                nonce: envelope.nonce(),
+                chain_id: envelope.chain_id(),
+                access_list: envelope.access_list().cloned().unwrap_or_default(),
+                blob_hashes: envelope.blob_versioned_hashes().unwrap_or_default().to_vec(),
+                max_fee_per_blob_gas: envelope.max_fee_per_blob_gas().unwrap_or_default(),
+                authorization_list: envelope
+                    .authorization_list()
+                    .unwrap_or_default()
+                    .iter()
+                    .cloned()
+                    .map(|auth| Either::Right(auth.into_recovered()))
+                    .collect(),
+            });
         }
 
         // CIP-64 transactions have EIP-1559 execution fields plus a Celo-specific fee currency.
@@ -921,7 +929,11 @@ mod optimism {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_consensus::{Signed, TxEip1559, transaction::Recovered};
+    use alloy_consensus::{
+        Signed, TxEip1559, TxEip2930, TxEip4844, TxEip7702, TxEnvelope, TxLegacy,
+        transaction::Recovered,
+    };
+    use alloy_evm::FromRecoveredTx;
     use alloy_network::{AnyTxType, UnknownTxEnvelope, UnknownTypedTransaction};
     use alloy_primitives::Signature;
     use alloy_rpc_types::{Transaction as RpcTransaction, TransactionInfo};
@@ -1135,6 +1147,112 @@ mod tests {
         assert_eq!(tx_env.gas_limit, 21001);
         assert_eq!(tx_env.value, U256::from(101));
         assert_eq!(tx_env.kind, TxKind::Call(Address::with_last_byte(0xBB)));
+    }
+
+    #[test]
+    fn ethereum_rpc_projection_matches_alloy_evm() {
+        let caller = Address::with_last_byte(0x12);
+        let signature = Signature::new(U256::ZERO, U256::ZERO, false);
+        let input = Bytes::from_static(&[0xab, 0xcd]);
+        let access_list = AccessList(vec![alloy_rpc_types::AccessListItem {
+            address: caller,
+            storage_keys: vec![B256::repeat_byte(0x34)],
+        }]);
+        let transactions: [TxEnvelope; 5] = [
+            Signed::new_unchecked(
+                TxLegacy {
+                    nonce: 7,
+                    gas_price: 19,
+                    gas_limit: 80_000,
+                    to: TxKind::Create,
+                    value: U256::from(23),
+                    input: input.clone(),
+                    ..Default::default()
+                },
+                signature,
+                B256::ZERO,
+            )
+            .into(),
+            Signed::new_unchecked(
+                TxEip2930 {
+                    chain_id: 1,
+                    nonce: 8,
+                    gas_price: 20,
+                    gas_limit: 81_000,
+                    to: TxKind::Call(caller),
+                    access_list: access_list.clone(),
+                    ..Default::default()
+                },
+                signature,
+                B256::ZERO,
+            )
+            .into(),
+            Signed::new_unchecked(
+                TxEip1559 {
+                    chain_id: 1,
+                    nonce: 9,
+                    gas_limit: 82_000,
+                    max_fee_per_gas: 31,
+                    max_priority_fee_per_gas: 3,
+                    access_list: access_list.clone(),
+                    input: input.clone(),
+                    ..Default::default()
+                },
+                signature,
+                B256::ZERO,
+            )
+            .into(),
+            Signed::new_unchecked(
+                TxEip4844 {
+                    chain_id: 1,
+                    nonce: 10,
+                    gas_limit: 83_000,
+                    max_fee_per_gas: 32,
+                    max_priority_fee_per_gas: 4,
+                    max_fee_per_blob_gas: 17,
+                    blob_versioned_hashes: vec![B256::repeat_byte(1)],
+                    access_list: access_list.clone(),
+                    to: caller,
+                    ..Default::default()
+                },
+                signature,
+                B256::ZERO,
+            )
+            .into(),
+            Signed::new_unchecked(
+                TxEip7702 {
+                    chain_id: 1,
+                    nonce: 11,
+                    gas_limit: 84_000,
+                    max_fee_per_gas: 33,
+                    max_priority_fee_per_gas: 5,
+                    to: caller,
+                    input,
+                    access_list,
+                    authorization_list: vec![
+                        alloy_rpc_types::Authorization {
+                            chain_id: U256::from(1),
+                            address: caller,
+                            nonce: 2,
+                        }
+                        .into_signed(signature),
+                    ],
+                    ..Default::default()
+                },
+                signature,
+                B256::ZERO,
+            )
+            .into(),
+        ];
+        for envelope in transactions {
+            let expected = TxEnv::from_recovered_tx(&envelope, caller);
+            let rpc = RpcTransaction::from_transaction(
+                Recovered::new_unchecked(envelope, caller),
+                TransactionInfo::default(),
+            );
+            let actual = TxEnv::from_any_rpc_transaction(&rpc.into()).unwrap();
+            assert_eq!(actual, expected);
+        }
     }
 
     /* EVM2 migration: disabled non-Ethereum execution.

@@ -12,6 +12,9 @@ engine types transitively. Session block types remain part of that next migratio
 Unported handler source remains on disk for reference, outside the module tree.
 The unused REVM context/journal extension traits have also been removed. Log collection
 is engine-independent, with REVM console-call outcomes constructed only in Anvil.
+Core no longer has a direct production alloy-evm dependency. Anvil owns environment conversions;
+RPC transaction fields are projected directly, with alloy-evm retained only as a test oracle.
+The projected transaction and configuration types still use REVM and must migrate next.
 The unused suspended-frame execution, inherited-journal and child-state merge helpers
 have been removed. Fork-prefix replay now executes Ethereum envelopes with evm2, sharing
 the native database reads, environment conversion and write collector with the executor.
