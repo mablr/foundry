@@ -9,19 +9,16 @@ use revm::{
         BlockEnv, Evm as RevmEvm, Journal, TxEnv,
         result::{EVMError, HaltReason, ResultAndState},
     },
-    handler::{EthFrame, EvmTr, FrameResult, MainnetHandler, instructions::EthInstructions},
+    handler::{EthFrame, EvmTr, MainnetHandler, instructions::EthInstructions},
     inspector::InspectorHandler,
-    interpreter::{FrameInput, InstructionResult, interpreter::EthInterpreter},
+    interpreter::{InstructionResult, interpreter::EthInterpreter},
     primitives::hardfork::SpecId,
 };
 
 use crate::{
     FoundryContextExt, FoundryInspectorExt,
     backend::{DatabaseExt, JournaledState},
-    evm::{
-        FoundryEvmFactory, FoundryEvmNetwork, IntoInstructionResult, NestedEvm, NestedEvmFor,
-        run_inspected_frame,
-    },
+    evm::{FoundryEvmFactory, FoundryEvmNetwork, IntoInstructionResult, NestedEvm, NestedEvmFor},
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -113,10 +110,6 @@ impl<'db, I: FoundryInspectorExt<EthEvmContext<&'db mut dyn DatabaseExt<EthEvmFa
 
     fn journal_mut(&mut self) -> &mut Self::Journal {
         &mut self.ctx_mut().journaled_state
-    }
-
-    fn run_execution(&mut self, frame: FrameInput) -> Result<FrameResult, EVMError<DatabaseError>> {
-        run_inspected_frame(self, EthEvmHandler::<I>::default(), frame)
     }
 
     fn transact_raw(&mut self, tx: Self::Tx) -> eyre::Result<ResultAndState> {

@@ -10,6 +10,8 @@ are no longer compiled. The cheatcode crate has no direct REVM, alloy-evm or
 revm-inspectors dependency; its core/configuration/trace dependencies still pull legacy
 engine types transitively. Session block types remain part of that next migration boundary.
 Unported handler source remains on disk for reference, outside the module tree.
+The unused suspended-frame execution, inherited-journal and child-state merge helpers
+have been removed. Fork replay still uses the legacy transaction factory.
 
 `EthEvmNetwork` is the only compiled Foundry EVM network implementation. The existing
 generic executor, backend, inspector, journal, and cheatcode interfaces remain so the
