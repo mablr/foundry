@@ -28,6 +28,7 @@ use foundry_evm_core::{
         history_window_start,
     },
     evm::{ChainFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
+    state_changes::{ExecutionOutput, ExecutionStatus},
     utils::StateChangeset,
 };
 use foundry_evm_coverage::HitMaps;
@@ -37,11 +38,8 @@ use foundry_evm_traces::{SparsedTraceArena, TraceRequirements};
 use revm::{
     bytecode::Bytecode,
     context::{Block, Cfg, Transaction},
-    context_interface::{
-        cfg::gas_params::Eip2780TxInfo, result::Output, transaction::SignedAuthorization,
-    },
+    context_interface::{cfg::gas_params::Eip2780TxInfo, transaction::SignedAuthorization},
     database::{Database, DatabaseRef},
-    interpreter::InstructionResult,
     primitives::hardfork::SpecId,
 };
 use std::{
@@ -668,7 +666,7 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
 
         let mut result = self.transact_with_env_and_context(evm_env, tx_env, chain_context)?;
         result = result.into_result(rd)?;
-        let Some(Output::Create(_, Some(address))) = result.out else {
+        let Some(ExecutionOutput::Create(_, Some(address))) = result.out else {
             panic!("Deployment succeeded, but no address was returned: {result:#?}");
         };
 
@@ -1296,7 +1294,7 @@ impl<FEN: FoundryEvmNetwork> From<DeployResult<FEN>> for RawCallResult<FEN> {
 #[derive(Debug)]
 pub struct RawCallResult<FEN: FoundryEvmNetwork = EthEvmNetwork> {
     /// The status of the call
-    pub exit_reason: Option<InstructionResult>,
+    pub exit_reason: Option<ExecutionStatus>,
     /// Whether the call was halted by the execution cancellation inspector.
     pub execution_cancelled: bool,
     /// Whether the call reverted or not
@@ -1346,7 +1344,7 @@ pub struct RawCallResult<FEN: FoundryEvmNetwork = EthEvmNetwork> {
     /// The cheatcode states after execution
     pub cheatcodes: Option<Box<Cheatcodes<FEN>>>,
     /// The raw output of the execution
-    pub out: Option<Output>,
+    pub out: Option<ExecutionOutput>,
     /// The active fork's block number after execution, if any.
     pub fork_block_number: Option<u64>,
     /// The chisel state
@@ -1420,7 +1418,7 @@ impl<FEN: FoundryEvmNetwork> RawCallResult<FEN> {
         if let Some(reason) = self.skip_reason() {
             return EvmError::Skip(reason);
         }
-        let reason = rd.unwrap_or_default().decode(&self.result, self.exit_reason);
+        let reason = rd.unwrap_or_default().decode_native(&self.result, self.exit_reason);
         EvmError::Execution(Box::new(self.into_execution_error(reason)))
     }
 
@@ -1432,7 +1430,7 @@ impl<FEN: FoundryEvmNetwork> RawCallResult<FEN> {
     /// Returns an `EvmError` if the call failed, otherwise returns `self`.
     pub fn into_result(self, rd: Option<&RevertDecoder>) -> Result<Self, EvmError<FEN>> {
         if let Some(reason) = self.exit_reason
-            && reason.is_ok()
+            && reason.is_success()
         {
             Ok(self)
         } else {
@@ -2057,7 +2055,7 @@ mod tests {
             .unwrap();
 
         assert!(
-            matches!(result.out, Some(Output::Create(_, Some(address))) if address == expected)
+            matches!(result.out, Some(ExecutionOutput::Create(_, Some(address))) if address == expected)
         );
         assert!(executor.backend().is_persistent(&expected));
         assert!(executor.backend().has_cheatcode_access(&expected));
@@ -2415,7 +2413,7 @@ mod tests {
         let result = result.expect("active EVM execution did not observe early exit").unwrap();
         assert!(result.execution_cancelled);
         assert!(!result.reverted);
-        assert_eq!(result.exit_reason, Some(InstructionResult::Stop));
+        assert_eq!(result.exit_reason, Some(ExecutionStatus::Stop));
         assert!(result.gas_used > 21_000, "interrupt fired before EVM execution started");
         assert!(result.gas_used < GAS_LIMIT, "execution ran out of gas instead of exiting");
     }
@@ -2466,7 +2464,7 @@ mod tests {
         let result = executor.transact_raw(CALLER, target, Bytes::new(), U256::ZERO).unwrap();
         assert!(result.execution_cancelled);
         assert!(!result.reverted);
-        assert_eq!(result.exit_reason, Some(InstructionResult::Stop));
+        assert_eq!(result.exit_reason, Some(ExecutionStatus::Stop));
         assert!(result.gas_used < GAS_LIMIT, "execution ran out of gas instead of timing out");
     }
 

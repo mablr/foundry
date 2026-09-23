@@ -13,10 +13,10 @@ use foundry_evm::{
     core::{
         FoundryTransaction,
         evm::{FoundryEvmNetwork, TransactionRequestFor},
+        state_changes::ExecutionStatus,
     },
     executors::{DeployResult, EvmError, ExecutionErr, Executor, RawCallResult},
     opts::EvmOpts,
-    revm::interpreter::{InstructionResult, return_ok},
     traces::{TraceKind, Traces},
 };
 use std::collections::VecDeque;
@@ -494,7 +494,7 @@ impl<FEN: FoundryEvmNetwork> ScriptRunner<FEN> {
         value: U256,
     ) -> Result<u64> {
         let mut gas_used = res.gas_used;
-        if matches!(res.exit_reason, Some(return_ok!())) {
+        if res.exit_reason.is_some_and(ExecutionStatus::is_success) {
             // Store the current gas limit and reset it later.
             let init_gas_limit = self.executor.tx_env().gas_limit();
 
@@ -540,12 +540,10 @@ impl GasSearch {
         }
     }
 
-    pub(crate) const fn record(&mut self, limit: u64, exit_reason: Option<InstructionResult>) {
+    pub(crate) const fn record(&mut self, limit: u64, exit_reason: Option<ExecutionStatus>) {
         match exit_reason {
             Some(
-                InstructionResult::Revert
-                | InstructionResult::OutOfGas
-                | InstructionResult::OutOfFunds,
+                ExecutionStatus::Revert | ExecutionStatus::OutOfGas | ExecutionStatus::OutOfFunds,
             ) => {
                 self.lowest = limit;
             }
@@ -576,7 +574,7 @@ mod gas_search_tests {
         let mut search = GasSearch::new(100);
         for expected in [200, 150, 125, 112, 106] {
             assert_eq!(search.next_limit(), Some(expected));
-            search.record(expected, Some(InstructionResult::Return));
+            search.record(expected, Some(ExecutionStatus::Return));
         }
         assert_eq!(search.next_limit(), None);
         assert_eq!(search.gas_used(), 106);
@@ -586,7 +584,7 @@ mod gas_search_tests {
     fn unsuccessful_probes_keep_original_estimate() {
         let mut search = GasSearch::new(100);
         while let Some(limit) = search.next_limit() {
-            search.record(limit, Some(InstructionResult::OutOfGas));
+            search.record(limit, Some(ExecutionStatus::OutOfGas));
         }
         assert_eq!(search.gas_used(), 100);
         assert_eq!(GasSearch::new(0).next_limit(), None);

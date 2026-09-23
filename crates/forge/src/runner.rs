@@ -1811,8 +1811,8 @@ impl<'a, FEN: FoundryEvmNetwork> FunctionRunner<'a, FEN> {
             return Err(format!("vm.skip during concrete replay: {reason}"));
         }
 
-        let reason = (raw.reverted || raw.exit_reason.is_some_and(|reason| !reason.is_ok()))
-            .then(|| self.revert_decoder().decode(&raw.result, raw.exit_reason));
+        let reason = (raw.reverted || raw.exit_reason.is_some_and(|reason| !reason.is_success()))
+            .then(|| self.revert_decoder().decode_native(&raw.result, raw.exit_reason));
         if reason.as_deref() != Some(expected_reason) {
             return Err(format!(
                 "candidate replay failed with different reason: expected `{expected_reason}`, got `{}`",

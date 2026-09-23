@@ -14,6 +14,7 @@ use foundry_evm_core::{
     constants::CHEATCODE_ADDRESS,
     decode::{ASSERTION_FAILED_PREFIX, decode_console_log},
     evm::FoundryEvmNetwork,
+    state_changes::ExecutionStatus,
     utils::StateChangeset,
 };
 use foundry_evm_coverage::HitMaps;
@@ -22,7 +23,6 @@ use foundry_evm_fuzz::{
     invariant::{FuzzRunIdentifiedContracts, InvariantContract},
 };
 use proptest::test_runner::TestError;
-use revm::interpreter::InstructionResult;
 use revm_inspectors::tracing::CallTraceArena;
 use std::{borrow::Cow, collections::HashMap};
 
@@ -140,7 +140,7 @@ pub(crate) fn is_assertion_failure<FEN: FoundryEvmNetwork>(
     }
 
     is_assert_panic(call_result.result.as_ref())
-        || matches!(call_result.exit_reason, Some(InstructionResult::InvalidFEOpcode))
+        || matches!(call_result.exit_reason, Some(ExecutionStatus::InvalidFEOpcode))
         || is_revert_assertion_failure(call_result.result.as_ref())
         || is_cheatcode_assert_revert(call_result)
 }
@@ -594,7 +594,7 @@ mod tests {
     fn detects_legacy_invalid_opcode_assert() {
         let call_result = RawCallResult::<EthEvmNetwork> {
             reverted: true,
-            exit_reason: Some(InstructionResult::InvalidFEOpcode),
+            exit_reason: Some(ExecutionStatus::InvalidFEOpcode),
             ..Default::default()
         };
         assert!(is_assertion_failure(&call_result));

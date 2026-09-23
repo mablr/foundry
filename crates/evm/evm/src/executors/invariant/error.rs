@@ -111,7 +111,7 @@ impl<'a> InvariantRunCtx<'a> {
         let revert_reason = RevertDecoder::new()
             .with_abis(self.targeted_contracts.targets().values().map(|c| &c.abi))
             .with_abi(self.contract.abi)
-            .decode(call_result.result.as_ref(), call_result.exit_reason);
+            .decode_native(call_result.result.as_ref(), call_result.exit_reason);
         // Non-reverting assertion failures surface through Foundry's failure flags, not
         // revert data — fall back so invariant output is not blank.
         let needs_fallback = matches!(revert_reason.as_str(), "" | EMPTY_REVERT_DATA);

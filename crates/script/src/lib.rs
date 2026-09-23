@@ -52,6 +52,7 @@ use foundry_evm::{
         Breakpoints,
         evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
         fork::ResolvedFork,
+        state_changes::ExecutionStatus,
     },
     executors::ExecutorBuilder,
     inspectors::{
@@ -59,7 +60,6 @@ use foundry_evm::{
         cheatcodes::{BroadcastableTransactions, Wallets},
     },
     opts::{EvmOpts, ExecutionSpecContext, resolve_execution_spec},
-    revm::interpreter::InstructionResult,
     traces::Traces,
 };
 use foundry_evm_networks::NetworkConfigs;
@@ -898,7 +898,7 @@ pub struct ScriptResult<N: Network> {
     pub transactions: Option<BroadcastableTransactions<N>>,
     pub returned: Bytes,
     #[serde(skip)]
-    pub exit_reason: Option<InstructionResult>,
+    pub exit_reason: Option<ExecutionStatus>,
     pub address: Option<Address>,
     #[serde(skip)]
     pub breakpoints: Breakpoints,

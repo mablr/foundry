@@ -128,7 +128,7 @@ The minimal local `forge script --no-isolate` path now deploys contracts, execut
 nested calls and returns values through evm2. Script address protection also uses a
 native opcode hook. Trace production/debugging is temporarily unavailable; broadcast
 cheatcodes, fork simulation and isolation are still pending. This is not a REVM-free
-binary yet: environment, backend and execution-status consumers retain legacy types.
+binary yet: configuration, fork and inspector interfaces retain legacy types.
 
 The executor no longer directly depends on alloy-evm. Beacon-root calls use evm2's
 system-call API, and the ordinary replay loop uses native transaction execution.
@@ -142,3 +142,9 @@ unmigrated callers; fork persistence still uses the legacy cache. Fork transfer 
 dictionary initialization temporarily export a legacy snapshot instead of maintaining
 a second persistent database.
 Anvil retains its separate REVM state type while its migration is deferred.
+
+Execution outcomes now retain evm2 termination statuses and Foundry-owned call/create
+outputs through script, fuzz and failure-reporting consumers. The partial conversion
+into REVM instruction results is gone; native halts such as `OpcodeNotFound` reach
+error reporting without a migration-adapter failure. Legacy trace decoding retains
+its separate REVM status entry point until inspectors migrate.

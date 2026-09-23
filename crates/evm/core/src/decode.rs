@@ -1,6 +1,9 @@
 //! Various utilities to decode test results.
 
-use crate::abi::{Vm, console};
+use crate::{
+    abi::{Vm, console},
+    state_changes::ExecutionStatus,
+};
 use alloy_dyn_abi::JsonAbiExt;
 use alloy_json_abi::{Error, JsonAbi};
 use alloy_primitives::{Log, Selector, hex, map::HashMap};
@@ -133,9 +136,37 @@ impl RevertDecoder {
     ///
     /// See [`decode`](Self::decode) for more information.
     pub fn maybe_decode(&self, err: &[u8], status: Option<InstructionResult>) -> Option<String> {
-        self.maybe_decode_known(err)
-            .or_else(|| decode_as_non_empty_string(err))
-            .or_else(|| Self::maybe_decode_fallback(err, status))
+        self.maybe_decode_known(err).or_else(|| decode_as_non_empty_string(err)).or_else(|| {
+            Self::maybe_decode_fallback(
+                err,
+                status
+                    .filter(|status| !status.is_ok())
+                    .map(|status| format!("EvmError: {status:?}")),
+            )
+        })
+    }
+
+    /// Decodes native execution failures without converting the engine status.
+    pub fn decode_native(&self, err: &[u8], status: Option<ExecutionStatus>) -> String {
+        self.maybe_decode_native(err, status).unwrap_or_else(|| {
+            if err.is_empty() { EMPTY_REVERT_DATA.to_string() } else { trimmed_hex(err) }
+        })
+    }
+
+    /// Tries to decode a native execution failure.
+    pub fn maybe_decode_native(
+        &self,
+        err: &[u8],
+        status: Option<ExecutionStatus>,
+    ) -> Option<String> {
+        self.maybe_decode_known(err).or_else(|| decode_as_non_empty_string(err)).or_else(|| {
+            Self::maybe_decode_fallback(
+                err,
+                status
+                    .filter(|status| !status.is_success())
+                    .map(|status| format!("EvmError: {status:?}")),
+            )
+        })
     }
 
     /// Tries to decode the given revert bytes as one of the errors known to this decoder:
@@ -175,7 +206,7 @@ impl RevertDecoder {
     }
 
     /// Formats revert bytes that could not be decoded as a known error.
-    fn maybe_decode_fallback(err: &[u8], status: Option<InstructionResult>) -> Option<String> {
+    fn maybe_decode_fallback(err: &[u8], status: Option<String>) -> Option<String> {
         // Generic custom error.
         if let Some((selector, data)) = err.split_first_chunk::<SELECTOR_LEN>() {
             return Some({
@@ -191,10 +222,8 @@ impl RevertDecoder {
             });
         }
 
-        if let Some(status) = status
-            && !status.is_ok()
-        {
-            return Some(format!("EvmError: {status:?}"));
+        if let Some(status) = status {
+            return Some(status);
         }
         if err.is_empty() {
             None

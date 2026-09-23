@@ -24,13 +24,12 @@ use foundry_evm_core::{
     backend::{Backend, DatabaseError},
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS},
     evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TxEnvFor},
+    state_changes::ExecutionOutput,
     utils::StateChangeset,
 };
 use revm::{
     context::{Block, Cfg, Transaction},
-    context_interface::result::Output,
     database::DatabaseRef,
-    interpreter::InstructionResult,
     primitives::hardfork::SpecId,
 };
 use std::{any::TypeId, convert::Infallible};
@@ -381,12 +380,12 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         if let Some(error) = inspector.unsupported {
             eyre::bail!(error);
         }
-        let exit_reason = instruction_result(result.stop)?;
+        let exit_reason = result.stop;
         let gas_used = result.tx_gas_used();
         let out = if result.status && tx_env.kind().is_create() {
-            Some(Output::Create(result.output.clone(), result.created_address))
+            Some(ExecutionOutput::Create(result.output.clone(), result.created_address))
         } else if result.status || result.stop.is_revert() {
-            Some(Output::Call(result.output.clone()))
+            Some(ExecutionOutput::Call(result.output.clone()))
         } else {
             None
         };
@@ -483,28 +482,6 @@ fn native_environment<FEN: FoundryEvmNetwork>(
     Ok((spec, version, block))
 }
 
-fn instruction_result(stop: InstrStop) -> eyre::Result<InstructionResult> {
-    Ok(match stop {
-        InstrStop::Stop => InstructionResult::Stop,
-        InstrStop::Return => InstructionResult::Return,
-        InstrStop::SelfDestruct => InstructionResult::SelfDestruct,
-        InstrStop::Revert => InstructionResult::Revert,
-        InstrStop::OutOfGas => InstructionResult::OutOfGas,
-        InstrStop::MemoryOOG => InstructionResult::MemoryOOG,
-        InstrStop::MemoryLimitOOG => InstructionResult::MemoryLimitOOG,
-        InstrStop::InvalidFEOpcode => InstructionResult::InvalidFEOpcode,
-        InstrStop::InvalidJump => InstructionResult::InvalidJump,
-        InstrStop::StackUnderflow => InstructionResult::StackUnderflow,
-        InstrStop::StackOverflow => InstructionResult::StackOverflow,
-        InstrStop::PrecompileOOG => InstructionResult::PrecompileOOG,
-        InstrStop::PrecompileError => InstructionResult::PrecompileError,
-        InstrStop::CreateContractSizeLimit => InstructionResult::CreateContractSizeLimit,
-        InstrStop::CreateContractStartingWithEF => InstructionResult::CreateContractStartingWithEF,
-        InstrStop::CreateInitCodeSizeLimit => InstructionResult::CreateInitCodeSizeLimit,
-        other => eyre::bail!("evm2 outcome not yet mapped: {other:?}"),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,7 +493,7 @@ mod tests {
         evm::InMemoryDB,
         interpreter::{Host, MessageExt},
     };
-    use foundry_evm_core::constants::CALLER;
+    use foundry_evm_core::{constants::CALLER, decode::RevertDecoder};
     use foundry_evm_networks::NetworkConfigs;
     use revm::bytecode::Bytecode;
 
@@ -575,7 +552,7 @@ mod tests {
         let nonce = executor.get_nonce(CALLER).unwrap();
         let result = executor.transact_raw(CALLER, target, Bytes::new(), U256::ZERO).unwrap();
         assert!(result.reverted);
-        assert_eq!(result.exit_reason, Some(InstructionResult::Revert));
+        assert_eq!(result.exit_reason, Some(InstrStop::Revert));
         assert_eq!(result.result, bytes!("ab"));
         assert_eq!(executor.backend().storage_ref(target, U256::ZERO).unwrap(), U256::ZERO);
         assert_eq!(executor.get_nonce(CALLER).unwrap(), nonce + 1);
@@ -591,7 +568,7 @@ mod tests {
         executor.inspector_mut().set_early_exit(signal);
         let result = executor.call_raw(CALLER, target, Bytes::new(), U256::ZERO).unwrap();
         assert!(result.execution_cancelled);
-        assert_eq!(result.exit_reason, Some(InstructionResult::Stop));
+        assert_eq!(result.exit_reason, Some(InstrStop::Stop));
         assert!(
             result.state_changeset.get(&target).is_none_or(|account| account.storage.is_empty())
         );
@@ -642,5 +619,18 @@ mod tests {
         executor.apply_beacon_root(B256::from(U256::from(42))).unwrap();
         assert_eq!(executor.backend().storage_ref(address, U256::ZERO).unwrap(), U256::from(42));
         assert_eq!(executor.get_nonce(alloy_eips::eip4788::SYSTEM_ADDRESS).unwrap(), 0);
+    }
+    #[test]
+    fn native_unknown_opcode_preserves_halt_status() {
+        let mut executor = executor();
+        let target = Address::repeat_byte(0x11);
+        executor.set_code(target, Bytecode::new_raw(bytes!("0c"))).unwrap();
+        let result = executor.call_raw(CALLER, target, Bytes::new(), U256::ZERO).unwrap();
+        assert!(result.reverted);
+        assert_eq!(result.exit_reason, Some(InstrStop::OpcodeNotFound));
+        assert_eq!(
+            RevertDecoder::default().decode_native(&result.result, result.exit_reason),
+            "EvmError: OpcodeNotFound"
+        );
     }
 }

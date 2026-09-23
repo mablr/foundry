@@ -464,7 +464,10 @@ where
             let decoded_reason = if result.result.is_empty() {
                 String::new()
             } else {
-                format!(": {}", RevertDecoder::default().decode(&result.result, result.exit_reason))
+                format!(
+                    ": {}",
+                    RevertDecoder::default().decode_native(&result.result, result.exit_reason)
+                )
             };
             eyre::bail!(
                 "Failed to deploy contract via CREATE2 on fork at block{decoded_reason}.\n\

@@ -379,7 +379,7 @@ impl<FEN: FoundryEvmNetwork> FuzzedExecutor<FEN> {
             let reason = call
                 .skip_reason()
                 .map(|reason| reason.to_string())
-                .or_else(|| rd.maybe_decode(&call.result, call.exit_reason));
+                .or_else(|| rd.maybe_decode_native(&call.result, call.exit_reason));
             result.reason = reason;
             let args = tx
                 .call_details
@@ -943,7 +943,7 @@ impl<FEN: FoundryEvmNetwork> FuzzedExecutor<FEN> {
                             .1
                             .skip_reason()
                             .map(|reason| reason.to_string())
-                            .or_else(|| rd.maybe_decode(&outcome.1.result, status));
+                            .or_else(|| rd.maybe_decode_native(&outcome.1.result, status));
                         if self.config.show_logs {
                             worker.logs.extend(outcome.1.logs.clone());
                         } else {

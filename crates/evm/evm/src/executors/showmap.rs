@@ -866,8 +866,7 @@ fn write_sancov<W: Write>(out: &mut W, bitmap: &[u64]) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use crate::executors::{RawCallResult, corpus_io::canonical_replay_dirs};
-    use foundry_evm_core::evm::EthEvmNetwork;
-    use revm::interpreter::InstructionResult;
+    use foundry_evm_core::{evm::EthEvmNetwork, state_changes::ExecutionStatus};
     use uuid::Uuid;
 
     fn temp_dir() -> PathBuf {
@@ -1053,7 +1052,7 @@ mod tests {
     fn invariant_replay_failures_ignore_plain_revert() {
         let call_result = RawCallResult::<EthEvmNetwork> {
             reverted: true,
-            exit_reason: Some(InstructionResult::Revert),
+            exit_reason: Some(ExecutionStatus::Revert),
             ..Default::default()
         };
         let failures = invariant_replay_failures(
@@ -1071,7 +1070,7 @@ mod tests {
     fn invariant_replay_failures_report_every_fail_on_revert_invariant() {
         let call_result = RawCallResult::<EthEvmNetwork> {
             reverted: true,
-            exit_reason: Some(InstructionResult::Revert),
+            exit_reason: Some(ExecutionStatus::Revert),
             ..Default::default()
         };
         let first = serde_json::from_value::<Function>(serde_json::json!({
@@ -1127,7 +1126,7 @@ mod tests {
     fn invariant_replay_failures_prefer_assertion_over_fail_on_revert() {
         let call_result = RawCallResult::<EthEvmNetwork> {
             reverted: true,
-            exit_reason: Some(InstructionResult::Revert),
+            exit_reason: Some(ExecutionStatus::Revert),
             ..Default::default()
         };
         let invariant = serde_json::from_value::<Function>(serde_json::json!({
