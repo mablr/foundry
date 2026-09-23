@@ -8,6 +8,7 @@ use comfy_table::{
     Cell, Color, Table,
     presets::{ASCII_FULL, ASCII_MARKDOWN},
 };
+use evm2::{SpecId, constants};
 use eyre::{OptionExt, Result};
 use foundry_block_explorers::contract::Metadata;
 use foundry_compilers::{
@@ -26,7 +27,6 @@ use foundry_compilers::{
     solc::SolcSettings,
 };
 use num_format::{Locale, ToFormattedString};
-use revm::primitives::{eip170, eip3860, hardfork::SpecId};
 use solar::{
     ast::{Arena, ContractKind, ItemKind},
     interface::{Session, source_map::FileName},
@@ -414,14 +414,14 @@ impl ProjectCompiler {
 }
 
 // https://eips.ethereum.org/EIPS/eip-170
-const CONTRACT_RUNTIME_SIZE_LIMIT: usize = eip170::MAX_CODE_SIZE;
+const CONTRACT_RUNTIME_SIZE_LIMIT: usize = constants::MAX_CODE_SIZE;
 
 // https://eips.ethereum.org/EIPS/eip-3860
-const CONTRACT_INITCODE_SIZE_LIMIT: usize = eip3860::MAX_INITCODE_SIZE;
+const CONTRACT_INITCODE_SIZE_LIMIT: usize = constants::MAX_INITCODE_SIZE;
 
 // https://eips.ethereum.org/EIPS/eip-7954
-const AMSTERDAM_CONTRACT_RUNTIME_SIZE_LIMIT: usize = 65_536;
-const AMSTERDAM_CONTRACT_INITCODE_SIZE_LIMIT: usize = 131_072;
+const AMSTERDAM_CONTRACT_RUNTIME_SIZE_LIMIT: usize = constants::MAX_CODE_SIZE_AMSTERDAM;
+const AMSTERDAM_CONTRACT_INITCODE_SIZE_LIMIT: usize = constants::MAX_INITCODE_SIZE_AMSTERDAM;
 
 const CONTRACT_RUNTIME_SIZE_WARN_THRESHOLD: usize = 18_000;
 const CONTRACT_INITCODE_SIZE_WARN_THRESHOLD: usize = 36_000;
@@ -448,7 +448,7 @@ impl ContractSizeLimits {
 
     /// Returns the protocol limits active for an EVM specification.
     pub const fn for_spec_id(spec_id: SpecId) -> Self {
-        if spec_id.is_enabled_in(SpecId::AMSTERDAM) {
+        if spec_id.enables(SpecId::AMSTERDAM) {
             Self::new(AMSTERDAM_CONTRACT_RUNTIME_SIZE_LIMIT, AMSTERDAM_CONTRACT_INITCODE_SIZE_LIMIT)
         } else {
             Self::new(CONTRACT_RUNTIME_SIZE_LIMIT, CONTRACT_INITCODE_SIZE_LIMIT)
@@ -1018,6 +1018,19 @@ mod tests {
         assert_eq!(
             ContractSizeLimits::for_spec_id(SpecId::AMSTERDAM),
             ContractSizeLimits::new(65_536, 131_072)
+        );
+    }
+
+    #[test]
+    fn contract_size_limits_honor_native_hardfork_override() {
+        let config = foundry_config::Config {
+            evm_version: foundry_compilers::artifacts::EvmVersion::Cancun,
+            hardfork: Some("ethereum:amsterdam".parse().unwrap()),
+            ..Default::default()
+        };
+        assert_eq!(
+            ContractSizeLimits::for_spec_id(config.evm_spec_id()),
+            ContractSizeLimits::new(65_536, 131_072),
         );
     }
 

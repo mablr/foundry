@@ -50,7 +50,7 @@ use foundry_evm::{
     backend::Backend,
     core::{
         Breakpoints,
-        evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
+        evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TxEnvFor},
         fork::ResolvedFork,
         state_changes::ExecutionStatus,
     },
@@ -603,7 +603,7 @@ impl ScriptArgs {
                 return Ok(None);
             }
 
-            let size_limits = pre_simulation.args.contract_size_limits::<FEN>(
+            let size_limits = pre_simulation.args.contract_size_limits(
                 &pre_simulation.script_config.config,
                 &pre_simulation.script_config.evm_opts,
             );
@@ -822,11 +822,7 @@ impl ScriptArgs {
         Ok(())
     }
 
-    fn contract_size_limits<FEN: FoundryEvmNetwork>(
-        &self,
-        config: &Config,
-        evm_opts: &EvmOpts,
-    ) -> ContractSizeLimits {
+    fn contract_size_limits(&self, config: &Config, evm_opts: &EvmOpts) -> ContractSizeLimits {
         self.evm
             .env
             .code_size_limit
@@ -839,10 +835,7 @@ impl ScriptArgs {
                     .contract_size_limits()
                     .map(|limits| ContractSizeLimits::new(limits.runtime, limits.initcode))
             })
-            .unwrap_or_else(|| {
-                let spec_id: SpecFor<FEN> = config.evm_spec_id();
-                ContractSizeLimits::for_spec_id(spec_id.into())
-            })
+            .unwrap_or_else(|| ContractSizeLimits::for_spec_id(config.evm_spec_id()))
     }
 
     /// We only broadcast transactions if --broadcast, --resume, or --verify was passed.

@@ -42,6 +42,8 @@ pub use monad_revm::MonadHardfork;
 pub use alloy_op_hardforks::OpHardfork;
 */
 
+mod native;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(into = "String")]
 pub enum FoundryHardfork {

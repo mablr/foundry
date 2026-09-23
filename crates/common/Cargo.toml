@@ -13,6 +13,7 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+evm2.workspace = true
 foundry-block-explorers = { workspace = true, features = ["foundry-compilers"] }
 foundry-common-fmt.workspace = true
 foundry-compilers.workspace = true
@@ -50,7 +51,6 @@ alloy-network.workspace = true
 # base-common-network = { workspace = true, optional = true, features = ["serde", "std"] }
 # base-common-rpc-types = { workspace = true, optional = true, features = ["serde", "std"] }
 
-revm.workspace = true
 
 solar.workspace = true
 
