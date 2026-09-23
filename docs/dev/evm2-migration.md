@@ -21,6 +21,9 @@ still rejects unsupported network-specific execution rather than using these ada
 Script no longer depends on alloy-evm. Gas estimation sets each prepared transaction
 limit directly, and sequential simulation increments the block through the executor API.
 REVM still remains in shared hardfork, environment, backend and observer types.
+Bytecode iteration now uses native evm2 opcode metadata. Common formatting imports
+consensus authorization types directly from Alloy, and mapping provenance is pure data;
+the remaining REVM mapping-capture adapter lives with the legacy fuzz inspector.
 The unused suspended-frame execution, inherited-journal and child-state merge helpers
 have been removed. Fork-prefix replay now executes Ethereum envelopes with evm2, sharing
 the native database reads, environment conversion and write collector with the executor.

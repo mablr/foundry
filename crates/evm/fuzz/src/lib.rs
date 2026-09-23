@@ -31,6 +31,8 @@ pub mod sequence;
 pub mod strategies;
 pub use strategies::LiteralMaps;
 
+mod mapping_slots;
+
 mod inspector;
 pub use inspector::{Fuzzer, ObservedCall};
 

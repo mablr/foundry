@@ -1,9 +1,12 @@
-use crate::invariant::RandomCallGenerator;
-use alloy_primitives::{Address, B256, Bytes, U256, map::AddressMap};
-use foundry_common::mapping_slots::{
-    MappingSlots, PendingMappingHash, capture_hash as capture_mapping_hash,
-    record_hash as record_mapping_hash, step as mapping_step,
+use crate::{
+    invariant::RandomCallGenerator,
+    mapping_slots::{
+        PendingMappingHash, capture_hash as capture_mapping_hash,
+        record_hash as record_mapping_hash, step as mapping_step,
+    },
 };
+use alloy_primitives::{Address, B256, Bytes, U256, map::AddressMap};
+use foundry_common::mapping_slots::MappingSlots;
 use foundry_evm_core::constants::CHEATCODE_ADDRESS;
 use revm::{
     Inspector,

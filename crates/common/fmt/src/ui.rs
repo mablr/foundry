@@ -13,10 +13,10 @@ use alloy_primitives::{
     Address, Bloom, Bytes, FixedBytes, I256, Signature, U8, U64, U256, Uint, hex,
 };
 use alloy_rpc_types::{
-    AccessListItem, Block, BlockTransactions, Header, Log, Transaction, TransactionReceipt,
+    AccessListItem, Block, BlockTransactions, Header, Log, SignedAuthorization, Transaction,
+    TransactionReceipt,
 };
 use alloy_serde::{OtherFields, WithOtherFields};
-use revm::context_interface::transaction::SignedAuthorization;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU64;
 use tempo_alloy::{
