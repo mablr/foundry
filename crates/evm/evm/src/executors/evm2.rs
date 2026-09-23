@@ -133,10 +133,16 @@ struct MigrationInspector<'a> {
     cancelled: bool,
     script_address: Option<Address>,
     cancellation_poll_counter: u8,
+    #[cfg(test)]
+    early_exit_test_gate: Option<crate::inspectors::EarlyExitTestGate>,
 }
 
 impl Inspector<BaseEvmTypes> for MigrationInspector<'_> {
     fn step(&mut self, interp: &mut Interpreter<'_, '_, BaseEvmTypes>) {
+        #[cfg(test)]
+        if let Some(gate) = &self.early_exit_test_gate {
+            gate.check_step(interp.pc());
+        }
         if self.script_address == Some(interp.message().destination)
             && interp.message().destination == interp.message().code_address
             && interp.opcode() == evm2::interpreter::op::ADDRESS
@@ -300,6 +306,11 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         );
         eyre::ensure!(!self.backend().is_in_forking_mode(), "evm2 fork execution is not migrated");
         let stack = self.inspector();
+        // TODO(evm2): Port CREATE-to-CREATE2 rewriting through native create hooks.
+        eyre::ensure!(
+            stack.cheatcodes.as_ref().is_none_or(|cheats| !cheats.config.batch_rewrite_creates),
+            "evm2 batch CREATE rewriting is not migrated"
+        );
         eyre::ensure!(!stack.enable_isolation, "evm2 isolation is not migrated; use --no-isolate");
         eyre::ensure!(
             stack.tracer.is_none() && stack.printer.is_none(),
@@ -342,6 +353,8 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             log_collector: stack.log_collector.as_deref().cloned(),
             config: stack.cheatcodes.as_ref().map(|cheats| cheats.config.as_ref()),
             cancellation: stack.execution_cancellation().cloned(),
+            #[cfg(test)]
+            early_exit_test_gate: stack.early_exit_test_gate(),
             script_address: stack
                 .script_execution_inspector
                 .as_ref()
@@ -496,6 +509,7 @@ mod tests {
     use foundry_evm_core::{constants::CALLER, decode::RevertDecoder};
     use foundry_evm_networks::NetworkConfigs;
     use revm::bytecode::Bytecode;
+    use std::{sync::mpsc, thread, time::Duration};
 
     fn executor() -> Executor<EthEvmNetwork> {
         let mut executor =
@@ -632,5 +646,31 @@ mod tests {
             RevertDecoder::default().decode_native(&result.result, result.exit_reason),
             "EvmError: OpcodeNotFound"
         );
+    }
+    #[test]
+    fn native_cancellation_interrupts_an_active_opcode_hook() {
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let signal = EarlyExit::new(false);
+        let execution_signal = signal.clone();
+        let worker = thread::spawn(move || {
+            let mut executor = executor();
+            let target = Address::repeat_byte(0x11);
+            executor.set_code(target, Bytecode::new_raw(bytes!("602a60005500"))).unwrap();
+            executor.inspector_mut().set_early_exit(execution_signal);
+            executor.inspector_mut().set_early_exit_test_gate(entered_tx, release_rx, 0);
+            let result = executor.call_raw(CALLER, target, Bytes::new(), U256::ZERO).unwrap();
+            assert!(result.execution_cancelled);
+            assert!(
+                result
+                    .state_changeset
+                    .get(&target)
+                    .is_none_or(|account| account.storage.is_empty())
+            );
+        });
+        entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+        signal.record_ctrl_c();
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
     }
 }

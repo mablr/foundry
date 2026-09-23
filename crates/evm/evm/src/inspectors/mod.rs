@@ -36,3 +36,6 @@ pub use revert_diagnostic::RevertDiagnostic;
 // mod tempo_labels;
 // Disabled for the Ethereum-only EVM2 migration.
 // pub(crate) use tempo_labels::TempoLabels;
+
+#[cfg(test)]
+pub(crate) use stack::EarlyExitTestGate;

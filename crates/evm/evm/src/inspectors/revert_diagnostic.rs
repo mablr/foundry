@@ -204,3 +204,20 @@ impl<CTX: ContextTr> Inspector<CTX> for RevertDiagnostic {
 pub const fn is_delegatecall(scheme: CallScheme) -> bool {
     matches!(scheme, CallScheme::DelegateCall | CallScheme::CallCode)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frames_remain_balanced() {
+        let mut inspector = RevertDiagnostic::default();
+        inspector.frame_start();
+        inspector.set_trace_node(0);
+        inspector.frame_start();
+        inspector.set_trace_node(1);
+        inspector.frame_end();
+        inspector.frame_end();
+        assert!(inspector.into_diagnostics().is_empty());
+    }
+}

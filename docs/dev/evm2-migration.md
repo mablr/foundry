@@ -155,3 +155,11 @@ association remains only as a migration constraint for fork/inspector contexts; 
 configuration fields still use REVM types and must be replaced. Backend initialization
 reads evm2 precompile addresses directly rather than constructing a REVM instance.
 Anvil converts at shared normalization boundaries and retains its legacy environment.
+
+The REVM `InspectorStack` dispatcher and nested-frame execution callbacks are removed.
+The stack now holds configuration and observer data consumed by native execution;
+legacy cheatcode/observer data types still need migration. Native hooks own cancellation,
+including the test synchronization barrier. Isolation, traces, fuzz/coverage inspection
+and batch CREATE rewriting remain explicit unsupported boundaries until native ports
+are available. Tests for the removed REVM dispatch and batch-salt implementation were
+removed with that implementation; the independent revert-diagnostic test is retained.

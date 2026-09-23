@@ -37,8 +37,8 @@ use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::{SparsedTraceArena, TraceRequirements};
 use revm::{
     bytecode::Bytecode,
-    context::{Block, Cfg, Transaction},
-    context_interface::{cfg::gas_params::Eip2780TxInfo, transaction::SignedAuthorization},
+    context::{Block, Transaction},
+    context_interface::transaction::SignedAuthorization,
     database::{Database, DatabaseRef},
     primitives::hardfork::SpecId,
 };
@@ -106,7 +106,7 @@ sol! {
 
 /// EVM executor.
 ///
-/// The executor can be configured with various `revm::Inspector`s, like `Cheatcodes`.
+/// Execution uses the native evm2 inspector and configured cheatcode/observer settings.
 ///
 /// There are multiple ways of interacting the EVM:
 /// - `call`: executes a transaction, but does not persist any state changes; similar to `eth_call`,
@@ -117,20 +117,16 @@ sol! {
 /// - `setup`: a special case of `transact`, used to set up the environment for a test
 #[derive(Clone, Debug)]
 pub struct Executor<FEN: FoundryEvmNetwork> {
-    /// The underlying `revm::Database` that contains the EVM storage.
+    /// The backend containing native local state and the remaining fork adapters.
     ///
     /// Wrapped in `Arc` for efficient cloning during parallel fuzzing. Use [`Arc::make_mut`]
     /// for copy-on-write semantics when mutation is needed.
-    // Note: We do not store an EVM here, since we are really
-    // only interested in the database. REVM's `EVM` is a thin
-    // wrapper around spawning a new EVM on every call anyway,
-    // so the performance difference should be negligible.
     backend: Arc<Backend<FEN>>,
     /// The EVM environment (block and cfg).
     evm_env: EvmEnvFor<FEN>,
     /// The transaction environment.
     tx_env: TxEnvFor<FEN>,
-    /// The Revm inspector stack.
+    /// Configuration and captured data for native inspection.
     inspector: InspectorStack<FEN>,
     /// The gas limit for calls and deployments.
     gas_limit: u64,
@@ -1600,15 +1596,6 @@ impl<T, FEN: FoundryEvmNetwork> std::ops::DerefMut for CallResult<T, FEN> {
     }
 }
 
-pub(crate) fn calculate_stipend(tx_env: &impl Transaction, cfg: &impl Cfg) -> u64 {
-    let eip2780 = cfg.is_amsterdam_eip2780_enabled().then(|| Eip2780TxInfo {
-        value: tx_env.value(),
-        is_self_transfer: matches!(tx_env.kind(), TxKind::Call(to) if to == tx_env.caller()),
-    });
-    revm::interpreter::gas::calculate_initial_tx_gas_for_tx(tx_env, cfg.spec().into(), eip2780)
-        .initial_total_gas()
-}
-
 /// Timer for a fuzz test.
 pub struct FuzzTestTimer {
     /// Inner fuzz test timer - (test start time, test duration).
@@ -1743,7 +1730,7 @@ mod tests {
     use foundry_config::Config;
     use foundry_evm_core::{constants::MAGIC_SKIP, opts::EvmOpts};
     use foundry_evm_traces::InternalTraceMode;
-    use revm::context::{CfgEnv, TxEnv};
+    use revm::context::{Cfg, TxEnv};
     use std::{sync::mpsc, thread};
 
     /* EVM2 migration: disabled non-Ethereum execution.
@@ -2229,29 +2216,6 @@ mod tests {
             &revm::context_interface::cfg::GasParams::new_spec(SpecId::AMSTERDAM),
         );
         assert!(executor.evm_env().cfg_env.is_amsterdam_eip8037_enabled());
-    }
-
-    #[test]
-    fn calculate_stipend_uses_eip2780_transaction_context() {
-        let caller = Address::repeat_byte(0x11);
-        let recipient = Address::repeat_byte(0x22);
-        let mut tx = TxEnv { caller, kind: TxKind::Call(recipient), ..Default::default() };
-        let cfg = CfgEnv::new_with_spec(SpecId::AMSTERDAM);
-
-        assert_eq!(
-            calculate_stipend(&tx, &cfg),
-            revm::primitives::eip2780::TX_BASE_COST
-                + revm::primitives::eip8038::COLD_ACCOUNT_ACCESS
-        );
-        let cfg = cfg.with_enable_amsterdam_eip2780(false);
-        assert_eq!(
-            calculate_stipend(&tx, &cfg),
-            revm::context_interface::cfg::GasParams::new_spec(SpecId::AMSTERDAM).tx_base_stipend()
-        );
-
-        tx.kind = TxKind::Call(caller);
-        let cfg = cfg.with_enable_amsterdam_eip2780(true);
-        assert_eq!(calculate_stipend(&tx, &cfg), revm::primitives::eip2780::TX_BASE_COST);
     }
 
     #[test]
