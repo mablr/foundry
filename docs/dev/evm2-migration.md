@@ -4,6 +4,9 @@ This working branch reduces the execution surface before replacing REVM with EVM
 Ordinary executor calls and transactions now run natively through evm2.
 The surrounding backend and execution configuration still contain REVM compatibility adapters.
 Transaction state changes now own native evm2 account metadata.
+Native assertion evaluation no longer uses the legacy `Cheatcode` execution trait.
+The legacy dispatcher still compiles and delegates assertions to the same evaluator;
+removing its remaining session/context dependencies is the next deletion boundary.
 
 `EthEvmNetwork` is the only compiled Foundry EVM network implementation. The existing
 generic executor, backend, inspector, journal, and cheatcode interfaces remain so the

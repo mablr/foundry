@@ -1,6 +1,6 @@
 //! Native evm2 implementations of basic state and environment cheatcodes.
 
-use crate::{Cheatcode, CheatcodeDef, CheatsConfig, Error, Result, Vm};
+use crate::{CheatcodeDef, CheatsConfig, Error, Result, Vm};
 use alloy_primitives::{Address, U256, map::HashMap};
 use alloy_sol_types::SolValue;
 use evm2::{BaseEvmTypes, Evm, SpecId, bytecode::Bytecode};
@@ -29,9 +29,6 @@ pub fn dispatch(
     macro_rules! metadata {
         ($($variant:ident),*) => { match call { $(Vm::VmCalls::$variant(c) => definition(c),)* }};
     }
-    macro_rules! assertion {
-        ($($variant:ident),*) => { match call { $(Vm::VmCalls::$variant(c) => c.assertion_result(),)* }};
-    }
     let definition = vm_calls!(metadata);
     if let crate::spec::Status::Deprecated(replacement) = definition.status {
         session.deprecated.insert(definition.func.signature, replacement);
@@ -39,7 +36,7 @@ pub fn dispatch(
     let name = definition.func.signature.split('(').next().unwrap();
     let mut result = if config.blocked_cheatcodes.contains(&definition.func.selector_bytes) {
         Err(Error::display("disabled during restricted execution"))
-    } else if let Some(result) = vm_calls!(assertion) {
+    } else if let Some(result) = crate::assertions::evaluate(call) {
         if !config.assertions_revert
             && let Err(error) = result
         {

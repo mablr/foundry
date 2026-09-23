@@ -50,6 +50,8 @@ mod evm;
 
 pub mod native;
 
+mod assertions;
+
 mod external_storage;
 
 mod fs;
@@ -81,11 +83,6 @@ mod utils;
 
 /// Cheatcode implementation.
 pub(crate) trait Cheatcode: CheatcodeDef {
-    /// Evaluates an assertion independently of execution state.
-    fn assertion_result(&self) -> Option<Result> {
-        None
-    }
-
     /// Applies this cheatcode to the given state.
     ///
     /// Implement this function if you don't need access to the EVM data.
