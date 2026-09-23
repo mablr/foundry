@@ -1,0 +1,5 @@
+[profile.default]
+src = "."
+test = "."
+evm_version = "cancun"
+optimizer = true

@@ -14,10 +14,7 @@ use forge_script_sequence::ScriptSequence;
 use foundry_compilers::artifacts::EvmVersion;
 use foundry_test_utils::{
     ScriptOutcome, ScriptTester,
-    rpc::{
-        self, next_http_archive_rpc_url, spawn_rpc_proxy_recording_method,
-        spawn_rpc_proxy_rejecting_method_after_when_enabled,
-    },
+    rpc::{self, next_http_archive_rpc_url, spawn_rpc_proxy_recording_method},
     snapbox::IntoData,
     util::{OTHER_SOLC_VERSION, SOLC_VERSION},
 };

@@ -79,6 +79,7 @@ mod builder;
 pub use builder::ExecutorBuilder;
 
 mod campaign;
+mod evm2;
 
 pub mod fuzz;
 pub use fuzz::FuzzedExecutor;
@@ -886,37 +887,11 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
     #[instrument(name = "call", level = "debug", skip_all)]
     pub fn call_with_env_and_context(
         &self,
-        mut evm_env: EvmEnvFor<FEN>,
-        mut tx_env: TxEnvFor<FEN>,
-        chain_context: ChainFor<FEN>,
+        evm_env: EvmEnvFor<FEN>,
+        tx_env: TxEnvFor<FEN>,
+        _chain_context: ChainFor<FEN>,
     ) -> eyre::Result<RawCallResult<FEN>> {
-        let mut stack = self.inspector().clone();
-        let sancov_edges = stack.inner.sancov_edges;
-        let sancov_trace_cmp = stack.inner.sancov_trace_cmp;
-        let sancov_active = sancov_edges || sancov_trace_cmp;
-        let mut backend = CowBackend::new_borrowed(self.backend());
-        let result = {
-            let _guard = sancov_active.then(|| SancovGuard::new(sancov_edges, sancov_trace_cmp));
-            backend.inspect_with_context(&mut evm_env, &mut tx_env, chain_context, &mut stack)?
-        };
-        let has_state_snapshot_failure = backend.has_state_snapshot_failure();
-        let fork_block_number = backend.active_fork_block_number();
-        let mut result = convert_executed_result(
-            evm_env,
-            tx_env,
-            stack,
-            result,
-            &backend,
-            has_state_snapshot_failure,
-            fork_block_number,
-        )?;
-        if sancov_edges {
-            SancovGuard::append_edges_into(&mut result);
-        }
-        if sancov_trace_cmp {
-            SancovGuard::drain_cmp_into(&mut result);
-        }
-        Ok(result)
+        self.execute_evm2(evm_env, tx_env)
     }
 
     /// Execute the transaction configured in `tx_env`.
@@ -934,36 +909,11 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
     #[instrument(name = "transact", level = "debug", skip_all)]
     pub fn transact_with_env_and_context(
         &mut self,
-        mut evm_env: EvmEnvFor<FEN>,
-        mut tx_env: TxEnvFor<FEN>,
-        chain_context: ChainFor<FEN>,
+        evm_env: EvmEnvFor<FEN>,
+        tx_env: TxEnvFor<FEN>,
+        _chain_context: ChainFor<FEN>,
     ) -> eyre::Result<RawCallResult<FEN>> {
-        let mut stack = self.inspector().clone();
-        let sancov_edges = stack.inner.sancov_edges;
-        let sancov_trace_cmp = stack.inner.sancov_trace_cmp;
-        let sancov_active = sancov_edges || sancov_trace_cmp;
-        let backend = self.backend_mut();
-        let result = {
-            let _guard = sancov_active.then(|| SancovGuard::new(sancov_edges, sancov_trace_cmp));
-            backend.inspect_with_context(&mut evm_env, &mut tx_env, chain_context, &mut stack)?
-        };
-        let has_state_snapshot_failure = backend.has_state_snapshot_failure();
-        let fork_block_number = backend.active_fork_block_number();
-        let mut result = convert_executed_result(
-            evm_env,
-            tx_env,
-            stack,
-            result,
-            &*backend,
-            has_state_snapshot_failure,
-            fork_block_number,
-        )?;
-        if sancov_edges {
-            SancovGuard::append_edges_into(&mut result);
-        }
-        if sancov_trace_cmp {
-            SancovGuard::drain_cmp_into(&mut result);
-        }
+        let mut result = self.execute_evm2(evm_env, tx_env)?;
         self.commit(&mut result);
         Ok(result)
     }

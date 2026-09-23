@@ -14,6 +14,8 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+evm2.workspace = true
+alloy-consensus.workspace = true
 foundry-cheatcodes.workspace = true
 foundry-common.workspace = true
 foundry-compilers.workspace = true
@@ -44,6 +46,7 @@ revm = { workspace = true, default-features = false, features = [
     "memory_limit",
     "optional_eip3607",
     "optional_block_gas_limit",
+    "optional_balance_check",
     "optional_no_base_fee",
     "arbitrary",
     "c-kzg",

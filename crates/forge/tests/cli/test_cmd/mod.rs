@@ -22,6 +22,7 @@ mod base;
 */
 mod brutalize;
 mod core;
+mod evm2;
 mod exact_fork;
 mod fuzz;
 mod invariant;

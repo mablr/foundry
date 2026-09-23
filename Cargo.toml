@@ -301,6 +301,7 @@ crossterm.opt-level = "s"
 alloy-json-abi.opt-level = "s"
 
 [workspace.dependencies]
+evm2 = { git = "https://github.com/alloy-rs/evm2", rev = "d746ceea38e5b85f66a0b2bdf0b4f67e32d0e64c" }
 anvil = { path = "crates/anvil", default-features = false }
 
 forge-doc = { path = "crates/doc", default-features = false }
