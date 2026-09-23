@@ -136,7 +136,7 @@ use foundry_evm::{
         get_blob_params_by_hardfork,
     },
 };
-use foundry_evm_networks::{NetworkConfigs, apply_bsc_p256_precompile, arbitrum};
+use foundry_evm_networks::{NetworkConfigs, arbitrum, celo::transfer::CELO_TRANSFER_ADDRESS};
 use foundry_primitives::{
     FoundryHeader, FoundryNetwork, FoundryReceiptEnvelope, FoundryTransactionRequest,
     FoundryTxEnvelope, FoundryTxReceipt, TempoTransactionRequest,
@@ -952,6 +952,7 @@ mod monad;
 #[cfg(feature = "optimism")]
 pub mod optimism;
 */
+mod precompiles;
 pub mod state;
 pub mod storage;
 
@@ -1635,7 +1636,7 @@ impl<N: Network> Backend<N> {
             PrecompilesMap::from_static(Precompiles::new(PrecompileSpecId::from_spec_id(spec_id)));
         let chain_id = self.protocol_chain_id();
         let timestamp = self.evm_env.read().block_env.timestamp.saturating_to();
-        apply_bsc_p256_precompile(&mut precompiles, chain_id, timestamp);
+        precompiles::apply_bsc_p256_precompile(&mut precompiles, chain_id, timestamp);
 
         let mut precompiles_map = BTreeMap::<String, Address>::default();
         for address in precompiles.addresses() {
@@ -2596,8 +2597,12 @@ impl<N: Network> Backend<N> {
     }
 
     fn inject_configured_precompiles(&self, precompiles: &mut PrecompilesMap, evm_env: &EvmEnv) {
-        self.networks.inject_precompiles(precompiles);
-        apply_bsc_p256_precompile(
+        if self.networks.is_celo() {
+            precompiles.apply_precompile(&CELO_TRANSFER_ADDRESS, move |_| {
+                Some(precompiles::celo::precompile())
+            });
+        }
+        precompiles::apply_bsc_p256_precompile(
             precompiles,
             self.protocol_chain_id(),
             evm_env.block_env.timestamp.saturating_to(),
@@ -2625,7 +2630,7 @@ impl<N: Network> Backend<N> {
         block_number: u64,
     ) {
         precompiles.apply_precompile(&arbitrum::ARB_SYS_ADDRESS, move |_| {
-            Some(arbitrum::arb_sys_precompile(block_number))
+            Some(precompiles::arbitrum::arb_sys_precompile(block_number))
         });
     }
 
