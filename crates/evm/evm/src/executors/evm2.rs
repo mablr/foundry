@@ -40,16 +40,7 @@ impl<FEN: FoundryEvmNetwork> evm2::evm::Database for BackendReads<'_, FEN> {
     type Error = DatabaseError;
 
     fn get_account(&mut self, address: &Address) -> Result<Option<NativeAccount>, Self::Error> {
-        if !self.0.is_in_forking_mode() {
-            return Ok(self.0.mem_db().account(*address));
-        }
-        Ok(self.0.basic_ref(*address)?.map(|info| NativeAccount {
-            balance: info.balance,
-            nonce: info.nonce,
-            code_hash: info.code_hash,
-            code: info.code.map(|code| NativeBytecode::new_raw(code.original_bytes())),
-            ..Default::default()
-        }))
+        self.0.native_account(*address)
     }
 
     fn get_code_by_hash(&mut self, hash: &B256) -> Result<NativeBytecode, Self::Error> {
@@ -502,13 +493,13 @@ mod tests {
     use alloy_primitives::bytes;
     use alloy_sol_types::SolCall;
     use evm2::{
+        bytecode::Bytecode,
         env::TxEnvExt,
         evm::InMemoryDB,
         interpreter::{Host, MessageExt},
     };
     use foundry_evm_core::{constants::CALLER, decode::RevertDecoder};
     use foundry_evm_networks::NetworkConfigs;
-    use revm::bytecode::Bytecode;
     use std::{sync::mpsc, thread, time::Duration};
 
     fn executor() -> Executor<EthEvmNetwork> {
@@ -546,14 +537,23 @@ mod tests {
         assert_eq!(committed.gas_used, call.gas_used);
         assert_eq!(executor.backend().storage_ref(target, U256::ZERO).unwrap(), U256::from(42));
         assert_eq!(executor.get_nonce(CALLER).unwrap(), nonce + 1);
-        let account = executor.backend().basic_ref(target).unwrap().unwrap();
+        let account = executor.backend().native_account(target).unwrap().unwrap();
         assert_eq!(account.balance, U256::from(123));
         assert_eq!(account.nonce, 7);
         assert_eq!(account.code_hash, code.hash_slow());
         assert_eq!(
-            executor.backend().code_by_hash_ref(account.code_hash).unwrap().original_bytes(),
+            executor.backend().mem_db().code(account.code_hash).original_bytes(),
             code.original_bytes()
         );
+
+        // Setup mutations must preserve code and committed storage in the native cache.
+        executor.set_balance(target, U256::from(456)).unwrap();
+        executor.set_account_nonce(target, 8).unwrap();
+        assert_eq!(executor.get_balance(target).unwrap(), U256::from(456));
+        assert_eq!(executor.get_nonce(target).unwrap(), 8);
+        assert!(!executor.is_empty_code(target).unwrap());
+        assert_eq!(executor.backend().mem_db().slot(target, U256::ZERO), U256::from(42));
+        assert_eq!(executor.backend().mem_db().code(code.hash_slow()), code);
     }
 
     #[test]

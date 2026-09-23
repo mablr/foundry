@@ -1,13 +1,16 @@
 //! A revm database that forks off a remote client
 
 use crate::{
-    backend::{RevertStateSnapshotAction, StateSnapshot},
+    backend::{
+        DatabaseError, LegacyForkDb, RevertStateSnapshotAction, StateSnapshot,
+        legacy_fork::{to_legacy_account, to_native_account},
+    },
     state_snapshot::StateSnapshots,
 };
 use alloy_network::Network;
 use alloy_primitives::{Address, B256, U256};
 use alloy_rpc_types::BlockId;
-use foundry_fork_db::{BlockchainDb, DatabaseError, ForkBlockEnv, SharedBackend};
+use foundry_fork_db::{BlockchainDb, ForkBlockEnv, SharedBackend};
 use parking_lot::Mutex;
 use revm::{
     Database, DatabaseCommit,
@@ -36,7 +39,7 @@ pub struct ForkedDatabase<N: Network, B: ForkBlockEnv = BlockEnv> {
     ///
     /// This separates Read/Write operations
     ///   - reads from the `SharedBackend as DatabaseRef` writes to the internal cache storage.
-    cache_db: CacheDB<SharedBackend<N, B>>,
+    cache_db: CacheDB<LegacyForkDb<N, B>>,
     /// Contains all the data already fetched.
     ///
     /// This exclusively stores the _unchanged_ remote client state.
@@ -49,18 +52,18 @@ impl<N: Network, B: ForkBlockEnv> ForkedDatabase<N, B> {
     /// Creates a new instance of this DB
     pub fn new(backend: SharedBackend<N, B>, db: BlockchainDb<B>) -> Self {
         Self {
-            cache_db: CacheDB::new(backend.clone()),
+            cache_db: CacheDB::new(LegacyForkDb(backend.clone())),
             backend,
             db,
             state_snapshots: Arc::new(Mutex::new(Default::default())),
         }
     }
 
-    pub const fn database(&self) -> &CacheDB<SharedBackend<N, B>> {
+    pub const fn database(&self) -> &CacheDB<LegacyForkDb<N, B>> {
         &self.cache_db
     }
 
-    pub const fn database_mut(&mut self) -> &mut CacheDB<SharedBackend<N, B>> {
+    pub const fn database_mut(&mut self) -> &mut CacheDB<LegacyForkDb<N, B>> {
         &mut self.cache_db
     }
 
@@ -81,7 +84,7 @@ impl<N: Network, B: ForkBlockEnv> ForkedDatabase<N, B> {
         // wipe the storage retrieved from remote
         self.inner().db().clear();
         // create a fresh `CacheDB`, effectively wiping modified state
-        self.cache_db = CacheDB::new(self.backend.clone());
+        self.cache_db = CacheDB::new(LegacyForkDb(self.backend.clone()));
         trace!(target: "backend::forkdb", "Cleared database");
         Ok(())
     }
@@ -99,7 +102,12 @@ impl<N: Network, B: ForkBlockEnv> ForkedDatabase<N, B> {
     pub fn create_state_snapshot(&self) -> ForkDbStateSnapshot<N, B> {
         let db = self.db.db();
         let state_snapshot = StateSnapshot {
-            accounts: db.accounts.read().clone(),
+            accounts: db
+                .accounts
+                .read()
+                .iter()
+                .map(|(&address, info)| (address, to_legacy_account(info.clone())))
+                .collect(),
             storage: db.storage.read().clone(),
             block_hashes: db.block_hashes.read().clone(),
         };
@@ -129,7 +137,9 @@ impl<N: Network, B: ForkBlockEnv> ForkedDatabase<N, B> {
             {
                 let mut accounts_lock = db.accounts.write();
                 accounts_lock.clear();
-                accounts_lock.extend(accounts);
+                accounts_lock.extend(
+                    accounts.into_iter().map(|(address, info)| (address, to_native_account(info))),
+                );
             }
             {
                 let mut storage_lock = db.storage.write();
@@ -207,7 +217,7 @@ impl<N: Network, B: ForkBlockEnv> DatabaseCommit for ForkedDatabase<N, B> {
 /// This mimics `revm::CacheDB`
 #[derive(Clone, Debug)]
 pub struct ForkDbStateSnapshot<N: Network, B: ForkBlockEnv = BlockEnv> {
-    pub local: CacheDB<SharedBackend<N, B>>,
+    pub local: CacheDB<LegacyForkDb<N, B>>,
     pub state_snapshot: StateSnapshot,
 }
 
@@ -273,6 +283,9 @@ impl<N: Network, B: ForkBlockEnv> DatabaseRef for ForkDbStateSnapshot<N, B> {
 mod tests {
     use super::*;
     use crate::backend::BlockchainDbMeta;
+    use alloy_network::AnyNetwork;
+    use alloy_primitives::bytes;
+    use alloy_provider::{ProviderBuilder, mock::Asserter};
     use foundry_common::provider::get_http_provider;
 
     /// Demonstrates that `Database::basic` for `ForkedDatabase` will always return the
@@ -321,7 +334,8 @@ mod tests {
         let mut state_snapshot = StateSnapshot::default();
         state_snapshot.storage.entry(address).or_default().insert(slot, expected);
 
-        let snapshot = ForkDbStateSnapshot { local: CacheDB::new(backend), state_snapshot };
+        let snapshot =
+            ForkDbStateSnapshot { local: CacheDB::new(LegacyForkDb(backend)), state_snapshot };
 
         let got = DatabaseRef::storage_ref(&snapshot, address, slot).unwrap();
         assert_eq!(got, expected);
@@ -341,5 +355,44 @@ mod tests {
 
         assert!(db.revert_state_snapshot(first, RevertStateSnapshotAction::RevertRemove));
         assert!(!db.revert_state_snapshot(second, RevertStateSnapshotAction::RevertRemove));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn fork_native_cache_snapshot_restores_code_and_storage() {
+        let provider =
+            ProviderBuilder::<_, _, AnyNetwork>::default().connect_mocked_client(Asserter::new());
+        let remote = BlockchainDb::new(
+            BlockchainDbMeta::new(BlockEnv::default(), "http://localhost".into()),
+            None,
+        );
+        let address = Address::with_last_byte(0x42);
+        let code = foundry_fork_db::Bytecode::new_raw(bytes!("602a60005260206000f3"));
+        let account = foundry_fork_db::AccountInfo {
+            balance: U256::from(10),
+            nonce: 7,
+            code_hash: code.hash_slow(),
+            code: Some(code.clone()),
+            ..Default::default()
+        };
+        remote.accounts().write().insert(address, account.clone());
+        remote.storage().write().entry(address).or_default().insert(U256::ZERO, U256::from(1));
+        let backend = SharedBackend::spawn_backend(provider, remote.clone(), None).await;
+        let mut fork = ForkedDatabase::new(backend, remote.clone());
+        assert_eq!(
+            fork.basic(address).unwrap().unwrap().code.unwrap().original_bytes(),
+            code.original_bytes()
+        );
+        fork.database_mut().insert_account_storage(address, U256::ZERO, U256::from(2)).unwrap();
+        let snapshot = fork.insert_state_snapshot();
+
+        remote.accounts().write().clear();
+        remote.storage().write().clear();
+        fork.database_mut().insert_account_storage(address, U256::ZERO, U256::from(3)).unwrap();
+        assert!(fork.revert_state_snapshot(snapshot, RevertStateSnapshotAction::RevertKeep));
+        let restored = remote.accounts().read()[&address].clone();
+        assert_eq!(restored, account);
+        assert_eq!(restored.code.unwrap().original_bytes(), code.original_bytes());
+        assert_eq!(remote.storage().read()[&address][&U256::ZERO], U256::from(1));
+        assert_eq!(fork.storage_ref(address, U256::ZERO).unwrap(), U256::from(2));
     }
 }

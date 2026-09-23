@@ -479,6 +479,7 @@ mod tests {
     use alloy_dyn_abi::JsonAbiExt;
     use alloy_primitives::{Bytes, U256};
     use alloy_sol_types::SolCall;
+    use evm2::bytecode::Bytecode;
     use foundry_cheatcodes::{CheatsConfig, Vm::expectRevert_0Call};
     use foundry_config::Config;
     use foundry_evm_core::{
@@ -488,7 +489,6 @@ mod tests {
         opts::EvmOpts,
     };
     use foundry_evm_fuzz::invariant::TargetedContracts;
-    use revm::bytecode::Bytecode;
     use std::sync::Arc;
 
     fn panic_payload(code: u8) -> Bytes {

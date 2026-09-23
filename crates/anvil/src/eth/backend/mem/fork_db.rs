@@ -8,7 +8,8 @@ use alloy_primitives::{Address, B256, U256, map::AddressMap};
 use alloy_rpc_types::BlockId;
 use foundry_evm::{
     backend::{
-        BlockchainDb, DatabaseResult, RevertStateSnapshotAction, SharedBackend, StateSnapshot,
+        BlockchainDb, DatabaseResult, LegacyForkDb, RevertStateSnapshotAction, StateSnapshot,
+        legacy_fork::{to_legacy_account, to_native_account},
     },
     fork::database::ForkDbStateSnapshot,
 };
@@ -20,7 +21,7 @@ use revm::{
 
 pub use foundry_evm::fork::database::ForkedDatabase;
 
-impl<N: Network> MaybeFullDatabase for SharedBackend<N> {
+impl<N: Network> MaybeFullDatabase for LegacyForkDb<N> {
     fn clear_into_state_snapshot(&mut self) -> StateSnapshot {
         StateSnapshot::default()
     }
@@ -131,7 +132,10 @@ impl<N: Network> MaybeFullDatabase for ForkedDatabase<N> {
 
     fn clear_into_state_snapshot(&mut self) -> StateSnapshot {
         let db = self.inner().db();
-        let accounts = std::mem::take(&mut *db.accounts.write());
+        let accounts = std::mem::take(&mut *db.accounts.write())
+            .into_iter()
+            .map(|(address, info)| (address, to_legacy_account(info)))
+            .collect();
         let storage = std::mem::take(&mut *db.storage.write());
         let block_hashes = std::mem::take(&mut *db.block_hashes.write());
         StateSnapshot { accounts, storage, block_hashes }
@@ -139,7 +143,12 @@ impl<N: Network> MaybeFullDatabase for ForkedDatabase<N> {
 
     fn read_as_state_snapshot(&self) -> StateSnapshot {
         let db = self.inner().db();
-        let accounts = db.accounts.read().clone();
+        let accounts = db
+            .accounts
+            .read()
+            .iter()
+            .map(|(&address, info)| (address, to_legacy_account(info.clone())))
+            .collect();
         let storage = db.storage.read().clone();
         let block_hashes = db.block_hashes.read().clone();
         StateSnapshot { accounts, storage, block_hashes }
@@ -153,7 +162,10 @@ impl<N: Network> MaybeFullDatabase for ForkedDatabase<N> {
     fn init_from_state_snapshot(&mut self, state_snapshot: StateSnapshot) {
         let db = self.inner().db();
         let StateSnapshot { accounts, storage, block_hashes } = state_snapshot;
-        *db.accounts.write() = accounts;
+        *db.accounts.write() = accounts
+            .into_iter()
+            .map(|(address, info)| (address, to_native_account(info)))
+            .collect();
         *db.storage.write() = storage;
         *db.block_hashes.write() = block_hashes;
     }
@@ -206,7 +218,7 @@ impl<N: Network> MaybeForkedDatabase for ForkedDatabase<N> {
         Ok(())
     }
 
-    fn maybe_inner(&self) -> Result<&BlockchainDb, String> {
+    fn maybe_inner(&self) -> Result<&BlockchainDb<BlockEnv>, String> {
         Ok(self.inner())
     }
 }

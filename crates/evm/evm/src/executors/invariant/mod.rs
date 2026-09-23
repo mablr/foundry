@@ -2385,6 +2385,7 @@ pub fn execute_tx_and_register_created<FEN: FoundryEvmNetwork>(
 mod tests {
     use super::*;
     use crate::executors::ExecutorBuilder;
+    use evm2::bytecode::Bytecode;
     use foundry_cheatcodes::CheatsConfig;
     use foundry_config::FuzzDictionaryConfig;
     use foundry_evm_core::{
@@ -2398,7 +2399,6 @@ mod tests {
         test_runner::Config,
     };
     use revm::{
-        bytecode::Bytecode,
         context::Block,
         database::{CacheDB, EmptyDB},
     };

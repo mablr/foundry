@@ -55,6 +55,10 @@ impl NativeDb {
         }
     }
 
+    pub fn insert_native_account(&mut self, address: Address, info: NativeAccount) {
+        self.0.insert_account_info(&address, info);
+    }
+
     pub fn insert_account_info(&mut self, address: Address, info: AccountInfo) {
         self.0.insert_account_info(
             &address,

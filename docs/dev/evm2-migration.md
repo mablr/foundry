@@ -167,5 +167,13 @@ removed with that implementation; the independent revert-diagnostic test is reta
 The unused REVM `Backend::inspect` entry points and `CowBackend` wrapper are removed.
 Native calls use immutable backend reads, owned transaction changes and executor-level
 `Arc` copy-on-write. Fork transaction replay and legacy cheatcode context APIs remain
-to migrate. The pinned `foundry-fork-db` crate also depends on REVM unconditionally,
-so eliminating the final transitive dependency requires migrating that interface.
+to migrate. The pinned `foundry-fork-db` now uses evm2 account metadata and implements its database
+interface directly, with no REVM dependency. Foundry pins the migration branch at
+`0ad6f3dcf71c93a3242c54893d436c4dedcc59e9`. `LegacyForkDb` adapts this native RPC reader
+only for remaining REVM fork caches and deferred Anvil execution; delete it when those
+consumers migrate. Fork cache snapshots preserve native RPC data across that boundary.
+
+Executor account setup, balance/nonce updates, code installation and prestate import now
+use native account metadata and bytecode. Nonforked setup no longer round-trips through
+REVM account types. This does not yet remove the legacy configuration, cheatcode and
+observer dependencies from Forge.

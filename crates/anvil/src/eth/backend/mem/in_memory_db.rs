@@ -535,7 +535,7 @@ impl MaybeForkedDatabase for StateRootDb {
         self.inner.maybe_flush_cache()
     }
 
-    fn maybe_inner(&self) -> Result<&BlockchainDb, String> {
+    fn maybe_inner(&self) -> Result<&BlockchainDb<BlockEnv>, String> {
         self.inner.maybe_inner()
     }
 }
@@ -668,7 +668,7 @@ impl MaybeForkedDatabase for MemDb {
         Err("not supported".to_string())
     }
 
-    fn maybe_inner(&self) -> Result<&BlockchainDb, String> {
+    fn maybe_inner(&self) -> Result<&BlockchainDb<BlockEnv>, String> {
         Err("not supported".to_string())
     }
 }

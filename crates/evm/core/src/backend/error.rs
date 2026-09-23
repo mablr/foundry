@@ -1,7 +1,22 @@
 use alloy_primitives::Address;
-pub use foundry_fork_db::{DatabaseError, DatabaseResult};
 use revm::context_interface::result::EVMError;
-use std::convert::Infallible;
+use std::{convert::Infallible, sync::Arc};
+
+/// Temporary error boundary for unmigrated REVM database consumers.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct DatabaseError(#[from] pub foundry_fork_db::DatabaseError);
+
+pub type DatabaseResult<T> = Result<T, DatabaseError>;
+
+// TODO(evm2): Remove this marker when legacy database consumers are migrated.
+impl revm::database::DBErrorMarker for DatabaseError {}
+
+impl From<Infallible> for DatabaseError {
+    fn from(value: Infallible) -> Self {
+        match value {}
+    }
+}
 
 pub type BackendResult<T> = Result<T, BackendError>;
 
@@ -60,5 +75,12 @@ impl<T: Into<Self>> From<EVMError<T>> for BackendError {
             EVMError::Transaction(err) => Self::msg(err.to_string()),
             EVMError::CustomAny(err) => Self::msg(err.to_string()),
         }
+    }
+}
+
+impl DatabaseError {
+    /// Wraps an application error for legacy database consumers.
+    pub const fn other(error: Arc<eyre::Error>) -> Self {
+        Self(foundry_fork_db::DatabaseError::AnyRequest(error))
     }
 }

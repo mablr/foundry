@@ -1,6 +1,7 @@
 use crate::executors::{Executor, ExecutorBuilder};
 use alloy_primitives::{Address, ChainId, U256, map::HashMap};
 use alloy_rpc_types::state::StateOverride;
+use evm2::bytecode::Bytecode;
 use eyre::{Context, ContextCompat};
 use foundry_compilers::artifacts::EvmVersion;
 use foundry_config::{Chain, Config, evm_spec_id};
@@ -17,7 +18,6 @@ use foundry_evm_networks::{
     resolved_precompile_labels,
 };
 use foundry_evm_traces::{TraceContext, TraceRequirements};
-use revm::state::Bytecode;
 use std::ops::{Deref, DerefMut};
 
 /// A default executor with tracing enabled

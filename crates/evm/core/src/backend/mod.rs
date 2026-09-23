@@ -54,6 +54,9 @@ use std::{
 use crate::evm::monad::BlockContext;
 */
 
+pub mod legacy_fork;
+pub use legacy_fork::LegacyForkDb;
+
 mod diagnostic;
 pub use diagnostic::RevertDiagnostic;
 
@@ -72,7 +75,7 @@ mod snapshot;
 pub use snapshot::{BackendStateSnapshot, RevertStateSnapshotAction, StateSnapshot};
 
 // A `revm::Database` that is used in forking mode
-type ForkDB<N, B> = CacheDB<SharedBackend<N, B>>;
+type ForkDB<N, B> = CacheDB<LegacyForkDb<N, B>>;
 
 /// Represents a numeric `ForkId` valid only for the existence of the `Backend`.
 ///
@@ -737,7 +740,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
                 backend.forks.create_fork(fork)?;
             let context = resolved.context();
             let block = resolved.block();
-            let fork_db = ForkDB::new(fork);
+            let fork_db = ForkDB::new(LegacyForkDb(fork));
             let fork_ids = backend.inner.insert_new_fork(
                 fork_id.clone(),
                 block,
@@ -809,6 +812,28 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
     /// Sets the active network configuration.
     pub const fn set_networks(&mut self, networks: NetworkConfigs) {
         self.networks = networks;
+    }
+
+    /// Reads native account metadata, adapting the legacy fork cache only when needed.
+    pub fn native_account(
+        &self,
+        address: Address,
+    ) -> Result<Option<evm2::evm::AccountInfo>, DatabaseError> {
+        if !self.is_in_forking_mode() {
+            return Ok(self.mem_db.account(address));
+        }
+        // TODO(evm2): Remove this conversion when the fork write cache becomes native.
+        Ok(self.basic_ref(address)?.map(legacy_fork::to_native_account))
+    }
+
+    /// Updates native account metadata without replacing storage.
+    pub fn insert_native_account(&mut self, address: Address, account: evm2::evm::AccountInfo) {
+        if let Some(db) = self.active_fork_db_mut() {
+            // TODO(evm2): Remove this conversion when the fork write cache becomes native.
+            db.insert_account_info(address, legacy_fork::to_legacy_account(account));
+        } else {
+            self.mem_db.insert_native_account(address, account);
+        }
     }
 
     pub fn insert_account_info(&mut self, address: Address, account: AccountInfo) {
@@ -2061,7 +2086,7 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
             self.forks.create_fork(create_fork)?;
         let context = resolved.context();
         let block = resolved.block();
-        let fork_db = ForkDB::new(fork);
+        let fork_db = ForkDB::new(LegacyForkDb(fork));
         let (id, _) = self.inner.insert_new_fork(
             fork_id,
             block,
@@ -2845,7 +2870,7 @@ pub struct Fork<N: Network, B: ForkBlockEnv = BlockEnv> {
 impl<N: Network, B: ForkBlockEnv> Fork<N, B> {
     /// Returns a reference to the underlying [`SharedBackend`].
     pub const fn backend(&self) -> &SharedBackend<N, B> {
-        &self.db.db
+        &self.db.db.0
     }
 
     /// Returns true if the account is a contract
@@ -3090,7 +3115,7 @@ impl<FEN: FoundryEvmNetwork> BackendInner<FEN> {
 
         if let Some(active) = self.forks[idx].as_mut() {
             // Initialize a new `ForkDB` while retaining persistent account data.
-            let mut new_db = ForkDB::new(backend);
+            let mut new_db = ForkDB::new(LegacyForkDb(backend));
             for addr in self.persistent_accounts.iter().copied() {
                 merge_db_account_data(addr, &active.db, &mut new_db);
             }
@@ -3121,7 +3146,7 @@ impl<FEN: FoundryEvmNetwork> BackendInner<FEN> {
 
         // Initialize a new `ForkDB` with persistent account data and the prepared journal. The
         // live fork remains untouched until publication.
-        let mut new_db = ForkDB::new(backend);
+        let mut new_db = ForkDB::new(LegacyForkDb(backend));
         for addr in self.persistent_accounts.iter().copied() {
             merge_db_account_data(addr, &current.db, &mut new_db);
         }
@@ -3547,7 +3572,7 @@ mod tests {
         let (backend, handler) = SharedBackend::new(provider, db, None);
         drop(handler);
         Fork {
-            db: CacheDB::new(backend),
+            db: CacheDB::new(super::LegacyForkDb(backend)),
             journaled_state: JournalInner::new(),
             source_chain_id: 1,
             position: ForkPosition::AfterBlock { block: BlockNumHash::default() },

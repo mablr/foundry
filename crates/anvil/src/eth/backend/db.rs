@@ -175,7 +175,7 @@ pub trait MaybeForkedDatabase {
 
     fn maybe_flush_cache(&self) -> Result<(), String>;
 
-    fn maybe_inner(&self) -> Result<&BlockchainDb, String>;
+    fn maybe_inner(&self) -> Result<&BlockchainDb<BlockEnv>, String>;
 }
 
 /// `dyn Db` satisfies all `alloy_evm::Database` requirements via its supertraits, but the
@@ -552,7 +552,7 @@ impl<T: DatabaseRef<Error = DatabaseError>> MaybeForkedDatabase for CacheDB<T> {
         Err("not supported".to_string())
     }
 
-    fn maybe_inner(&self) -> Result<&BlockchainDb, String> {
+    fn maybe_inner(&self) -> Result<&BlockchainDb<BlockEnv>, String> {
         Err("not supported".to_string())
     }
 }

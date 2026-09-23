@@ -28,7 +28,7 @@ use foundry_evm_core::{
         history_window_start,
     },
     evm::{ChainFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
-    state_changes::{ExecutionOutput, ExecutionStatus},
+    state_changes::{AccountInfo, Bytecode, ExecutionOutput, ExecutionStatus},
     utils::StateChangeset,
 };
 use foundry_evm_coverage::HitMaps;
@@ -36,7 +36,6 @@ use foundry_evm_fuzz::ObservedCall;
 use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::{SparsedTraceArena, TraceRequirements};
 use revm::{
-    bytecode::Bytecode,
     context::{Block, Transaction},
     context_interface::transaction::SignedAuthorization,
     database::{Database, DatabaseRef},
@@ -301,9 +300,9 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
 
         // Need to create a non-empty contract on the cheatcodes address so `extcodesize` checks
         // do not fail.
-        backend.insert_account_info(
+        backend.insert_native_account(
             CHEATCODE_ADDRESS,
-            revm::state::AccountInfo {
+            AccountInfo {
                 code: Some(Bytecode::new_raw(Bytes::from_static(&[0]))),
                 // Also set the code hash manually so that it's not computed later.
                 // The code hash value does not matter, as long as it's not zero or `KECCAK_EMPTY`.
@@ -313,9 +312,9 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         );
 
         for &address in extra_cheatcode_addresses {
-            backend.insert_account_info(
+            backend.insert_native_account(
                 address,
-                revm::state::AccountInfo {
+                AccountInfo {
                     code: Some(Bytecode::new_raw(Bytes::from_static(&[0]))),
                     code_hash: keccak256(address),
                     ..Default::default()
@@ -324,11 +323,13 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         }
 
         if !backend.is_in_forking_mode() && evm_env.cfg_env.spec.into() >= SpecId::PRAGUE {
-            let mut account =
-                backend.basic_ref(HISTORY_STORAGE_ADDRESS).unwrap_or_default().unwrap_or_default();
+            let mut account = backend
+                .native_account(HISTORY_STORAGE_ADDRESS)
+                .unwrap_or_default()
+                .unwrap_or_default();
             account.code_hash = keccak256(&HISTORY_STORAGE_CODE);
             account.code = Some(Bytecode::new_raw(HISTORY_STORAGE_CODE.clone()));
-            backend.insert_account_info(HISTORY_STORAGE_ADDRESS, account);
+            backend.insert_native_account(HISTORY_STORAGE_ADDRESS, account);
 
             let current_block = evm_env.block_env.number();
             let mut block_number = history_window_start(current_block);
@@ -477,22 +478,22 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
     /// Set the balance of an account.
     pub fn set_balance(&mut self, address: Address, amount: U256) -> BackendResult<()> {
         trace!(?address, ?amount, "setting account balance");
-        let mut account = self.backend().basic_ref(address)?.unwrap_or_default();
+        let mut account = self.backend().native_account(address)?.unwrap_or_default();
         account.balance = amount;
-        self.backend_mut().insert_account_info(address, account);
+        self.backend_mut().insert_native_account(address, account);
         Ok(())
     }
 
     /// Gets the balance of an account
     pub fn get_balance(&self, address: Address) -> BackendResult<U256> {
-        Ok(self.backend().basic_ref(address)?.map(|acc| acc.balance).unwrap_or_default())
+        Ok(self.backend().native_account(address)?.map(|acc| acc.balance).unwrap_or_default())
     }
 
     /// Sets the nonce of an account without modifying the transaction environment.
     pub fn set_account_nonce(&mut self, address: Address, nonce: u64) -> BackendResult<()> {
-        let mut account = self.backend().basic_ref(address)?.unwrap_or_default();
+        let mut account = self.backend().native_account(address)?.unwrap_or_default();
         account.nonce = nonce;
-        self.backend_mut().insert_account_info(address, account);
+        self.backend_mut().insert_native_account(address, account);
         Ok(())
     }
 
@@ -505,15 +506,15 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
 
     /// Returns the nonce of an account.
     pub fn get_nonce(&self, address: Address) -> BackendResult<u64> {
-        Ok(self.backend().basic_ref(address)?.map(|acc| acc.nonce).unwrap_or_default())
+        Ok(self.backend().native_account(address)?.map(|acc| acc.nonce).unwrap_or_default())
     }
 
     /// Set the code of an account.
     pub fn set_code(&mut self, address: Address, code: Bytecode) -> BackendResult<()> {
-        let mut account = self.backend().basic_ref(address)?.unwrap_or_default();
-        account.code_hash = keccak256(code.original_byte_slice());
+        let mut account = self.backend().native_account(address)?.unwrap_or_default();
+        account.code_hash = code.hash_slow();
         account.code = Some(code);
-        self.backend_mut().insert_account_info(address, account);
+        self.backend_mut().insert_native_account(address, account);
         Ok(())
     }
 
@@ -550,14 +551,14 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         let backend = self.backend_mut();
         for (address, account_state) in prestate {
             let code = account_state.code.map(Bytecode::new_raw).unwrap_or_default();
-            let info = revm::state::AccountInfo {
+            let info = AccountInfo {
                 nonce: account_state.nonce.unwrap_or_default(),
                 balance: account_state.balance.unwrap_or_default(),
-                code_hash: keccak256(code.original_byte_slice()),
+                code_hash: code.hash_slow(),
                 code: Some(code),
-                account_id: Default::default(),
+                ..Default::default()
             };
-            backend.insert_account_info(address, info);
+            backend.insert_native_account(address, info);
 
             for (slot, value) in account_state.storage {
                 let slot = U256::from_be_bytes(slot.0);
@@ -570,7 +571,13 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
 
     /// Returns `true` if the account has no code.
     pub fn is_empty_code(&self, address: Address) -> BackendResult<bool> {
-        Ok(self.backend().basic_ref(address)?.map(|acc| acc.is_empty_code_hash()).unwrap_or(true))
+        Ok(self
+            .backend()
+            .native_account(address)?
+            .map(|acc| {
+                acc.code_hash == alloy_primitives::KECCAK256_EMPTY || acc.code_hash.is_zero()
+            })
+            .unwrap_or(true))
     }
 
     #[inline]
@@ -1100,8 +1107,8 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             // We only clone the test contract and cheatcode accounts,
             // that's all we need to evaluate success.
             for address in [address, CHEATCODE_ADDRESS] {
-                let Ok(acc) = self.backend().basic_ref(address) else { return false };
-                backend.insert_account_info(address, acc.unwrap_or_default());
+                let Ok(acc) = self.backend().native_account(address) else { return false };
+                backend.insert_native_account(address, acc.unwrap_or_default());
             }
 
             // If this test failed any asserts, then this changeset will contain changes

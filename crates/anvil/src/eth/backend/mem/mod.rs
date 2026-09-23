@@ -419,19 +419,19 @@ struct StagedForkCacheLease(Option<Arc<StagedForkCacheLeaseInner>>);
 
 #[derive(Debug)]
 struct StagedForkCacheLeaseInner {
-    db: BlockchainDb,
+    db: BlockchainDb<BlockEnv>,
     cache_path: PathBuf,
     armed: AtomicBool,
 }
 
 impl StagedForkCacheLease {
-    fn new(db: BlockchainDb, cache_path: Option<PathBuf>) -> Self {
+    fn new(db: BlockchainDb<BlockEnv>, cache_path: Option<PathBuf>) -> Self {
         Self(cache_path.map(|cache_path| {
             Arc::new(StagedForkCacheLeaseInner { db, cache_path, armed: AtomicBool::new(true) })
         }))
     }
 
-    fn for_db(db: &BlockchainDb) -> Self {
+    fn for_db(db: &BlockchainDb<BlockEnv>) -> Self {
         Self::new(db.clone(), db.cache().cache_path().map(Path::to_path_buf))
     }
 
@@ -4745,7 +4745,7 @@ impl<N: Network> Backend<N> {
                     )
                     .map_err(|e| {
                         tracing::error!(target: "backend", "failed to initialize Tempo precompiles: {e}");
-                        DatabaseError::AnyRequest(Arc::new(eyre::eyre!("{e}")))
+                        DatabaseError::other(Arc::new(eyre::eyre!("{e}")))
                     })?;
                     trace!(target: "backend", "initialized Tempo precompiles and fee tokens for {} accounts", test_accounts.len());
                 }
@@ -4788,7 +4788,7 @@ impl<N: Network> Backend<N> {
                 }
                 Err(err) => {
                     genesis_accounts.shutdown().await;
-                    return Err(DatabaseError::AnyRequest(Arc::new(eyre::eyre!(
+                    return Err(DatabaseError::other(Arc::new(eyre::eyre!(
                         "fork genesis account task failed: {err}"
                     ))));
                 }
@@ -4871,7 +4871,7 @@ impl<N: Network> Backend<N> {
         /* EVM2 migration: disabled non-Ethereum execution.
         if is_tempo {
                     let hardfork = tempo_hardfork.ok_or_else(|| {
-                        DatabaseError::AnyRequest(Arc::new(eyre::eyre!(
+                        DatabaseError::other(Arc::new(eyre::eyre!(
                             "missing Tempo hardfork during memory reset"
                         )))
                     })?;
@@ -4882,7 +4882,7 @@ impl<N: Network> Backend<N> {
                         &genesis.accounts,
                         hardfork,
                     )
-                    .map_err(|err| DatabaseError::AnyRequest(Arc::new(eyre::eyre!("{err}"))))?;
+                    .map_err(|err| DatabaseError::other(Arc::new(eyre::eyre!("{err}"))))?;
                 }
         */
 
@@ -9557,7 +9557,7 @@ impl Backend<FoundryNetwork> {
 
 /// Converts a Tempo error into an anvil [`DatabaseError`].
 fn tempo_db_err<E: std::fmt::Display>(e: E) -> DatabaseError {
-    DatabaseError::AnyRequest(Arc::new(eyre::eyre!("{e}")))
+    DatabaseError::other(Arc::new(eyre::eyre!("{e}")))
 }
 
 /// Get max nonce from transaction pool by address.
@@ -10583,7 +10583,7 @@ mod tests {
     use foundry_evm_networks::NetworkConfigs;
     */
 
-    fn test_cache_db(cache_path: std::path::PathBuf) -> BlockchainDb {
+    fn test_cache_db(cache_path: std::path::PathBuf) -> BlockchainDb<super::BlockEnv> {
         let db = BlockchainDb::new(BlockchainDbMeta::default(), Some(cache_path));
         db.block_hashes().write().insert(U256::ZERO, B256::repeat_byte(0x11));
         db.cache().flush();
@@ -10731,7 +10731,7 @@ mod tests {
         assert_eq!(api.backend.time().last_block_wall_time(), head_wall_time);
     }
 
-    struct CacheFlushingDb(BlockchainDb);
+    struct CacheFlushingDb(BlockchainDb<super::BlockEnv>);
 
     impl Drop for CacheFlushingDb {
         fn drop(&mut self) {

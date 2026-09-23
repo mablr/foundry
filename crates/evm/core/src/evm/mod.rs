@@ -5,7 +5,7 @@
 use crate::{
     EvmEnv, FoundryBlock, FoundryChain, FoundryContextExt, FoundryInspectorExt, FoundryJournal,
     FoundryTransaction, FromAnyRpcTransaction,
-    backend::{DatabaseExt, JournaledState},
+    backend::{DatabaseError, DatabaseExt, JournaledState},
     refresh_chain_journal,
 };
 use alloy_consensus::{SignableTransaction, Signed, transaction::SignerRecoverable};
@@ -15,7 +15,7 @@ use alloy_primitives::{Address, Signature, U256};
 use alloy_rlp::Decodable;
 use foundry_common::{FoundryReceiptResponse, FoundryTransactionBuilder, fmt::UIfmt};
 use foundry_config::ExecutionSpec;
-use foundry_fork_db::{DatabaseError, ForkBlockEnv};
+use foundry_fork_db::ForkBlockEnv;
 use revm::{
     Database,
     context::{

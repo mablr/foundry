@@ -1804,6 +1804,7 @@ mod tests {
         inspectors::{EdgeCovHit, EdgeCoverage, EdgeKey},
     };
     use alloy_dyn_abi::DynSolValue;
+    use evm2::bytecode::Bytecode;
     use foundry_config::FuzzDictionaryConfig;
     use foundry_evm_core::{
         backend::Backend,
@@ -1812,10 +1813,7 @@ mod tests {
     use foundry_evm_fuzz::strategies::{EvmFuzzState, TxGenerator};
     use proptest::prelude::{Just, Strategy};
     use rayon::prelude::*;
-    use revm::{
-        bytecode::Bytecode,
-        database::{CacheDB, EmptyDB},
-    };
+    use revm::database::{CacheDB, EmptyDB};
     use std::fs;
 
     fn basic_tx() -> BasicTxDetails {
