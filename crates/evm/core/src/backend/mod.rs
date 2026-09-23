@@ -5,8 +5,8 @@ use crate::{
     FromAnyRpcTransaction,
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, TEST_CONTRACT_ADDRESS},
     evm::{
-        BlockEnvFor, ChainFor, EthEvmNetwork, EvmEnvFor, FoundryContextFor, FoundryEvmFactory,
-        FoundryEvmNetwork, HaltReasonFor, SpecFor, TxEnvFor,
+        BlockEnvFor, ChainFor, EthEvmNetwork, EvmEnvFor, FoundryEvmFactory, FoundryEvmNetwork,
+        SpecFor, TxEnvFor,
     },
     fork::{CreateFork, ForkId, ForkResult, MultiFork},
     state_snapshot::StateSnapshots,
@@ -23,7 +23,7 @@ use alloy_genesis::GenesisAccount;
 use alloy_network::{
     AnyNetwork, AnyRpcBlock, AnyRpcTransaction, BlockResponse, Network, TransactionResponse,
 };
-use alloy_primitives::{Address, B256, ChainId, TxKind, U256, keccak256, map::AddressSet, uint};
+use alloy_primitives::{Address, B256, ChainId, U256, keccak256, map::AddressSet, uint};
 use alloy_rpc_types::{BlockNumberOrTag, BlockTransactions};
 use eyre::Context;
 use foundry_common::{SYSTEM_TRANSACTION_TYPE, is_known_system_sender};
@@ -35,8 +35,8 @@ pub use foundry_fork_db::{
 use revm::{
     Database, DatabaseCommit, JournalEntry,
     bytecode::Bytecode,
-    context::{Block, BlockEnv, ContextTr, JournalInner, Transaction},
-    context_interface::{journaled_state::account::JournaledAccountTr, result::ResultAndState},
+    context::{Block, BlockEnv, JournalInner, Transaction},
+    context_interface::journaled_state::account::JournaledAccountTr,
     database::{AccountState, CacheDB, DatabaseRef},
     database_interface::bal::BalState,
     inspector::NoOpInspector,
@@ -61,9 +61,6 @@ mod bal;
 
 mod error;
 pub use error::{BackendError, BackendResult, DatabaseError, DatabaseResult};
-
-mod cow;
-pub use cow::CowBackend;
 
 mod in_memory_db;
 pub use in_memory_db::{EmptyDBWrapper, FoundryEvmInMemoryDB, MemDb};
@@ -1079,67 +1076,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         logs
     }
 
-    /// Initializes settings we need to keep track of.
-    ///
-    /// We need to track these mainly to prevent issues when switching between different evms
-    pub(crate) fn initialize(
-        &mut self,
-        spec_id: impl Into<SpecFor<FEN>>,
-        caller: Address,
-        tx_kind: TxKind,
-    ) {
-        self.set_caller(caller);
-        self.set_spec_id(spec_id);
-
-        let test_contract = match tx_kind {
-            TxKind::Call(to) => to,
-            TxKind::Create => {
-                let nonce =
-                    self.basic_ref(caller).map(|b| b.unwrap_or_default().nonce).unwrap_or_default();
-                caller.create(nonce)
-            }
-        };
-        self.set_test_contract(test_contract);
-    }
-
-    /// Executes the configured test call of the `env` without committing state changes.
-    ///
-    /// Note: in case there are any cheatcodes executed that modify the environment, this will
-    /// update the given `env` with the new values.
-    #[instrument(name = "inspect", level = "debug", skip_all)]
-    pub fn inspect<I: for<'db> FoundryInspectorExt<FoundryContextFor<'db, FEN>>>(
-        &mut self,
-        evm_env: &mut EvmEnvFor<FEN>,
-        tx_env: &mut TxEnvFor<FEN>,
-        inspector: I,
-    ) -> eyre::Result<ResultAndState<HaltReasonFor<FEN>>> {
-        let chain_context = self.chain_context_for_synthetic_transaction(tx_env)?;
-        self.inspect_with_context(evm_env, tx_env, chain_context, inspector)
-    }
-
-    /// Executes the configured test call with explicit network-specific context.
-    #[instrument(name = "inspect", level = "debug", skip_all)]
-    pub fn inspect_with_context<I: for<'db> FoundryInspectorExt<FoundryContextFor<'db, FEN>>>(
-        &mut self,
-        evm_env: &mut EvmEnvFor<FEN>,
-        tx_env: &mut TxEnvFor<FEN>,
-        chain_context: ChainFor<FEN>,
-        inspector: I,
-    ) -> eyre::Result<ResultAndState<HaltReasonFor<FEN>>> {
-        self.initialize(evm_env.cfg_env.spec, tx_env.caller(), tx_env.kind());
-        let factory = FEN::EvmFactory::default();
-        let mut evm =
-            factory.create_foundry_evm_with_inspector(self, evm_env.to_owned(), inspector);
-        *evm.chain_mut() = chain_context;
-        let res = evm.transact_raw(tx_env.clone()).wrap_err("EVM error")?;
-
-        *tx_env = evm.tx().clone();
-        *evm_env = evm.finish().1.into();
-
-        Ok(res)
-    }
-
-    /// Returns true if the address is a precompile
+    /// Returns true if the address is a precompile.
     pub fn is_existing_precompile(&self, addr: &Address) -> bool {
         self.inner.precompile_addresses().contains(addr)
     }

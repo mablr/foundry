@@ -1,9 +1,6 @@
 //! Tests for block access list state reads and commits.
 
-use crate::{
-    backend::{Backend, CowBackend},
-    evm::EthEvmNetwork,
-};
+use crate::{backend::Backend, evm::EthEvmNetwork};
 use alloy_eips::eip7928::{
     AccountChanges, BalanceChange, CodeChange, NonceChange, SlotChanges, StorageChange,
 };
@@ -64,9 +61,12 @@ fn bal_reads_use_index_and_fall_back_to_parent_state() {
     assert_eq!(backend.storage_ref(address, slot).unwrap(), U256::from(20));
     // A slot the block only read keeps its parent value.
     assert_eq!(backend.storage_ref(address, U256::from(99)).unwrap(), U256::from(77));
-    let mut cow = CowBackend::new_borrowed(&backend);
-    assert_eq!(cow.basic(address).unwrap().unwrap().balance, U256::from(20));
-    assert_eq!(cow.storage(address, slot).unwrap(), U256::from(20));
+    let mut cloned = backend.clone();
+    assert_eq!(cloned.basic(address).unwrap().unwrap().balance, U256::from(20));
+    assert_eq!(cloned.storage(address, slot).unwrap(), U256::from(20));
+    cloned.insert_account_storage(address, U256::from(99), U256::from(88)).unwrap();
+    assert_eq!(cloned.storage_ref(address, U256::from(99)).unwrap(), U256::from(88));
+    assert_eq!(backend.storage_ref(address, U256::from(99)).unwrap(), U256::from(77));
 
     backend.set_bal(bal, BlockAccessIndex::new(2));
     assert_eq!(backend.basic(address).unwrap().unwrap().balance, U256::from(30));

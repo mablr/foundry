@@ -163,3 +163,9 @@ including the test synchronization barrier. Isolation, traces, fuzz/coverage ins
 and batch CREATE rewriting remain explicit unsupported boundaries until native ports
 are available. Tests for the removed REVM dispatch and batch-salt implementation were
 removed with that implementation; the independent revert-diagnostic test is retained.
+
+The unused REVM `Backend::inspect` entry points and `CowBackend` wrapper are removed.
+Native calls use immutable backend reads, owned transaction changes and executor-level
+`Arc` copy-on-write. Fork transaction replay and legacy cheatcode context APIs remain
+to migrate. The pinned `foundry-fork-db` crate also depends on REVM unconditionally,
+so eliminating the final transitive dependency requires migrating that interface.
