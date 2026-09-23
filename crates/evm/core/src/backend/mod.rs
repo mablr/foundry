@@ -18,7 +18,6 @@ use crate::{
 use alloy_chains::Chain;
 use alloy_consensus::{BlockHeader, Typed2718};
 use alloy_eips::BlockNumHash;
-use alloy_evm::{Evm, precompiles::PrecompilesMap};
 use alloy_genesis::GenesisAccount;
 use alloy_network::{
     AnyNetwork, AnyRpcBlock, AnyRpcTransaction, BlockResponse, Network, TransactionResponse,
@@ -27,7 +26,7 @@ use alloy_primitives::{Address, B256, ChainId, U256, keccak256, map::AddressSet,
 use alloy_rpc_types::{BlockNumberOrTag, BlockTransactions};
 use eyre::Context;
 use foundry_common::{SYSTEM_TRANSACTION_TYPE, is_known_system_sender};
-use foundry_evm_networks::{NetworkConfigs, apply_bsc_p256_precompile};
+use foundry_evm_networks::NetworkConfigs;
 pub use foundry_fork_db::{
     AccountFetchPolicy, BlockchainDb, ForkBlock, ForkBlockEnv, SharedBackend,
     cache::BlockchainDbMeta,
@@ -39,7 +38,6 @@ use revm::{
     context_interface::journaled_state::account::JournaledAccountTr,
     database::{AccountState, CacheDB, DatabaseRef},
     database_interface::bal::BalState,
-    inspector::NoOpInspector,
     primitives::{AddressMap, HashMap as Map, KECCAK_EMPTY, Log, hardfork::SpecId},
     state::{Account, AccountInfo, EvmState, EvmStorageSlot, TransactionId},
 };
@@ -1257,18 +1255,18 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
 
     /// Converts a replayable transaction while preserving the established behavior of skipping
     /// system envelopes that this build cannot decode.
-    fn replay_tx_env(tx: &AnyRpcTransaction) -> eyre::Result<Option<TxEnvFor<FEN>>> {
-        let is_system = is_known_system_sender(tx.from()) || tx.ty() == SYSTEM_TRANSACTION_TYPE;
-        if is_system {
-            // EVM2 migration: unconditional Ethereum fallback.
+    fn replay_transaction(
+        tx: &AnyRpcTransaction,
+    ) -> eyre::Result<Option<evm2::ethereum::RecoveredTxEnvelope>> {
+        if is_known_system_sender(tx.from()) || tx.ty() == SYSTEM_TRANSACTION_TYPE {
             return Ok(None);
-            /* EVM2 migration: disabled non-Ethereum execution.
-            #[cfg(feature = "monad")]
-            return Ok(TxEnvFor::<FEN>::from_any_rpc_transaction(tx).ok());
-            */
         }
-
-        TxEnvFor::<FEN>::from_any_rpc_transaction(tx).map(Some)
+        let envelope = tx.as_envelope().ok_or_else(|| {
+            eyre::eyre!("evm2 fork replay requires an Ethereum transaction envelope")
+        })?;
+        let envelope =
+            evm2::ethereum::TxEnvelope::from(envelope.clone().map_eip4844(|tx| tx.into()));
+        Ok(Some(alloy_consensus::transaction::Recovered::new_unchecked(envelope, tx.from())))
     }
 
     /* EVM2 migration: disabled non-Ethereum execution.
@@ -1861,22 +1859,19 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         }
         */
         let target_tx = transactions[target_index].clone();
-        let factory = FEN::EvmFactory::default();
         let mut txs_to_replay = Vec::with_capacity(target_index);
-        for (index, tx) in transactions[..target_index].iter().enumerate() {
-            let Some(tx_env) = Self::replay_tx_env(tx)? else { continue };
-            let is_system = is_known_system_sender(tx.from()) || tx.ty() == SYSTEM_TRANSACTION_TYPE;
-            txs_to_replay.push((index, tx.clone(), tx_env, is_system));
+        for tx in &transactions[..target_index] {
+            if let Some(transaction) = Self::replay_transaction(tx)? {
+                txs_to_replay.push(transaction);
+            }
         }
 
         // Replay all preceding transactions against a cloned ForkDB.
         if !txs_to_replay.is_empty() {
             let now = Instant::now();
 
-            // Stage the prefix against one cloned fork cache. The temporary backend also
-            // supplies the existing DatabaseExt boundary needed by nested execution.
+            // Stage the prefix against one cloned fork cache and publish only after success.
             let chain_id = evm_env.cfg_env.chain_id;
-            let timestamp = evm_env.block_env.timestamp().saturating_to();
             let mut replay_backend = Self::new_with_fork_manager(
                 forks,
                 &fork_id,
@@ -1885,64 +1880,33 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
                 networks,
             )?;
 
-            /* EVM2 migration: disabled non-Ethereum execution.
-            #[cfg(feature = "monad")]
-            if let Some(context) = block_context {
-                for (index, tx, tx_env, is_system) in &txs_to_replay {
-                    let mut evm = factory.create_nested_evm(&mut replay_backend, evm_env.clone());
-                    *evm.chain_mut() = context.transaction(*index);
-                    inject_replay_precompiles(networks, evm.precompiles_mut(), chain_id, timestamp);
-                    trace!(tx=?tx.tx_hash(), "committing transaction");
-                    let result = evm
-                        .transact_replay(tx_env.clone(), *is_system)
-                        .wrap_err("backend: failed replaying transaction")?;
-                    drop(evm);
-                    if let Some(result) = result {
-                        replay_backend.commit(result.state);
-                    }
-                }
-            }
-            */
-            /* EVM2 migration: disabled non-Ethereum execution.
-            #[cfg(feature = "monad")]
-            let replay_without_context = block_context.is_none();
-            */
-            // EVM2 migration: unconditional Ethereum fallback.
-            let replay_without_context = true;
-            if replay_without_context {
-                // Keep one Foundry EVM for ordinary transactions. Only system envelopes
-                // need the nested replay operation; it borrows the same staged database.
-                let mut evm = factory.create_foundry_evm_with_inspector(
-                    &mut replay_backend,
-                    evm_env.clone(),
-                    NoOpInspector,
+            // TODO(evm2): Port custom network precompiles before enabling their replay here.
+            eyre::ensure!(
+                networks.execution_network().is_ethereum()
+                    && !networks.is_celo()
+                    && !matches!(chain_id, 56 | 97),
+                "evm2 fork replay currently supports standard Ethereum precompiles only"
+            );
+            let (spec, mut version, block) =
+                crate::native::environment(&evm_env.cfg_env, &evm_env.block_env)?;
+            version.features.insert(evm2::EvmFeatures::TX_CHAIN_ID_CHECK);
+            for transaction in &txs_to_replay {
+                let mut evm = evm2::Evm::<evm2::BaseEvmTypes>::new_with_execution_config(
+                    evm2::ExecutionConfig::for_spec_and_version(spec, version),
+                    spec,
+                    block,
+                    evm2::ethereum::ethereum_tx_registry(spec),
+                    evm2::evm::Db::new(&replay_backend),
+                    evm2::Precompiles::base(spec),
                 );
-                inject_replay_precompiles(networks, evm.precompiles_mut(), chain_id, timestamp);
-                for (_, tx, tx_env, is_system) in &txs_to_replay {
-                    trace!(tx=?tx.tx_hash(), "committing transaction");
-                    let state = if *is_system {
-                        let mut replay =
-                            factory.create_nested_evm(&mut **evm.db_mut(), evm_env.clone());
-                        inject_replay_precompiles(
-                            networks,
-                            replay.precompiles_mut(),
-                            chain_id,
-                            timestamp,
-                        );
-                        let Some(result) = replay
-                            .transact_replay(tx_env.clone(), true)
-                            .wrap_err("backend: failed replaying system transaction")?
-                        else {
-                            continue;
-                        };
-                        result.state
-                    } else {
-                        evm.transact_raw(tx_env.clone())
-                            .wrap_err("backend: failed replaying transaction")?
-                            .state
-                    };
-                    evm.db_mut().commit(state);
-                }
+                let mut writes = crate::native::StateChangesetCollector::default();
+                let _result = evm
+                    .transact(transaction)
+                    .wrap_err("backend: failed replaying transaction with evm2")?
+                    .discard_with(&mut writes)
+                    .unwrap();
+                drop(evm);
+                replay_backend.commit_native(writes.0);
             }
 
             let (_, index) = replay_backend.active_fork_ids.expect("replay fork is active");
@@ -3484,16 +3448,6 @@ fn apply_state_changeset<N: Network, B: ForkBlockEnv>(
     Ok(())
 }
 
-fn inject_replay_precompiles(
-    networks: NetworkConfigs,
-    precompiles: &mut PrecompilesMap,
-    chain_id: ChainId,
-    timestamp: u64,
-) {
-    networks.inject_precompiles(precompiles);
-    apply_bsc_p256_precompile(precompiles, chain_id, timestamp);
-}
-
 #[cfg(test)]
 mod tests {
     use super::{Fork, ForkAccountField, ReplayInputs, apply_state_changeset, update_env_block};
@@ -3504,7 +3458,7 @@ mod tests {
         fork::{CreateFork, ForkId, MultiFork},
         opts::EvmOpts,
     };
-    use alloy_consensus::{Signed, TxEnvelope, TxLegacy, transaction::Recovered};
+    use alloy_consensus::{Signed, TxEip1559, TxEnvelope, TxLegacy, transaction::Recovered};
     use alloy_eips::BlockNumHash;
     use alloy_network::{
         AnyHeader, AnyNetwork, AnyRpcBlock, AnyRpcHeader, AnyRpcTransaction, AnyTxEnvelope,
@@ -3744,6 +3698,65 @@ mod tests {
         });
         drop(runtime);
         drop(forks);
+    }
+
+    #[test]
+    fn fork_replay_native_dynamic_fees() {
+        let sender = Address::with_last_byte(0x42);
+        let recipient = Address::with_last_byte(0x43);
+        let target = B256::with_last_byte(2);
+        let mut fork = fork_with_closed_backend();
+        fork.db.insert_account_info(sender, AccountInfo::from_balance(U256::from(1_000_000)));
+        fork.db.insert_account_info(recipient, AccountInfo::default());
+        fork.db.insert_account_info(Address::ZERO, AccountInfo::default());
+        let mut transaction =
+            rpc_transaction(sender, 0, 7, 21_000, recipient, B256::with_last_byte(1));
+        transaction.inner.inner = Recovered::new_unchecked(
+            AnyTxEnvelope::Ethereum(TxEnvelope::Eip1559(Signed::new_unchecked(
+                TxEip1559 {
+                    chain_id: 1,
+                    nonce: 0,
+                    gas_limit: 21_000,
+                    max_fee_per_gas: 10,
+                    max_priority_fee_per_gas: 2,
+                    to: TxKind::Call(recipient),
+                    value: U256::from(7),
+                    ..Default::default()
+                },
+                Signature::new(U256::from(1), U256::from(1), false),
+                B256::with_last_byte(1),
+            ))),
+            sender,
+        );
+        let mut block = rpc_block(1, B256::with_last_byte(1), B256::ZERO);
+        block.inner.transactions = BlockTransactions::Full(vec![
+            transaction,
+            rpc_transaction(sender, 1, 0, 21_000, recipient, target),
+        ]);
+        let mut evm_env = EvmEnv::<SpecId, BlockEnv>::default();
+        evm_env.block_env.basefee = 3;
+        Backend::<EthEvmNetwork>::replay_until(
+            &mut fork,
+            ReplayInputs {
+                fork_id: ForkId::new("http://localhost", Some(0)),
+                forks: MultiFork::spawn(),
+                evm_env,
+                networks: NetworkConfigs::default(),
+            },
+            &block,
+            target,
+            &mut JournalInner::new(),
+            &AddressSet::default(),
+        )
+        .unwrap();
+        let sender = fork.db.basic_ref(sender).unwrap().unwrap();
+        assert_eq!(sender.nonce, 1);
+        assert_eq!(sender.balance, U256::from(1_000_000 - 21_000 * 5 - 7));
+        assert_eq!(fork.db.basic_ref(recipient).unwrap().unwrap().balance, U256::from(7));
+        assert_eq!(
+            fork.db.basic_ref(Address::ZERO).unwrap().unwrap().balance,
+            U256::from(21_000 * 2)
+        );
     }
 
     #[test]
@@ -4071,14 +4084,15 @@ mod tests {
         };
 
         assert!(
-            Backend::<EthEvmNetwork>::replay_tx_env(&transaction(SYSTEM_TRANSACTION_TYPE))
+            Backend::<EthEvmNetwork>::replay_transaction(&transaction(SYSTEM_TRANSACTION_TYPE))
                 .unwrap()
                 .is_none()
         );
-        assert!(Backend::<EthEvmNetwork>::replay_tx_env(&transaction(0xff)).is_err());
+        assert!(Backend::<EthEvmNetwork>::replay_transaction(&transaction(0xff)).is_err());
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "TODO(evm2): migrate Celo precompiles before enabling native fork replay"]
     async fn celo_transaction_hash_fork_replays_transfer_precompile() {
         let networks = NetworkConfigs::with_celo();
         let (api, handle) = spawn(

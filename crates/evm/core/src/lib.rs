@@ -46,6 +46,7 @@ pub mod evm;
 pub mod fork;
 pub mod hardfork;
 pub mod ic;
+pub mod native;
 pub mod opts;
 pub mod precompiles;
 pub mod state_changes;

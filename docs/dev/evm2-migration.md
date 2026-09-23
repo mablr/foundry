@@ -11,7 +11,11 @@ revm-inspectors dependency; its core/configuration/trace dependencies still pull
 engine types transitively. Session block types remain part of that next migration boundary.
 Unported handler source remains on disk for reference, outside the module tree.
 The unused suspended-frame execution, inherited-journal and child-state merge helpers
-have been removed. Fork replay still uses the legacy transaction factory.
+have been removed. Fork-prefix replay now executes Ethereum envelopes with evm2, sharing
+the native database reads, environment conversion and write collector with the executor.
+Direct backend transaction APIs still use the legacy factory. The public executor still
+rejects fork execution until its remaining lifecycle support is migrated; custom-network
+precompiles are explicitly unsupported in native prefix replay.
 
 `EthEvmNetwork` is the only compiled Foundry EVM network implementation. The existing
 generic executor, backend, inspector, journal, and cheatcode interfaces remain so the

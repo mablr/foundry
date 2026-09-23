@@ -8,111 +8,26 @@
 use super::{EvmExecutionCancellation, Executor, RawCallResult, sancov::SancovGuard};
 use crate::inspectors::{InspectorStack, LogCollector};
 use alloy_consensus::{TxLegacy, transaction::Recovered};
-use alloy_primitives::{Address, B256, Bytes, Log, U256};
+use alloy_primitives::{Address, B256, Bytes, Log};
 use evm2::{
-    BaseEvmTypes, Evm, EvmFeatures, ExecutionConfig, Inspector, Precompiles, Version,
-    bytecode::Bytecode as NativeBytecode,
+    BaseEvmTypes, Evm, ExecutionConfig, Inspector, Precompiles, Version,
     env::BlockEnvExt,
     ethereum::{TxEnvelope, ethereum_tx_registry, intrinsic_gas},
-    evm::{AccountChangeRef, AccountInfo as NativeAccount, Db, StateChangeSink, StorageChange},
+    evm::Db,
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
 use foundry_cheatcodes::CheatsConfig;
 use foundry_common::ErrorExt;
 use foundry_evm_core::{
     FoundryBlock,
-    backend::{Backend, DatabaseError},
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS},
     evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TxEnvFor},
+    native::StateChangesetCollector,
     state_changes::ExecutionOutput,
     utils::StateChangeset,
 };
-use revm::{
-    context::{Block, Cfg, Transaction},
-    database::DatabaseRef,
-    primitives::hardfork::SpecId,
-};
-use std::{any::TypeId, convert::Infallible};
-
-struct BackendReads<'a, FEN: FoundryEvmNetwork>(&'a Backend<FEN>);
-
-impl<FEN: FoundryEvmNetwork> evm2::evm::Database for BackendReads<'_, FEN> {
-    type Error = DatabaseError;
-
-    fn get_account(&mut self, address: &Address) -> Result<Option<NativeAccount>, Self::Error> {
-        self.0.native_account(*address)
-    }
-
-    fn get_code_by_hash(&mut self, hash: &B256) -> Result<NativeBytecode, Self::Error> {
-        if !self.0.is_in_forking_mode() {
-            return Ok(self.0.mem_db().code(*hash));
-        }
-        self.0.code_by_hash_ref(*hash).map(|code| NativeBytecode::new_raw(code.original_bytes()))
-    }
-
-    fn get_storage(&mut self, address: &Address, key: &U256) -> Result<U256, Self::Error> {
-        self.0.storage_ref(*address, *key)
-    }
-
-    fn get_block_hash(&mut self, number: &U256) -> Result<B256, Self::Error> {
-        self.0.block_hash_ref(number.saturating_to())
-    }
-}
-
-#[derive(Default)]
-struct Writes(StateChangeset);
-
-impl StateChangeSink for Writes {
-    type Error = Infallible;
-
-    fn account(&mut self, change: AccountChangeRef<'_>) -> Result<(), Self::Error> {
-        let account = self.0.entry(change.address).or_default();
-        if let Some(info) = change.current {
-            account.info = info.clone();
-        }
-        account.touched = true;
-        if change.created {
-            account.created = true;
-        }
-        if change.selfdestructed || change.current.is_none() {
-            account.deleted = true;
-        }
-        Ok(())
-    }
-
-    fn storage(&mut self, change: StorageChange) -> Result<(), Self::Error> {
-        let account = self.0.entry(change.address).or_default();
-        account.touched = true;
-        account.storage.insert(
-            change.key,
-            foundry_evm_core::state_changes::StorageChange {
-                original_value: change.original,
-                present_value: change.current,
-            },
-        );
-        Ok(())
-    }
-
-    fn storage_wipe(&mut self, address: Address) -> Result<(), Self::Error> {
-        self.0.entry(address).or_default().storage_wiped = true;
-        Ok(())
-    }
-
-    fn account_read(
-        &mut self,
-        address: Address,
-        info: Option<&NativeAccount>,
-    ) -> Result<(), Self::Error> {
-        // Native storage changes precede account callbacks. A storage-only write still needs
-        // the unchanged account metadata when committed through Foundry's current backend.
-        if let Some(account) = self.0.get_mut(&address)
-            && let Some(info) = info
-        {
-            account.info = info.clone();
-        }
-        Ok(())
-    }
-}
+use revm::context::Transaction;
+use std::any::TypeId;
 
 #[derive(Default)]
 struct MigrationInspector<'a> {
@@ -274,10 +189,10 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             spec,
             block,
             ethereum_tx_registry(spec),
-            Db::new(BackendReads(self.backend())),
+            Db::new(self.backend()),
             Precompiles::base(spec),
         );
-        let mut writes = Writes::default();
+        let mut writes = StateChangesetCollector::default();
         let _result = evm
             .system_call(evm2::evm::SystemTx::new(destination, input).with_caller(caller))?
             .discard_with(&mut writes)
@@ -357,13 +272,13 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             spec,
             block,
             ethereum_tx_registry(spec),
-            Db::new(BackendReads(self.backend())),
+            Db::new(self.backend()),
             Precompiles::base(spec),
         );
         evm.set_inspector(&mut inspector);
         let _coverage = (stack.sancov_edges || stack.sancov_trace_cmp)
             .then(|| SancovGuard::new(stack.sancov_edges, stack.sancov_trace_cmp));
-        let mut writes = Writes::default();
+        let mut writes = StateChangesetCollector::default();
         let result = evm
             .transact(&Recovered::new_unchecked(TxEnvelope::Legacy(tx), caller))?
             .discard_with(&mut writes)
@@ -431,35 +346,6 @@ fn native_environment<FEN: FoundryEvmNetwork>(
     evm_env: &EvmEnvFor<FEN>,
     stack: &InspectorStack<FEN>,
 ) -> eyre::Result<(evm2::SpecId, Version, BlockEnvExt)> {
-    let cfg = &evm_env.cfg_env;
-    let spec = match cfg.spec.into() {
-        SpecId::MERGE => evm2::SpecId::MERGE,
-        SpecId::SHANGHAI => evm2::SpecId::SHANGHAI,
-        SpecId::CANCUN => evm2::SpecId::CANCUN,
-        SpecId::PRAGUE => evm2::SpecId::PRAGUE,
-        SpecId::OSAKA => evm2::SpecId::OSAKA,
-        other => eyre::bail!("evm2 milestone 1 hardfork not yet wired: {other:?}"),
-    };
-    let mut version = Version::new(spec);
-    version.chain_id = cfg.chain_id();
-    version.tx_gas_limit_cap = cfg.tx_gas_limit_cap();
-    version.memory_limit = cfg.memory_limit();
-    version.max_code_size = cfg.max_code_size();
-    version.max_initcode_size = cfg.max_initcode_size();
-    for (feature, enabled) in [
-        (EvmFeatures::NONCE_CHECK, !cfg.is_nonce_check_disabled()),
-        (EvmFeatures::BALANCE_CHECK, !cfg.is_balance_check_disabled()),
-        (EvmFeatures::BLOCK_GAS_LIMIT_CHECK, !cfg.is_block_gas_limit_disabled()),
-        (EvmFeatures::BASE_FEE_CHECK, !cfg.is_base_fee_check_disabled()),
-        (EvmFeatures::EIP3607, !cfg.is_eip3607_disabled()),
-        (EvmFeatures::FEE_CHARGE, !cfg.is_fee_charge_disabled()),
-        (EvmFeatures::TX_CHAIN_ID_CHECK, cfg.tx_chain_id_check()),
-    ] {
-        version.features.set(feature, enabled);
-    }
-    if cfg.is_eip7623_disabled() {
-        version.features.remove(EvmFeatures::EIP7623);
-    }
     if let Some(cheats) = &stack.cheatcodes {
         eyre::ensure!(
             cheats.gas_price.is_none_or(|price| price == 0),
@@ -471,35 +357,24 @@ fn native_environment<FEN: FoundryEvmNetwork>(
         .as_ref()
         .and_then(|cheats| cheats.block.as_ref())
         .unwrap_or(&evm_env.block_env);
-    let block = BlockEnvExt {
-        number: block.number(),
-        beneficiary: block.beneficiary(),
-        timestamp: block.timestamp(),
-        gas_limit: U256::from(block.gas_limit()),
-        basefee: U256::from(block.basefee()),
-        difficulty: block.difficulty(),
-        prevrandao: U256::from_be_bytes(block.prevrandao().unwrap_or_default().0),
-        blob_basefee: U256::from(block.blob_gasprice().unwrap_or_default()),
-        slot_num: U256::from(block.slot_num()),
-        ..Default::default()
-    };
-    Ok((spec, version, block))
+    foundry_evm_core::native::environment(&evm_env.cfg_env, block)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::executors::{EarlyExit, ExecutorBuilder};
-    use alloy_primitives::bytes;
+    use alloy_primitives::{U256, bytes};
     use alloy_sol_types::SolCall;
     use evm2::{
         bytecode::Bytecode,
         env::TxEnvExt,
-        evm::InMemoryDB,
+        evm::{AccountInfo as NativeAccount, InMemoryDB},
         interpreter::{Host, MessageExt},
     };
-    use foundry_evm_core::{constants::CALLER, decode::RevertDecoder};
+    use foundry_evm_core::{backend::Backend, constants::CALLER, decode::RevertDecoder};
     use foundry_evm_networks::NetworkConfigs;
+    use revm::{database::DatabaseRef, primitives::hardfork::SpecId};
     use std::{sync::mpsc, thread, time::Duration};
 
     fn executor() -> Executor<EthEvmNetwork> {
@@ -617,7 +492,7 @@ mod tests {
             }
             .abi_encode()
             .into(),
-            code: NativeBytecode::new_raw(code.into()),
+            code: Bytecode::new_raw(code.into()),
             ..Default::default()
         };
         let result = evm.execute_message(&TxEnvExt::default(), &mut message);
