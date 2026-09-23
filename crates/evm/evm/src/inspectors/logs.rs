@@ -49,7 +49,7 @@ impl LogCollector {
         None
     }
 
-    fn hardhat_log(&mut self, data: &[u8]) -> alloy_sol_types::Result<()> {
+    pub(crate) fn hardhat_log(&mut self, data: &[u8]) -> alloy_sol_types::Result<()> {
         let decoded = console::hh::ConsoleCalls::abi_decode(data)?;
         for line in decoded.fmt(Default::default()).lines() {
             self.push_msg(line);
@@ -57,7 +57,7 @@ impl LogCollector {
         Ok(())
     }
 
-    fn push_raw_log(&mut self, log: Log) {
+    pub(crate) fn push_raw_log(&mut self, log: Log) {
         match self {
             Self::Capture { logs } => logs.push(log),
             Self::LiveLogs => {
@@ -73,7 +73,7 @@ impl LogCollector {
         }
     }
 
-    fn push_msg(&mut self, msg: &str) {
+    pub(crate) fn push_msg(&mut self, msg: &str) {
         match self {
             Self::Capture { logs } => logs.push(new_console_log(msg)),
             Self::LiveLogs => sh_println!("{msg}").expect("fail printing to stdout"),

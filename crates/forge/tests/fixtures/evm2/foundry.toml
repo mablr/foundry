@@ -3,3 +3,4 @@ src = "."
 test = "."
 evm_version = "cancun"
 optimizer = true
+solc = "0.8.35"

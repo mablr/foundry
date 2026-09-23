@@ -6,6 +6,7 @@
 //! until the backend and result consumers migrate to native state-change interfaces.
 
 use super::{EvmExecutionCancellation, Executor, RawCallResult};
+use crate::inspectors::LogCollector;
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_primitives::{Address, B256, Bytes, Log, U256};
 use evm2::{
@@ -16,7 +17,10 @@ use evm2::{
     evm::{AccountChangeRef, AccountInfo as NativeAccount, Db, StateChangeSink, StorageChange},
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
+use foundry_cheatcodes::CheatsConfig;
+use foundry_common::ErrorExt;
 use foundry_evm_core::{
+    FoundryBlock,
     backend::{Backend, DatabaseError},
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS},
     evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TxEnvFor},
@@ -122,15 +126,17 @@ impl StateChangeSink for Writes {
 }
 
 #[derive(Default)]
-struct MigrationInspector {
+struct MigrationInspector<'a> {
+    config: Option<&'a CheatsConfig>,
+    native: foundry_cheatcodes::native::Session,
     unsupported: Option<String>,
-    logs: Vec<Log>,
+    log_collector: Option<LogCollector>,
     cancellation: Option<EvmExecutionCancellation>,
     cancelled: bool,
     cancellation_poll_counter: u8,
 }
 
-impl Inspector<BaseEvmTypes> for MigrationInspector {
+impl Inspector<BaseEvmTypes> for MigrationInspector<'_> {
     fn step(&mut self, interp: &mut Interpreter<'_, '_, BaseEvmTypes>) {
         if let Some(cancellation) = &self.cancellation {
             let poll_deadline = self.cancellation_poll_counter == 0;
@@ -143,12 +149,14 @@ impl Inspector<BaseEvmTypes> for MigrationInspector {
     }
 
     fn log(&mut self, log: &Log, _host: &mut Evm<'_, BaseEvmTypes>) {
-        self.logs.push(log.clone());
+        if let Some(collector) = &mut self.log_collector {
+            collector.push_raw_log(log.clone());
+        }
     }
 
     fn call(
         &mut self,
-        _interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
         message: &mut Message<BaseEvmTypes>,
     ) -> Option<MessageResult<BaseEvmTypes>> {
         if message.code_address != CHEATCODE_ADDRESS
@@ -156,9 +164,53 @@ impl Inspector<BaseEvmTypes> for MigrationInspector {
         {
             return None;
         }
+        if message.code_address == HARDHAT_CONSOLE_ADDRESS {
+            let result =
+                self.log_collector.as_mut().map(|collector| collector.hardhat_log(&message.input));
+            let (stop, output) = match result {
+                Some(Err(error)) => (InstrStop::Revert, error.abi_encode_revert()),
+                _ => (InstrStop::Return, Bytes::new()),
+            };
+            return Some(MessageResultExt {
+                stop,
+                output,
+                gas: GasTracker::new(message.gas_limit),
+                ..Default::default()
+            });
+        }
+        if message.code_address == CHEATCODE_ADDRESS
+            && let Some(config) = self.config
+        {
+            let result = match foundry_cheatcodes::decode_cheatcode(&message.input) {
+                Ok(call) => foundry_cheatcodes::native::dispatch(
+                    &call,
+                    interp.host(),
+                    config,
+                    &mut self.native,
+                ),
+                Err(error) => Some(Err(error)),
+            };
+            for diagnostic in self.native.diagnostics.drain(..) {
+                if let Some(collector) = &mut self.log_collector {
+                    collector.push_msg(&diagnostic);
+                }
+            }
+            if let Some(result) = result {
+                let (stop, output) = match result {
+                    Ok(output) => (InstrStop::Return, output.into()),
+                    Err(error) => (InstrStop::Revert, foundry_cheatcodes::Error::encode(error)),
+                };
+                return Some(MessageResultExt {
+                    stop,
+                    output,
+                    gas: GasTracker::new(message.gas_limit),
+                    ..Default::default()
+                });
+            }
+        }
         self.unsupported.get_or_insert_with(|| {
             format!(
-                "evm2 milestone 1: cheatcode/console calls are not migrated (target {}, input {})",
+                "evm2: unsupported cheatcode (target {}, input {})",
                 message.code_address, message.input,
             )
         });
@@ -173,7 +225,7 @@ impl Inspector<BaseEvmTypes> for MigrationInspector {
 impl<FEN: FoundryEvmNetwork> Executor<FEN> {
     pub(super) fn execute_evm2(
         &self,
-        evm_env: EvmEnvFor<FEN>,
+        mut evm_env: EvmEnvFor<FEN>,
         tx_env: TxEnvFor<FEN>,
     ) -> eyre::Result<RawCallResult<FEN>> {
         eyre::ensure!(
@@ -278,6 +330,8 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         };
         let stipend = intrinsic_gas(&version, caller, tx.to, &tx.input, 0, 0, tx.value);
         let mut inspector = MigrationInspector {
+            log_collector: stack.log_collector.as_deref().cloned(),
+            config: stack.cheatcodes.as_ref().map(|cheats| cheats.config.as_ref()),
             cancellation: stack.execution_cancellation().cloned(),
             ..Default::default()
         };
@@ -295,7 +349,19 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             .transact(&Recovered::new_unchecked(TxEnvelope::Legacy(tx), caller))?
             .discard_with(&mut writes)
             .unwrap();
+        let final_block = *evm.block();
         drop(evm);
+        evm_env.block_env.set_timestamp(final_block.timestamp);
+        evm_env.block_env.set_number(final_block.number);
+        evm_env.block_env.set_beneficiary(final_block.beneficiary);
+        evm_env.block_env.set_basefee(final_block.basefee.to());
+        evm_env.block_env.set_prevrandao(Some(B256::from(final_block.prevrandao)));
+
+        let mut cheatcodes = stack.cheatcodes.clone();
+        if let Some(cheats) = &mut cheatcodes {
+            cheats.block = Some(evm_env.block_env.clone());
+            cheats.deprecated.extend(inspector.native.deprecated);
+        }
         if let Some(error) = inspector.unsupported {
             eyre::bail!(error);
         }
@@ -320,11 +386,14 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             gas_used,
             gas_refunded: result.refunded,
             stipend,
-            logs: inspector.logs,
+            logs: inspector
+                .log_collector
+                .and_then(LogCollector::into_captured_logs)
+                .unwrap_or_default(),
             state_changeset: writes.0,
             evm_env,
             tx_env,
-            cheatcodes: stack.cheatcodes.clone(),
+            cheatcodes,
             execution_cancelled: inspector.cancelled,
             out,
             ..Default::default()

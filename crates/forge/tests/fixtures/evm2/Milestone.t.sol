@@ -87,7 +87,7 @@ contract MilestoneFailureTest {
 contract MilestoneUnsupportedTest {
     function testCaughtCheatcodeStillFails() public {
         address vm = address(uint160(uint256(keccak256("hevm cheat code"))));
-        (bool ok,) = vm.call(abi.encodeWithSignature("warp(uint256)", 123));
+        (bool ok,) = vm.call(abi.encodeWithSignature("snapshotState()"));
         // Catching the unsupported call must not turn this into a passing test.
         require(!ok, "unexpected success");
     }

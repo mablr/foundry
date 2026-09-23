@@ -16,6 +16,7 @@ pub extern crate foundry_cheatcodes_spec as spec;
 extern crate tracing;
 
 use alloy_primitives::Address;
+use alloy_sol_types::SolInterface;
 use foundry_evm_core::{
     backend::DatabaseExt,
     evm::{FoundryContextFor, FoundryEvmNetwork},
@@ -46,6 +47,8 @@ mod env;
 pub use env::{current_execution_context, set_execution_context};
 
 mod evm;
+
+pub mod native;
 
 mod external_storage;
 
@@ -78,6 +81,11 @@ mod utils;
 
 /// Cheatcode implementation.
 pub(crate) trait Cheatcode: CheatcodeDef {
+    /// Evaluates an assertion independently of execution state.
+    fn assertion_result(&self) -> Option<Result> {
+        None
+    }
+
     /// Applies this cheatcode to the given state.
     ///
     /// Implement this function if you don't need access to the EVM data.
@@ -164,4 +172,19 @@ impl Cheatcode for Vm::assumeImplicitApprovalCall {
     fn apply<FEN: FoundryEvmNetwork>(&self, _state: &mut Cheatcodes<FEN>) -> Result {
         Err(fmt_err!("Tempo execution is disabled on the Ethereum-only EVM2 migration branch"))
     }
+}
+
+/// Decodes a cheatcode call with Foundry's unknown-selector diagnostic.
+pub fn decode_cheatcode(input: &[u8]) -> Result<Vm::VmCalls> {
+    Ok(Vm::VmCalls::abi_decode(input).map_err(|error| {
+        if let alloy_sol_types::Error::UnknownSelector { name: _, selector } = error {
+            let message = format!(
+                "unknown cheatcode with selector {selector}; \
+                 you may have a mismatch between the `Vm` interface (likely in `forge-std`) \
+                 and the `forge` version"
+            );
+            return alloy_sol_types::Error::Other(std::borrow::Cow::Owned(message));
+        }
+        error
+    })?)
 }

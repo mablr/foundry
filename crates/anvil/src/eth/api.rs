@@ -1797,18 +1797,7 @@ impl EthApi<FoundryNetwork> {
         if let Some(block) = self.backend.get_block(number) {
             return Ok(Some(block));
         }
-        #[cfg(feature = "monad")]
-        {
-            if self.backend.is_monad() {
-                self.backend.monad_rollback_block(number).await
-            } else {
-                Ok(None)
-            }
-        }
-        #[cfg(not(feature = "monad"))]
-        {
-            Ok(None)
-        }
+        Ok(None)
     }
 
     /// Rewinds through the selected execution family's recovery path.
@@ -1817,10 +1806,6 @@ impl EthApi<FoundryNetwork> {
         common_block: Block,
         mining_guard: &tokio::sync::MutexGuard<'_, ()>,
     ) -> Result<()> {
-        #[cfg(feature = "monad")]
-        if self.backend.is_monad() {
-            return self.backend.rollback_monad(common_block, mining_guard).await;
-        }
         self.backend.rollback(common_block, mining_guard).await
     }
 
@@ -4510,19 +4495,6 @@ impl EthApi<FoundryNetwork> {
         let common_block =
             self.rollback_block(common_height).await?.ok_or(BlockchainError::BlockNotFound)?;
 
-        #[cfg(feature = "monad")]
-        let fee_defaults = if self.backend.is_monad() {
-            self.backend
-                .monad_rollback_fee_defaults(&common_block, self.lowest_suggestion_tip())
-                .await
-                .map(|(gas_price, blob_gas_price)| TransactionFeeDefaults {
-                    gas_price,
-                    blob_gas_price,
-                })
-        } else {
-            None
-        };
-        #[cfg(not(feature = "monad"))]
         let fee_defaults = None;
 
         // Convert the transaction requests to pool transactions if they exist, otherwise use empty

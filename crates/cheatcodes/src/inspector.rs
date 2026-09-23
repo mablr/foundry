@@ -28,7 +28,7 @@ use alloy_primitives::{
 };
 use alloy_rpc_types::AccessList;
 use alloy_signer_local::PrivateKeySigner;
-use alloy_sol_types::{SolCall, SolInterface, SolValue};
+use alloy_sol_types::{SolCall, SolValue};
 use foundry_common::{
     FoundryTransactionBuilder, SELECTOR_LEN, TransactionMaybeSigned,
     mapping_slots::{
@@ -1290,17 +1290,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
         executor: &mut dyn CheatcodesExecutor<FEN>,
     ) -> Result {
         // decode the cheatcode call
-        let decoded = Vm::VmCalls::abi_decode(&call.input.bytes(ecx)).map_err(|e| {
-            if let alloy_sol_types::Error::UnknownSelector { name: _, selector } = e {
-                let msg = format!(
-                    "unknown cheatcode with selector {selector}; \
-                     you may have a mismatch between the `Vm` interface (likely in `forge-std`) \
-                     and the `forge` version"
-                );
-                return alloy_sol_types::Error::Other(std::borrow::Cow::Owned(msg));
-            }
-            e
-        })?;
+        let decoded = crate::decode_cheatcode(&call.input.bytes(ecx))?;
 
         let caller = call.caller;
 

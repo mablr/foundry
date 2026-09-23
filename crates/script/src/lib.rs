@@ -1139,17 +1139,7 @@ impl<FEN: FoundryEvmNetwork> ScriptConfig<FEN> {
         target: ArtifactId,
         restricted: bool,
     ) -> Result<ScriptRunner<FEN>> {
-        let mut runner = self
-            ._get_runner(Some((known_contracts, script_wallets, target)), debug, restricted)
-            .await?;
-
-        // Script execution is synthetic. Keep the Tempo transaction context, but do not charge
-        // protocol fees for deploying or calling the local script contract.
-        if self.evm_opts.networks.is_tempo() {
-            runner.executor.evm_env_mut().cfg_env.disable_fee_charge = true;
-        }
-
-        Ok(runner)
+        self._get_runner(Some((known_contracts, script_wallets, target)), debug, restricted).await
     }
 
     async fn _get_runner(
