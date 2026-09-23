@@ -8,6 +8,18 @@ interface MutationVm {
 contract MutationProbeTest {
     MutationVm constant vm = MutationVm(address(uint160(uint256(keccak256("hevm cheat code")))));
     address constant target = address(0x777777);
+    function testTransferBeforeOverride() public {
+        vm.deal(address(this), 100);
+        vm.deal(target, 100);
+        (bool ok,) = address(this).call(abi.encodeCall(this.transferAndMutate, ()));
+        require(!ok && target.balance == 106);
+    }
+    function transferAndMutate() external {
+        (bool ok,) = target.call{value: 3}("");
+        require(ok);
+        vm.deal(target, 109);
+        revert("child");
+    }
     function mutate() external {
         vm.deal(target, 9);
         vm.setNonceUnsafe(target, 9);

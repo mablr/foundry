@@ -146,3 +146,26 @@ Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing te
 
 "#]]);
 });
+
+forgetest!(evm2_native_account_overrides, |prj, cmd| {
+    prj.add_test("MutationProbe.t.sol", include_str!("../../fixtures/evm2/MutationProbe.t.sol"));
+    cmd.args([
+        "test",
+        "--no-isolate",
+        "--evm-version",
+        "cancun",
+        "--match-contract",
+        "^MutationProbeTest$",
+    ])
+    .assert_success()
+    .stdout_eq(str![[r#"
+...
+Ran 2 tests for test/MutationProbe.t.sol:MutationProbeTest
+[PASS] testDirectAccountMutationSurvivesChildRevert() ([GAS])
+[PASS] testTransferBeforeOverride() ([GAS])
+Suite result: ok. 2 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
+
+"#]]);
+});

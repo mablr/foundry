@@ -13,6 +13,8 @@ use foundry_evm_core::{
 pub struct Session {
     /// Assertion diagnostics, independent of journal rollback.
     pub diagnostics: Vec<String>,
+    /// Original balances restored after a failed top-level frame.
+    pub deals: Vec<(Address, U256)>,
     /// Deprecated selectors encountered during execution.
     pub deprecated: HashMap<&'static str, Option<&'static str>>,
 }
@@ -47,7 +49,7 @@ pub fn dispatch(
             result
         }
     } else {
-        apply(call, host)?
+        apply(call, host, session)?
     };
     if let Err(error) = &mut result
         && error.is_str()
@@ -62,9 +64,16 @@ const fn definition<C: CheatcodeDef>(_: &C) -> &'static crate::spec::Cheatcode<'
     C::CHEATCODE
 }
 
-fn apply(call: &Vm::VmCalls, host: &mut Evm<'_, BaseEvmTypes>) -> Option<Result> {
+fn apply(
+    call: &Vm::VmCalls,
+    host: &mut Evm<'_, BaseEvmTypes>,
+    session: &mut Session,
+) -> Option<Result> {
     let supported = match call {
-        Vm::VmCalls::warp(_)
+        Vm::VmCalls::deal(_)
+        | Vm::VmCalls::setNonce(_)
+        | Vm::VmCalls::setNonceUnsafe(_)
+        | Vm::VmCalls::warp(_)
         | Vm::VmCalls::coinbase(_)
         | Vm::VmCalls::fee(_)
         | Vm::VmCalls::prevrandao_0(_)
@@ -86,6 +95,40 @@ fn apply(call: &Vm::VmCalls, host: &mut Evm<'_, BaseEvmTypes>) -> Option<Result>
     let mut block = *host.block();
     Some((|| -> Result {
         match call {
+            Vm::VmCalls::deal(c) => {
+                let mut account = host
+                    .state_mut()
+                    .account(&c.account, false)
+                    .map_err(|error| fmt_err!("native state access failed: {error:?}"))?;
+                account.warm();
+                account.touch();
+                session.deals.push((c.account, account.balance()));
+                account.override_balance(c.newBalance);
+            }
+            Vm::VmCalls::setNonce(c) => {
+                let mut account = host
+                    .state_mut()
+                    .account(&c.account, false)
+                    .map_err(|error| fmt_err!("native state access failed: {error:?}"))?;
+                account.warm();
+                account.touch();
+                ensure!(
+                    c.newNonce >= account.nonce(),
+                    "new nonce ({}) must be strictly equal to or higher than the account's current nonce ({})",
+                    c.newNonce,
+                    account.nonce()
+                );
+                account.override_nonce(c.newNonce);
+            }
+            Vm::VmCalls::setNonceUnsafe(c) => {
+                let mut account = host
+                    .state_mut()
+                    .account(&c.account, false)
+                    .map_err(|error| fmt_err!("native state access failed: {error:?}"))?;
+                account.warm();
+                account.touch();
+                account.override_nonce(c.newNonce);
+            }
             Vm::VmCalls::warp(c) => block.timestamp = c.newTimestamp,
             Vm::VmCalls::coinbase(c) => block.beneficiary = c.newCoinbase,
             Vm::VmCalls::fee(c) => {

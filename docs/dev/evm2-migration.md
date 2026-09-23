@@ -44,7 +44,7 @@ Use the Rust toolchain required by evm2 (currently at least 1.96).
 | --- | --- | --- |
 | Executor | Nonforked Ethereum calls, deployments, commits, cancellation | Isolation, replay, system calls and remaining envelope/configuration support |
 | Environment | warp, coinbase, fee, prevrandao, block/chain getters | Prague+ roll history updates and remaining environment cheatcodes |
-| State | load, store, nonce getters, ordinary etch | Direct balance/nonce mutation semantics; etch of history-storage account |
+| State | load, store, deal, nonce setters/getters, ordinary etch | Etch of history-storage account |
 | Inspection | Logs, console and shared assertions, including non-reverting assertions | Traces, debugger, coverage, fuzz, invariants and opcode-interest selection |
 | Sessions | Block updates, diagnostics, deprecation observations | Pranks, expectations, mocks, snapshot/fork lifecycle |
 | Core ownership | Lazy backend reads and transaction-delta conversion | Native persistent backend/results; delete factory/context/REVM adapters |
@@ -54,15 +54,13 @@ Unmigrated cheatcodes fail the execution even if Solidity catches their revert. 
 selectors retain Foundry's ordinary catchable error. No automatic fallback executes a
 rejected transaction through REVM.
 
-`deal` and nonce setters require deliberate compatibility work. On the pinned REVM
-reference, a previously loaded/touched account changed through `deal` and `setNonceUnsafe`
-inside a child retains those changes after the child reverts. Foundry mutates account
-metadata directly and separately repairs deals before top-level rollback. evm2's ordinary
-account setters record revert snapshots. Porting these cheatcodes as simple setter calls
-would therefore change behavior. `MutationProbe.t.sol` preserves the reference regression;
-it is intentionally excluded from candidate parity and timing runs until implemented.
-Keep these setters unsupported until the nested and top-level cases have an explicit,
-differentially tested implementation.
+`deal`, `setNonce` and `setNonceUnsafe` use native account overrides. Child rollback
+retains overrides while undoing earlier transfers and nonce bumps. Top-level failure
+restores recorded deal balances; coordination with future expectRevert and isolation
+support remains a TODO in the native inspector.
+
+`setEvmVersion` is intentionally unsupported for now, including when its revert is caught.
+Select a fixed hardfork before execution with `--evm-version`. No REVM fallback is used.
 
 ## Differential validation
 

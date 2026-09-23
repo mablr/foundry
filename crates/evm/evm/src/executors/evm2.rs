@@ -182,6 +182,12 @@ impl Inspector<BaseEvmTypes> for MigrationInspector<'_> {
             && let Some(config) = self.config
         {
             let result = match foundry_cheatcodes::decode_cheatcode(&message.input) {
+                Ok(foundry_cheatcodes::Vm::VmCalls::setEvmVersion(_)) => {
+                    // TODO(evm2): Restore live hardfork changes after compiled-entry guards are
+                    // complete.
+                    self.unsupported = Some("evm2: setEvmVersion is temporarily unsupported; select --evm-version before execution".into());
+                    None
+                }
                 Ok(call) => foundry_cheatcodes::native::dispatch(
                     &call,
                     interp.host(),
@@ -219,6 +225,34 @@ impl Inspector<BaseEvmTypes> for MigrationInspector<'_> {
             gas: GasTracker::new(message.gas_limit),
             ..Default::default()
         })
+    }
+
+    fn call_end(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        message: &Message<BaseEvmTypes>,
+        result: &mut MessageResult<BaseEvmTypes>,
+    ) {
+        if message.depth == 0 && !result.stop.is_success() {
+            // TODO(evm2): Coordinate cleanup with expectRevert and isolated execution when ported.
+            while let Some((address, balance)) = self.native.deals.pop() {
+                match interp.host().state_mut().account(&address, false) {
+                    Ok(mut account) => account.override_balance(balance),
+                    Err(error) => {
+                        self.unsupported = Some(format!("evm2: deal cleanup failed: {error:?}"));
+                    }
+                }
+            }
+        }
+    }
+
+    fn create_end(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        message: &Message<BaseEvmTypes>,
+        result: &mut MessageResult<BaseEvmTypes>,
+    ) {
+        self.call_end(interp, message, result);
     }
 }
 
@@ -428,6 +462,12 @@ mod tests {
     use super::*;
     use crate::executors::{EarlyExit, ExecutorBuilder};
     use alloy_primitives::bytes;
+    use alloy_sol_types::SolCall;
+    use evm2::{
+        env::TxEnvExt,
+        evm::InMemoryDB,
+        interpreter::{Host, MessageExt},
+    };
     use foundry_evm_core::constants::CALLER;
     use foundry_evm_networks::NetworkConfigs;
 
@@ -507,5 +547,41 @@ mod tests {
             result.state_changeset.get(&target).is_none_or(|account| account.storage.is_empty())
         );
         assert!(result.gas_used < 1_000_000);
+    }
+
+    #[test]
+    fn native_top_level_revert_restores_deal_balance() {
+        let target = Address::repeat_byte(0x11);
+        let mut db = InMemoryDB::default();
+        db.insert_account_info(&target, NativeAccount::default().with_balance(U256::from(100)));
+        let config = CheatsConfig::default();
+        let mut inspector = MigrationInspector { config: Some(&config), ..Default::default() };
+        let mut evm = Evm::<BaseEvmTypes>::new(
+            evm2::SpecId::CANCUN,
+            Default::default(),
+            ethereum_tx_registry(evm2::SpecId::CANCUN),
+            db,
+            Precompiles::base(evm2::SpecId::CANCUN),
+        );
+        evm.set_inspector(&mut inspector);
+        // Forward calldata to the cheatcode address, then revert the root frame.
+        let mut code = bytes!("365f5f375f5f365f5f73").to_vec();
+        code.extend_from_slice(CHEATCODE_ADDRESS.as_slice());
+        code.extend_from_slice(&[0x5a, 0xf1, 0x50, 0x5f, 0x5f, 0xfd]);
+        let mut message = MessageExt {
+            destination: Address::repeat_byte(0x22),
+            gas_limit: 100_000,
+            input: foundry_cheatcodes::Vm::dealCall {
+                account: target,
+                newBalance: U256::from(109),
+            }
+            .abi_encode()
+            .into(),
+            code: NativeBytecode::new_raw(code.into()),
+            ..Default::default()
+        };
+        let result = evm.execute_message(&TxEnvExt::default(), &mut message);
+        assert_eq!(result.stop, InstrStop::Revert);
+        assert_eq!(evm.state_mut().account(&target, false).unwrap().balance(), U256::from(100));
     }
 }
