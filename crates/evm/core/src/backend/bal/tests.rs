@@ -15,7 +15,6 @@ use revm::{
         either::Either,
         transaction::{Authorization, RecoveredAuthority, RecoveredAuthorization},
     },
-    database::DbAccount,
     primitives::hardfork::SpecId,
     state::{
         AccountInfo, Bytecode,
@@ -93,7 +92,7 @@ fn bal_commit_preserves_target_and_untouched_code() {
     let readonly = Address::repeat_byte(0x44);
     let missing = Address::repeat_byte(0x66);
     let mut backend = Backend::<EthEvmNetwork>::spawn(None).unwrap();
-    backend.mem_db.cache.accounts.insert(missing, DbAccount::new_not_existing());
+    backend.mem_db.cache.accounts.insert(missing, None);
     backend.insert_account_info(sender, AccountInfo { balance: U256::MAX, ..Default::default() });
     backend.insert_account_info(authority, AccountInfo::default());
     backend.insert_account_info(readonly, AccountInfo { nonce: 1, ..Default::default() });

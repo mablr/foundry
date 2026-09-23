@@ -5423,8 +5423,8 @@ impl<'a, FEN: FoundryEvmNetwork> FunctionRunner<'a, FEN> {
         if let Some(db) = self.executor.backend().active_fork_db() {
             EvmFuzzState::new(&self.setup.deployed_libs, db, config, Some(literals))
         } else {
-            let db = self.executor.backend().mem_db();
-            EvmFuzzState::new(&self.setup.deployed_libs, db, config, Some(literals))
+            let db = self.executor.backend().mem_db().legacy_snapshot();
+            EvmFuzzState::new(&self.setup.deployed_libs, &db, config, Some(literals))
         }
     }
 }

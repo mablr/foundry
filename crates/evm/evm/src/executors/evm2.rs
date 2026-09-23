@@ -41,6 +41,9 @@ impl<FEN: FoundryEvmNetwork> evm2::evm::Database for BackendReads<'_, FEN> {
     type Error = DatabaseError;
 
     fn get_account(&mut self, address: &Address) -> Result<Option<NativeAccount>, Self::Error> {
+        if !self.0.is_in_forking_mode() {
+            return Ok(self.0.mem_db().account(*address));
+        }
         Ok(self.0.basic_ref(*address)?.map(|info| NativeAccount {
             balance: info.balance,
             nonce: info.nonce,
@@ -51,6 +54,9 @@ impl<FEN: FoundryEvmNetwork> evm2::evm::Database for BackendReads<'_, FEN> {
     }
 
     fn get_code_by_hash(&mut self, hash: &B256) -> Result<NativeBytecode, Self::Error> {
+        if !self.0.is_in_forking_mode() {
+            return Ok(self.0.mem_db().code(*hash));
+        }
         self.0.code_by_hash_ref(*hash).map(|code| NativeBytecode::new_raw(code.original_bytes()))
     }
 

@@ -67,6 +67,9 @@ pub use cow::CowBackend;
 mod in_memory_db;
 pub use in_memory_db::{EmptyDBWrapper, FoundryEvmInMemoryDB, MemDb};
 
+mod native_db;
+pub use native_db::NativeDb;
+
 mod snapshot;
 pub use snapshot::{BackendStateSnapshot, RevertStateSnapshotAction, StateSnapshot};
 
@@ -637,8 +640,7 @@ pub struct Backend<FEN: FoundryEvmNetwork = EthEvmNetwork> {
     /// The access point for managing forks
     forks: MultiFork<AnyNetwork, SpecFor<FEN>, BlockEnvFor<FEN>>,
     // The default in memory db
-    // TODO(evm2): Replace the REVM cache; keep deferred Anvil storage separate from this backend.
-    mem_db: FoundryEvmInMemoryDB,
+    mem_db: NativeDb,
     /// The journaled_state to use to initialize new forks with
     ///
     /// The way [`JournaledState`] works is, that it holds the "hot" accounts loaded from the
@@ -724,7 +726,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         let mut backend = Self {
             networks: NetworkConfigs::default(),
             forks,
-            mem_db: CacheDB::new(Default::default()),
+            mem_db: NativeDb::default(),
             fork_init_journaled_state: inner.new_journaled_state(),
             active_fork_ids: None,
             fork_block_number_override: None,
@@ -792,7 +794,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         Self {
             networks: self.networks,
             forks: self.forks.clone(),
-            mem_db: CacheDB::new(Default::default()),
+            mem_db: NativeDb::default(),
             fork_init_journaled_state: self.inner.new_journaled_state(),
             active_fork_ids: None,
             fork_block_number_override: None,
@@ -845,7 +847,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         if let Some(db) = self.active_fork_db_mut() {
             db.replace_account_storage(address, storage.into_iter().collect())
         } else {
-            self.mem_db.replace_account_storage(address, storage.into_iter().collect())
+            self.mem_db.replace_account_storage(address, storage)
         }
     }
 
@@ -932,12 +934,17 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         if let Some(db) = self.active_fork_db() {
             merge_account_data(accounts, db, active_journaled_state, target_fork)
         } else {
-            merge_account_data(accounts, &self.mem_db, active_journaled_state, target_fork)
+            merge_account_data(
+                accounts,
+                &self.mem_db.legacy_snapshot(),
+                active_journaled_state,
+                target_fork,
+            )
         }
     }
 
     /// Returns the memory db used if not in forking mode
-    pub const fn mem_db(&self) -> &FoundryEvmInMemoryDB {
+    pub const fn mem_db(&self) -> &NativeDb {
         &self.mem_db
     }
 
@@ -971,10 +978,13 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         self.active_fork_mut().map(|f| &mut f.db)
     }
 
-    /// Persists native execution changes through the remaining legacy database boundary.
+    /// Persists native changes directly, with a temporary adapter for legacy forks.
     pub fn commit_native(&mut self, changes: crate::state_changes::StateChangeset) {
-        // TODO(evm2): Remove this conversion when the backing cache and fork database own native
-        // accounts.
+        if !self.is_in_forking_mode() {
+            self.mem_db.commit_native(changes);
+            return;
+        }
+        // TODO(evm2): Remove this conversion when fork databases own native accounts.
         let changes = changes
             .into_iter()
             .map(|(address, change)| {
@@ -1041,7 +1051,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
             let fork_id = self.inner.ensure_fork_id(id).cloned().expect("Exists; qed");
             BackendDatabaseSnapshot::Forked(id, fork_id, idx, Box::new(fork))
         } else {
-            BackendDatabaseSnapshot::InMemory(self.mem_db.clone())
+            BackendDatabaseSnapshot::InMemory(Box::new(self.mem_db.clone()))
         }
     }
 
@@ -2065,7 +2075,7 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
             let BackendStateSnapshot { db, mut journaled_state, snap_evm_env } = snapshot;
             match db {
                 BackendDatabaseSnapshot::InMemory(mem_db) => {
-                    self.mem_db = mem_db;
+                    self.mem_db = *mem_db;
                 }
                 BackendDatabaseSnapshot::Forked(id, fork_id, idx, mut fork) => {
                     // there might be the case where the snapshot was created during `setUp` with
@@ -2771,7 +2781,7 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN::EvmFactory> for Backend<FEN> {
         if let Some(db) = self.active_fork_db_mut() {
             db.cache.block_hashes.insert(block_number.saturating_to(), block_hash);
         } else {
-            self.mem_db.cache.block_hashes.insert(block_number.saturating_to(), block_hash);
+            self.mem_db.cache.block_hashes.insert(block_number, block_hash);
         }
     }
 }
@@ -2876,11 +2886,11 @@ impl<FEN: FoundryEvmNetwork> Database for Backend<FEN> {
     }
 }
 
-/// Variants of a [revm::Database]
+/// Persistent database snapshots.
 #[derive(Clone, Debug)]
 pub enum BackendDatabaseSnapshot<N: Network, B: ForkBlockEnv = BlockEnv> {
-    /// Simple in-memory [revm::Database]
-    InMemory(FoundryEvmInMemoryDB),
+    /// Native nonforked persistent state.
+    InMemory(Box<NativeDb>),
     /// Contains the entire forking mode database
     Forked(LocalForkId, ForkId, ForkLookupIndex, Box<Fork<N, B>>),
 }

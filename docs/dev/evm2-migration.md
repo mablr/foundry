@@ -48,7 +48,7 @@ Use the Rust toolchain required by evm2 (currently at least 1.96).
 | State | load, store, deal, nonce setters/getters, ordinary etch | Etch of history-storage account |
 | Inspection | Logs, console and shared assertions, including non-reverting assertions | Traces, debugger, coverage, fuzz, invariants and opcode-interest selection |
 | Sessions | Block updates, diagnostics, deprecation observations | Pranks, expectations, mocks, snapshot/fork lifecycle |
-| Core ownership | Native transaction state changes and lazy backend reads | Native persistent backend; delete factory/context/REVM adapters |
+| Core ownership | Native transaction state changes and nonforked persistent cache | Native fork backend; delete factory/context/REVM adapters |
 | Tools | Bounded Forge test and local Script E2E | Broadcast, simulation, Cast and Chisel compatibility |
 
 Unmigrated cheatcodes fail the execution even if Solidity catches their revert. Unknown
@@ -136,6 +136,9 @@ Canonical envelopes and BAL replay still require migration; unsupported inputs f
 rather than invoking a REVM fallback. Native Rust sancov collection wraps evm2 execution.
 
 Transaction state changes carry evm2 account metadata and owned storage deltas through
-executor and fuzz consumers. `Backend::commit_native` is the remaining conversion into
-the REVM cache; it must disappear when persistent backend ownership moves to evm2.
+executor and fuzz consumers. Nonforked persistent state now lives in an evm2 cache,
+with native account/code reads and commits. Temporary REVM database traits adapt
+unmigrated callers; fork persistence still uses the legacy cache. Fork transfer and fuzz
+dictionary initialization temporarily export a legacy snapshot instead of maintaining
+a second persistent database.
 Anvil retains its separate REVM state type while its migration is deferred.
