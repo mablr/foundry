@@ -32,6 +32,9 @@ pub use env::*;
 pub mod backend;
 pub mod buffer;
 pub mod bytecode;
+pub mod config;
+pub use config::ExecutionConfig;
+
 pub mod constants;
 pub mod decode;
 pub mod eip2935;

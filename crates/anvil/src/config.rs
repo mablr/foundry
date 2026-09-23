@@ -2202,15 +2202,14 @@ latest block number: {latest_block}"
         let block_hash = block.header.hash;
 
         // Apply changes such as difficulty -> prevrandao for the remote source chain.
-        let mut env =
-            foundry_evm::core::EvmEnv::new(evm_env.cfg_env.clone(), evm_env.block_env.clone());
+        let mut env = crate::evm::foundry_replay_env(evm_env);
         apply_chain_and_block_specific_env_changes_for_chain::<AnyNetwork, _, _>(
             &mut env,
             &block,
             source_chain_id,
             self.networks,
         );
-        *evm_env = alloy_evm::EvmEnv::new(env.cfg_env, env.block_env);
+        crate::evm::apply_foundry_replay_env(evm_env, env);
 
         for mirror_url in self.fork_urls.iter().skip(1) {
             if !self

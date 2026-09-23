@@ -1,5 +1,5 @@
 use crate::{
-    EvmEnv, FoundryBlock, FoundryTransaction,
+    EvmEnv, ExecutionConfig, FoundryBlock, FoundryTransaction,
     constants::DEFAULT_CREATE2_DEPLOYER,
     fork::{CreateFork, ResolvedFork},
     utils::{apply_chain_and_block_specific_env_changes_for_chain, block_env_from_header},
@@ -21,7 +21,7 @@ use foundry_common::{
 use foundry_compilers::artifacts::EvmVersion;
 use foundry_config::{Chain, Config, ExecutionSpec, FoundryHardfork, GasLimit};
 use foundry_evm_networks::{NetworkConfigs, NetworkVariant};
-use revm::{context::CfgEnv, primitives::hardfork::SpecId};
+use revm::primitives::hardfork::SpecId;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 use url::Url;
@@ -1284,24 +1284,23 @@ impl EvmOpts {
         tx_env
     }
 
-    /// Builds a [`CfgEnv`] from the options, using the provided [`ChainId`].
-    fn cfg_env<SPEC: Into<SpecId> + Default + Clone>(&self, chain_id: ChainId) -> CfgEnv<SPEC> {
-        let mut cfg = CfgEnv::default();
-        cfg.chain_id = chain_id;
-        cfg.memory_limit = self.memory_limit;
-        cfg.limit_contract_code_size = self.env.code_size_limit.or(Some(usize::MAX));
-        // EIP-3607 rejects transactions from senders with deployed code.
-        // If EIP-3607 is enabled it can cause issues during fuzz/invariant tests if the caller
-        // is a contract. So we disable the check by default.
-        cfg.disable_eip3607 = true;
-        cfg.disable_block_gas_limit = self.disable_block_gas_limit;
-        cfg.disable_nonce_check = true;
-        // By default do not enforce transaction gas limits imposed by Osaka (EIP-7825).
-        // Users can opt-in to enable these limits by setting `enable_tx_gas_limit` to true.
-        if !self.enable_tx_gas_limit {
-            cfg.tx_gas_limit_cap = Some(u64::MAX);
+    /// Builds an [`ExecutionConfig`] from the options, using the provided [`ChainId`].
+    fn cfg_env<SPEC: Into<SpecId> + Default + Clone>(
+        &self,
+        chain_id: ChainId,
+    ) -> ExecutionConfig<SPEC> {
+        ExecutionConfig {
+            chain_id,
+            memory_limit: self.memory_limit,
+            limit_contract_code_size: self.env.code_size_limit.or(Some(usize::MAX)),
+            // Contract senders and arbitrary nonces are valid in test execution.
+            disable_eip3607: true,
+            disable_nonce_check: true,
+            disable_block_gas_limit: self.disable_block_gas_limit,
+            // Osaka transaction limits are opt-in for synthetic execution.
+            tx_gas_limit_cap: (!self.enable_tx_gas_limit).then_some(u64::MAX),
+            ..Default::default()
         }
-        cfg
     }
 
     /// Helper function that returns the [CreateFork] to use, if any.
@@ -1502,7 +1501,7 @@ where
         let spec = SPEC::from_evm_version(evm_version);
         (spec, spec.reported_hardfork())
     };
-    evm_env.cfg_env.set_spec_and_mainnet_gas_params(spec);
+    evm_env.cfg_env.set_spec(spec);
     hardfork
 }
 
@@ -1912,7 +1911,7 @@ mod tests {
     fn monad_env(timestamp: u64) -> EvmEnv<foundry_evm_hardforks::MonadHardfork, BlockEnv> {
         let mut block = BlockEnv::default();
         block.set_timestamp(U256::from(timestamp));
-        let mut cfg = CfgEnv::new_with_spec(foundry_evm_hardforks::MonadHardfork::default());
+        let mut cfg = ExecutionConfig::new(foundry_evm_hardforks::MonadHardfork::default());
         cfg.chain_id = NamedChain::Monad as u64;
         EvmEnv::new(cfg, block)
     }
@@ -2007,7 +2006,7 @@ mod tests {
         let config = Config::default();
         let mut block = BlockEnv::default();
         block.set_timestamp(U256::from(1_500_000_000u64));
-        let mut env = EvmEnv::new(CfgEnv::new_with_spec(SpecId::LONDON), block);
+        let mut env = EvmEnv::new(ExecutionConfig::new(SpecId::LONDON), block);
 
         assert_eq!(
             resolve_execution_spec(
@@ -2045,7 +2044,7 @@ mod tests {
                 .unwrap();
         let mut block = BlockEnv::default();
         block.set_timestamp(U256::from(timestamp));
-        let mut env = EvmEnv::new(CfgEnv::new_with_spec(SpecId::LONDON), block);
+        let mut env = EvmEnv::new(ExecutionConfig::new(SpecId::LONDON), block);
 
         assert_eq!(
             resolve_execution_spec(
@@ -2071,7 +2070,7 @@ mod tests {
         let expected = FoundryHardfork::from_chain_and_timestamp(chain_id, timestamp).unwrap();
         let mut block = BlockEnv::default();
         block.set_timestamp(U256::from(timestamp));
-        let mut env = EvmEnv::new(CfgEnv::new_with_spec(OpSpecId::default()), block);
+        let mut env = EvmEnv::new(ExecutionConfig::new(OpSpecId::default()), block);
 
         assert_eq!(
             resolve_execution_spec(
@@ -2093,7 +2092,7 @@ mod tests {
         let config = Config { evm_version: EvmVersion::Osaka, ..Default::default() };
         let mut block = BlockEnv::default();
         block.set_timestamp(U256::from(u64::MAX));
-        let mut env = EvmEnv::new(CfgEnv::new_with_spec(OpSpecId::default()), block);
+        let mut env = EvmEnv::new(ExecutionConfig::new(OpSpecId::default()), block);
 
         assert_eq!(
             resolve_execution_spec(

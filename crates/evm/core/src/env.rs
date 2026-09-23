@@ -1,10 +1,11 @@
+use crate::ExecutionConfig;
 use alloy_chains::NamedChain;
 use alloy_consensus::{Transaction as _, Typed2718};
 use alloy_network::{AnyRpcTransaction, AnyTxEnvelope, TransactionResponse};
 use alloy_primitives::{Address, B256, Bytes, U256};
 use foundry_evm_networks::celo::CELO_DYNAMIC_FEE_TX_TYPE;
 use revm::{
-    context::{Block, BlockEnv, CfgEnv, Transaction, TxEnv},
+    context::{Block, BlockEnv, Transaction, TxEnv},
     context_interface::{
         either::Either,
         transaction::{AccessList, RecoveredAuthorization, SignedAuthorization},
@@ -23,22 +24,22 @@ use op_revm::transaction::deposit::DEPOSIT_TRANSACTION_TYPE;
 
 /// Foundry-owned execution configuration, independent of an EVM factory.
 ///
-/// TODO(evm2): Replace the remaining REVM configuration and block fields with native inputs.
+/// TODO(evm2): Replace the remaining REVM spec and block fields with native inputs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EvmEnv<Spec = SpecId, B = BlockEnv> {
-    pub cfg_env: CfgEnv<Spec>,
+    pub cfg_env: ExecutionConfig<Spec>,
     pub block_env: B,
 }
 
 impl<Spec, B> EvmEnv<Spec, B> {
-    pub const fn new(cfg_env: CfgEnv<Spec>, block_env: B) -> Self {
+    pub const fn new(cfg_env: ExecutionConfig<Spec>, block_env: B) -> Self {
         Self { cfg_env, block_env }
     }
 }
 
-impl<Spec: Default + Into<SpecId> + Clone, B: Default> Default for EvmEnv<Spec, B> {
+impl<Spec: Default, B: Default> Default for EvmEnv<Spec, B> {
     fn default() -> Self {
-        Self::new(CfgEnv::new_with_spec(Spec::default()), B::default())
+        Self::new(ExecutionConfig::default(), B::default())
     }
 }
 

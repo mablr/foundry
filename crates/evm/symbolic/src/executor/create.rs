@@ -1,4 +1,5 @@
 use super::*;
+use foundry_evm::core::{ExecutionConfig, native};
 
 impl SymbolicExecutor {
     pub(super) fn create<FEN: FoundryEvmNetwork>(
@@ -205,14 +206,14 @@ impl SymbolicExecutor {
     }
 }
 
-fn runtime_exceeds_code_size_limit(
-    cfg: &impl Cfg,
+fn runtime_exceeds_code_size_limit<S: Copy + Into<SpecId>>(
+    cfg: &ExecutionConfig<S>,
     spec_id: SpecId,
     runtime: &SymReturnData,
 ) -> bool {
     spec_id >= SpecId::SPURIOUS_DRAGON
         && !runtime.has_symbolic_len()
-        && runtime.len() > cfg.max_code_size()
+        && runtime.len() > cfg.version(native::spec_id(cfg.spec.into())).max_code_size
 }
 
 fn runtime_has_rejected_prefix(
@@ -233,13 +234,12 @@ fn runtime_has_rejected_prefix(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use foundry_evm::revm::context::CfgEnv;
 
     #[test]
     fn runtime_code_limit_uses_fork_default_without_override() {
         let mut cx = SymCx::default();
         let runtime = SymReturnData::from_concrete_bytes(&mut cx, vec![0; 24_577]);
-        let cfg = CfgEnv::<SpecId>::default();
+        let cfg = ExecutionConfig::<SpecId>::default();
 
         assert!(runtime_exceeds_code_size_limit(&cfg, SpecId::SHANGHAI, &runtime));
         assert!(!runtime_exceeds_code_size_limit(&cfg, SpecId::HOMESTEAD, &runtime));

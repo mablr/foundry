@@ -19,17 +19,37 @@ pub trait PrecompileFactory: Send + Sync + Unpin + Debug {
     }
 }
 
+/// Projects only the metadata read by Foundry's shared replay normalization helpers.
+/// Anvil keeps its full REVM configuration, including custom gas parameters.
+pub(crate) fn foundry_replay_env(env: &alloy_evm::EvmEnv) -> foundry_evm::core::EvmEnv {
+    foundry_evm::core::EvmEnv::new(
+        foundry_evm::core::ExecutionConfig {
+            spec: env.cfg_env.spec,
+            chain_id: env.cfg_env.chain_id,
+            disable_priority_fee_check: env.cfg_env.disable_priority_fee_check,
+            ..Default::default()
+        },
+        env.block_env.clone(),
+    )
+}
+
+/// Publishes shared replay metadata changes without replacing Anvil's execution configuration.
+pub(crate) const fn apply_foundry_replay_env(
+    env: &mut alloy_evm::EvmEnv,
+    updated: foundry_evm::core::EvmEnv,
+) {
+    env.cfg_env.chain_id = updated.cfg_env.chain_id;
+    env.cfg_env.disable_priority_fee_check = updated.cfg_env.disable_priority_fee_check;
+    env.block_env = updated.block_env;
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::convert::Infallible;
 
-    use crate::PrecompileFactory;
-    use alloy_evm::{
-        EthEvm, Evm,
-        eth::EthEvmContext,
-        precompiles::{DynPrecompile, PrecompilesMap},
-    };
-    use alloy_primitives::{Address, Bytes, TxKind, address};
+    use alloy_evm::{EthEvm, Evm, eth::EthEvmContext};
+    use alloy_primitives::{Bytes, TxKind, address};
     use itertools::Itertools;
     use revm::{
         Journal,
@@ -202,5 +222,24 @@ mod tests {
         let result = evm.transact(tx_env).unwrap();
         assert!(result.result.is_success());
         assert_eq!(result.result.output(), Some(&PAYLOAD.into()));
+    }
+
+    #[test]
+    fn replay_metadata_preserves_legacy_execution_configuration() {
+        let mut env = alloy_evm::EvmEnv::default();
+        env.cfg_env.gas_params =
+            revm::context_interface::cfg::GasParams::new_spec(SpecId::HOMESTEAD);
+        env.cfg_env.limit_contract_code_size = Some(40_000);
+        env.cfg_env.disable_fee_charge = true;
+        let mut expected = env.cfg_env.clone();
+        let mut replay = foundry_replay_env(&env);
+        replay.cfg_env.chain_id = 42;
+        replay.cfg_env.disable_priority_fee_check = true;
+        replay.block_env.number = alloy_primitives::U256::from(12);
+        apply_foundry_replay_env(&mut env, replay);
+        expected.chain_id = 42;
+        expected.disable_priority_fee_check = true;
+        assert_eq!(env.cfg_env, expected);
+        assert_eq!(env.block_env.number, alloy_primitives::U256::from(12));
     }
 }

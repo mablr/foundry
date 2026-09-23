@@ -208,3 +208,8 @@ Executor account setup, balance/nonce updates, code installation and prestate im
 use native account metadata and bytecode. Nonforked setup no longer round-trips through
 REVM account types. This does not yet remove the legacy configuration, cheatcode and
 observer dependencies from Forge.
+
+Execution configuration now stores Foundry overrides and derives native evm2 versions;
+it no longer embeds REVM CfgEnv or its gas table. Anvil keeps its complete legacy configuration
+and applies only shared replay metadata changes. The network spec association and block/transaction
+types remain legacy boundaries; unsupported execution modes are still rejected explicitly.

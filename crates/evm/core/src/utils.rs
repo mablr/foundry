@@ -242,9 +242,10 @@ pub fn get_function<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ExecutionConfig;
     use alloy_network::{AnyHeader, AnyNetwork, AnyRpcBlock, AnyRpcHeader};
     use alloy_rpc_types::{Block, BlockTransactions};
-    use revm::context::{BlockEnv, CfgEnv};
+    use revm::context::BlockEnv;
 
     #[test]
     fn block_env_preserves_slot_number() {
@@ -267,8 +268,10 @@ mod tests {
         );
         block.other.insert("l1BlockNumber".to_string(), serde_json::json!("0x64"));
 
-        let mut cfg_env = CfgEnv::<SpecId>::default();
-        cfg_env.chain_id = NamedChain::Mainnet as u64;
+        let cfg_env = ExecutionConfig::<SpecId> {
+            chain_id: NamedChain::Mainnet as u64,
+            ..Default::default()
+        };
         let mut evm_env = EvmEnv {
             cfg_env,
             block_env: BlockEnv { number: U256::from(500), ..Default::default() },
@@ -300,7 +303,7 @@ mod tests {
             )
             .into(),
         );
-        let mut evm_env = EvmEnv::new(CfgEnv::<SpecId>::default(), BlockEnv::default());
+        let mut evm_env = EvmEnv::new(ExecutionConfig::<SpecId>::default(), BlockEnv::default());
         // The execution chain id can be overridden; the blob schedule follows the source chain.
         evm_env.cfg_env.chain_id = 1337;
 
@@ -326,7 +329,7 @@ mod tests {
             )
             .into(),
         );
-        let mut evm_env = EvmEnv::new(CfgEnv::<SpecId>::default(), BlockEnv::default());
+        let mut evm_env = EvmEnv::new(ExecutionConfig::<SpecId>::default(), BlockEnv::default());
 
         apply_chain_and_block_specific_env_changes_for_chain::<AnyNetwork, _, _>(
             &mut evm_env,
@@ -352,7 +355,7 @@ mod tests {
             .into(),
         );
         let mut evm_env = EvmEnv::new(
-            CfgEnv::<SpecId>::default(),
+            ExecutionConfig::<SpecId>::default(),
             BlockEnv { prevrandao: None, ..Default::default() },
         );
 
@@ -393,7 +396,7 @@ mod tests {
                 .into(),
             );
             let mut evm_env = EvmEnv::new(
-                CfgEnv::<SpecId>::default(),
+                ExecutionConfig::<SpecId>::default(),
                 BlockEnv {
                     difficulty: U256::from(1),
                     prevrandao: Some(mix_hash),
@@ -418,10 +421,8 @@ mod tests {
 
     #[test]
     fn tx_replay_env_changes_disable_priority_fee_check_only_for_arbitrum() {
-        let mut evm_env = EvmEnv::new(
-            revm::context::CfgEnv::<SpecId>::default(),
-            revm::context::BlockEnv::default(),
-        );
+        let mut evm_env =
+            EvmEnv::new(ExecutionConfig::<SpecId>::default(), revm::context::BlockEnv::default());
         evm_env.cfg_env.chain_id = NamedChain::Arbitrum as u64;
 
         apply_chain_specific_tx_replay_env_changes(&mut evm_env);
@@ -436,10 +437,8 @@ mod tests {
 
     #[test]
     fn tx_replay_env_changes_use_source_chain() {
-        let mut evm_env = EvmEnv::new(
-            revm::context::CfgEnv::<SpecId>::default(),
-            revm::context::BlockEnv::default(),
-        );
+        let mut evm_env =
+            EvmEnv::new(ExecutionConfig::<SpecId>::default(), revm::context::BlockEnv::default());
         evm_env.cfg_env.chain_id = NamedChain::Mainnet as u64;
 
         apply_chain_specific_tx_replay_env_changes_for_chain(

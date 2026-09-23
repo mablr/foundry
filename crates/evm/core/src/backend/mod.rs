@@ -1515,7 +1515,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
         {
             let preserved_spec = evm_env.cfg_env.spec;
             *evm_env = fork_env;
-            evm_env.cfg_env.set_spec_and_mainnet_gas_params(preserved_spec);
+            evm_env.cfg_env.set_spec(preserved_spec);
 
             let persistent_accounts = self.inner.persistent_accounts.clone();
             let caller = self.inner.caller;
@@ -1600,7 +1600,7 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
             if affects_active {
                 let preserved_spec = staged_evm_env.cfg_env.spec;
                 staged_evm_env = fork_env;
-                staged_evm_env.cfg_env.set_spec_and_mainnet_gas_params(preserved_spec);
+                staged_evm_env.cfg_env.set_spec(preserved_spec);
                 Self::populate_rolled_active_fork(
                     &mut staged_fork.fork,
                     &self.inner.persistent_accounts,
@@ -2165,7 +2165,7 @@ impl<FEN: FoundryEvmNetwork> DatabaseExt<FEN> for Backend<FEN> {
         let preserved_spec = evm_env.cfg_env.spec;
         tx_env.set_chain_id(Some(fork_evm_env.cfg_env.chain_id));
         *evm_env = fork_evm_env;
-        evm_env.cfg_env.set_spec_and_mainnet_gas_params(preserved_spec);
+        evm_env.cfg_env.set_spec(preserved_spec);
 
         /* EVM2 migration: disabled non-Ethereum execution.
         #[cfg(feature = "monad")]
@@ -3354,7 +3354,7 @@ mod tests {
                 rpc_transaction(sender, 0, 0, 200_000, recorder, B256::with_last_byte(1)),
                 rpc_transaction(sender, 1, 0, 21_000, recorder, target),
             ]);
-            let mut cfg = revm::context::CfgEnv::new_with_spec(BaseSpecId::new(BaseUpgrade::Beryl));
+            let mut cfg = crate::ExecutionConfig::new(BaseSpecId::new(BaseUpgrade::Beryl));
             cfg.chain_id = chain_id;
             let result = Backend::<BaseEvmNetwork>::replay_until(
                 &mut fork,
@@ -3640,7 +3640,7 @@ mod tests {
                     fork_id: ForkId::new("http://localhost", Some(0)),
                     forks: MultiFork::spawn(),
                     evm_env: EvmEnv::new(
-                        revm::context::CfgEnv::new_with_spec(MonadHardfork::MonadNine),
+                        crate::ExecutionConfig::new(MonadHardfork::MonadNine),
                         BlockEnv::default(),
                     ),
                     networks: if with_context {
@@ -3939,7 +3939,7 @@ mod tests {
     #[test]
     fn fork_block_env_updates_slot_number() {
         let mut evm_env =
-            EvmEnv::new(revm::context::CfgEnv::<SpecId>::default(), BlockEnv::default());
+            EvmEnv::new(crate::ExecutionConfig::<SpecId>::default(), BlockEnv::default());
         for slot_number in [Some(42), Some(u64::MAX), None, Some(0)] {
             let header = AnyHeader { slot_number, ..Default::default() };
             let block = AnyRpcBlock::new(
@@ -3971,7 +3971,7 @@ mod tests {
         );
         block.other.insert("l1BlockNumber".to_string(), serde_json::json!("0x10276d3"));
         let mut evm_env =
-            EvmEnv::new(revm::context::CfgEnv::<SpecId>::default(), BlockEnv::default());
+            EvmEnv::new(crate::ExecutionConfig::<SpecId>::default(), BlockEnv::default());
 
         update_env_block::<AnyNetwork, _, _>(
             &mut evm_env,

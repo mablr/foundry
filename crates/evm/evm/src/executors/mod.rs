@@ -428,7 +428,7 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
 
     /// Sets the EVM spec and updates spec-dependent gas parameters.
     pub fn set_spec_id(&mut self, spec_id: SpecFor<FEN>) {
-        self.evm_env.cfg_env.set_spec_and_mainnet_gas_params(spec_id);
+        self.evm_env.cfg_env.set_spec(spec_id);
     }
 
     /// Returns the gas limit for calls and deployments.
@@ -1736,11 +1736,12 @@ pub fn should_ignore_revert(
 mod tests {
     use super::*;
     use crate::inspectors::{EdgeCovHit, EdgeKey};
+    use ::evm2::{EvmFeatures, SpecId as NativeSpecId, constants::MAX_CODE_SIZE_AMSTERDAM};
     use foundry_cheatcodes::{CheatsConfig, Vm::mockCallRevert_1Call};
     use foundry_config::Config;
     use foundry_evm_core::{constants::MAGIC_SKIP, opts::EvmOpts};
     use foundry_evm_traces::InternalTraceMode;
-    use revm::context::{Cfg, TxEnv};
+    use revm::context::TxEnv;
     use std::{sync::mpsc, thread};
 
     /* EVM2 migration: disabled non-Ethereum execution.
@@ -2211,21 +2212,14 @@ mod tests {
             NetworkConfigs::default(),
         );
 
-        executor.evm_env_mut().cfg_env.set_spec_and_mainnet_gas_params(SpecId::HOMESTEAD);
-        assert_eq!(
-            executor.evm_env().cfg_env.gas_params(),
-            &revm::context_interface::cfg::GasParams::new_spec(SpecId::HOMESTEAD),
-        );
-        assert!(!executor.evm_env().cfg_env.is_amsterdam_eip8037_enabled());
-
+        executor.evm_env_mut().cfg_env.set_spec(SpecId::HOMESTEAD);
+        let before = executor.evm_env().cfg_env.version(NativeSpecId::HOMESTEAD);
+        assert!(!before.features.contains(EvmFeatures::EIP8037));
         executor.set_spec_id(SpecId::AMSTERDAM);
-
         assert_eq!(executor.spec_id(), SpecId::AMSTERDAM);
-        assert_eq!(
-            executor.evm_env().cfg_env.gas_params(),
-            &revm::context_interface::cfg::GasParams::new_spec(SpecId::AMSTERDAM),
-        );
-        assert!(executor.evm_env().cfg_env.is_amsterdam_eip8037_enabled());
+        let after = executor.evm_env().cfg_env.version(NativeSpecId::AMSTERDAM);
+        assert!(after.features.contains(EvmFeatures::EIP8037));
+        assert_eq!(after.max_code_size, MAX_CODE_SIZE_AMSTERDAM);
     }
 
     // TODO(evm2): Restore intercepted-CREATE gas coverage when Amsterdam execution is supported.

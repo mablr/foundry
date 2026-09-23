@@ -544,9 +544,9 @@ impl RunArgs {
             None,
         )?;
 
-        evm_env.cfg_env.set_spec_and_mainnet_gas_params(executor.spec_id());
+        evm_env.cfg_env.set_spec(executor.spec_id());
 
-        let spec_id = (*evm_env.cfg_env.spec()).into();
+        let spec_id = evm_env.cfg_env.spec.into();
 
         if let Some(parent_beacon_block_root) =
             parent_beacon_block_root_for_network(networks, spec_id, parent_beacon_block_root)
