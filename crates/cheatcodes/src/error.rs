@@ -8,7 +8,6 @@ use foundry_config::UnresolvedEnvVarError;
 use foundry_evm_core::backend::{BackendError, DatabaseError};
 use foundry_wallets::error::WalletSignerError;
 use k256::ecdsa::signature::Error as SignatureError;
-use revm::context_interface::result::EVMError;
 use std::{borrow::Cow, fmt};
 
 /// Cheatcode result type.
@@ -25,18 +24,6 @@ macro_rules! fmt_err {
     };
     ($fmt:expr, $($arg:tt)*) => {
         $crate::Error::fmt(::std::format_args!($fmt, $($arg)*))
-    };
-}
-
-macro_rules! bail {
-    ($msg:literal $(,)?) => {
-        return ::std::result::Result::Err(fmt_err!($msg))
-    };
-    ($err:expr $(,)?) => {
-        return ::std::result::Result::Err(fmt_err!($err))
-    };
-    ($fmt:expr, $($arg:tt)*) => {
-        return ::std::result::Result::Err(fmt_err!($fmt, $($arg)*))
     };
 }
 
@@ -278,12 +265,6 @@ impl_from!(
     SignerError,
     WalletSignerError,
 );
-
-impl<T: Into<BackendError>> From<EVMError<T>> for Error {
-    fn from(err: EVMError<T>) -> Self {
-        Self::display(BackendError::from(err))
-    }
-}
 
 impl From<eyre::Report> for Error {
     fn from(err: eyre::Report) -> Self {

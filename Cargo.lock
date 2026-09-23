@@ -2519,15 +2519,6 @@ dependencies = [
 
 [[package]]
 name = "block-buffer"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4152116fd6e9dadb291ae18fc1ec3575ed6d84c29642d97890f4b4a3417297e4"
-dependencies = [
- "generic-array",
-]
-
-[[package]]
-name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
@@ -3956,19 +3947,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "curve25519-dalek-ng"
-version = "4.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c359b7249347e46fb28804470d071c921156ad62b3eef5d34e2ba867533dec8"
-dependencies = [
- "byteorder",
- "digest 0.9.0",
- "rand_core 0.6.4",
- "subtle-ng",
- "zeroize",
-]
-
-[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4453,21 +4431,6 @@ dependencies = [
  "serdect 0.4.3",
  "signature 3.0.0",
  "spki 0.8.0",
- "zeroize",
-]
-
-[[package]]
-name = "ed25519-consensus"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c8465edc8ee7436ffea81d21a019b16676ee3db267aa8d5a8d729581ecf998b"
-dependencies = [
- "curve25519-dalek-ng",
- "hex",
- "rand_core 0.6.4",
- "serde",
- "sha2 0.9.9",
- "thiserror 1.0.69",
  "zeroize",
 ]
 
@@ -5297,57 +5260,32 @@ dependencies = [
 name = "foundry-cheatcodes"
 version = "1.8.4"
 dependencies = [
- "alloy-chains",
  "alloy-consensus",
  "alloy-dyn-abi",
- "alloy-ens",
- "alloy-evm",
- "alloy-genesis",
- "alloy-json-abi",
  "alloy-network",
  "alloy-primitives",
- "alloy-provider",
- "alloy-rlp",
- "alloy-rpc-types",
  "alloy-signer",
  "alloy-signer-local",
  "alloy-sol-types",
- "base64 0.23.1",
- "dialoguer",
- "ecdsa 0.16.9",
- "ed25519-consensus",
  "evm2",
  "eyre",
- "forge-script-sequence",
  "foundry-cheatcodes-spec",
  "foundry-common",
  "foundry-compilers",
  "foundry-config",
  "foundry-evm-core",
- "foundry-evm-fuzz",
  "foundry-evm-traces",
  "foundry-wallets",
  "itertools 0.15.0",
  "jsonpath_lib",
  "k256 0.13.4",
- "memchr",
- "p256 0.13.2",
  "parking_lot",
  "proptest",
- "rand 0.9.5",
- "revm",
- "revm-inspectors",
- "semver 1.0.28",
- "serde",
  "serde_json",
  "solar-compiler",
  "tempfile",
- "tempo-contracts",
- "tempo-primitives",
  "thiserror 2.0.20",
- "toml",
  "tracing",
- "walkdir",
 ]
 
 [[package]]
@@ -10979,19 +10917,6 @@ dependencies = [
 
 [[package]]
 name = "sha2"
-version = "0.9.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d58a1e1bf39749807d89cf2d98ac2dfa0ff1cb3faa38fbb64dd88ac8013d800"
-dependencies = [
- "block-buffer 0.9.0",
- "cfg-if",
- "cpufeatures 0.2.17",
- "digest 0.9.0",
- "opaque-debug",
-]
-
-[[package]]
-name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
@@ -11670,12 +11595,6 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
-
-[[package]]
-name = "subtle-ng"
-version = "2.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "734676eb262c623cec13c3155096e08d1f8f29adce39ba17948b18dad1e54142"
 
 [[package]]
 name = "sval"

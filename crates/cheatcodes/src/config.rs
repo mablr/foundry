@@ -84,7 +84,7 @@ impl CheatsConfig {
         batch_rewrite_creates: bool,
     ) -> Self {
         let rpc_endpoints = config.rpc_endpoints.clone().resolved();
-        trace!(?rpc_endpoints, "using resolved rpc endpoints");
+        tracing::trace!(?rpc_endpoints, "using resolved rpc endpoints");
 
         let artifact_lookup = available_artifacts.clone();
         // If user explicitly disabled safety checks, do not set available_artifacts.

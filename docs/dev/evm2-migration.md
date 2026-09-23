@@ -4,9 +4,12 @@ This working branch reduces the execution surface before replacing REVM with EVM
 Ordinary executor calls and transactions now run natively through evm2.
 The surrounding backend and execution configuration still contain REVM compatibility adapters.
 Transaction state changes now own native evm2 account metadata.
-Native assertion evaluation no longer uses the legacy `Cheatcode` execution trait.
-The legacy dispatcher still compiles and delegates assertions to the same evaluator;
-removing its remaining session/context dependencies is the next deletion boundary.
+Native cheatcodes now use a data-only session and native dispatch. The legacy
+`Cheatcode` trait, `CheatsCtxt`, `CheatcodesExecutor` and REVM inspector implementation
+are no longer compiled. The cheatcode crate has no direct REVM, alloy-evm or
+revm-inspectors dependency; its core/configuration/trace dependencies still pull legacy
+engine types transitively. Session block types remain part of that next migration boundary.
+Unported handler source remains on disk for reference, outside the module tree.
 
 `EthEvmNetwork` is the only compiled Foundry EVM network implementation. The existing
 generic executor, backend, inspector, journal, and cheatcode interfaces remain so the
@@ -51,7 +54,7 @@ Use the Rust toolchain required by evm2 (currently at least 1.96).
 | State | load, store, deal, nonce setters/getters, ordinary etch | Etch of history-storage account |
 | Inspection | Logs, console and shared assertions, including non-reverting assertions | Traces, debugger, coverage, fuzz, invariants and opcode-interest selection |
 | Sessions | Block updates, diagnostics, deprecation observations | Pranks, expectations, mocks, snapshot/fork lifecycle |
-| Core ownership | Native transaction state changes and nonforked persistent cache | Native fork backend; delete factory/context/REVM adapters |
+| Core ownership | Native transaction state changes, nonforked persistent cache, fork RPC database and cheatcode session | Native fork write cache; delete factory/context/REVM adapters |
 | Tools | Bounded Forge test and local Script E2E | Broadcast, simulation, Cast and Chisel compatibility |
 
 Unmigrated cheatcodes fail the execution even if Solidity catches their revert. Unknown
