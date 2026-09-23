@@ -39,6 +39,7 @@ use foundry_evm_core::{
     },
     evm::FoundryEvmNetwork,
     precompiles::PRECOMPILES,
+    state_changes::AccountChange,
 };
 use foundry_evm_coverage::HitMaps;
 use foundry_evm_fuzz::{
@@ -58,7 +59,6 @@ use proptest::{
 };
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use result::{assert_after_invariant, can_continue, invariant_preflight_check};
-use revm::state::Account;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -2268,7 +2268,7 @@ impl<'a, FEN: FoundryEvmNetwork> InvariantExecutor<'a, FEN> {
 /// randomly generated addresses.
 fn collect_data<FEN: FoundryEvmNetwork>(
     invariant_test: &InvariantTest,
-    state_changeset: &mut AddressMap<Account>,
+    state_changeset: &mut AddressMap<AccountChange>,
     tx: &BasicTxDetails,
     call_result: &RawCallResult<FEN>,
     run_depth: u32,

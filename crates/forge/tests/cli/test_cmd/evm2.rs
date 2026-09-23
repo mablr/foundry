@@ -169,3 +169,19 @@ Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
 
 "#]]);
 });
+
+forgetest!(evm2_native_script, |prj, cmd| {
+    let script = prj.add_script("Native.s.sol", include_str!("../../fixtures/evm2/Native.s.sol"));
+    cmd.args(["script", "--no-isolate", "--evm-version", "cancun"])
+        .arg(format!("{}:NativeScript", script.display()))
+        .assert_success()
+        .stdout_eq(str![[r#"
+...
+Script ran successfully.
+[GAS]
+
+== Return ==
+0: uint256 42
+
+"#]]);
+});

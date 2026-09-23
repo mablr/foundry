@@ -2,7 +2,8 @@
 
 This working branch reduces the execution surface before replacing REVM with EVM2.
 Ordinary executor calls and transactions now run natively through evm2.
-The surrounding backend and result types still contain REVM compatibility adapters.
+The surrounding backend and execution configuration still contain REVM compatibility adapters.
+Transaction state changes now own native evm2 account metadata.
 
 `EthEvmNetwork` is the only compiled Foundry EVM network implementation. The existing
 generic executor, backend, inspector, journal, and cheatcode interfaces remain so the
@@ -42,13 +43,13 @@ Use the Rust toolchain required by evm2 (currently at least 1.96).
 
 | Boundary | Native coverage | Remaining work |
 | --- | --- | --- |
-| Executor | Nonforked Ethereum calls, deployments, commits, cancellation | Isolation, replay, system calls and remaining envelope/configuration support |
+| Executor | Nonforked Ethereum calls, deployments, commits, cancellation, beacon-root calls and synthetic replay | Isolation, canonical replay and remaining envelope/configuration support |
 | Environment | warp, coinbase, fee, prevrandao, block/chain getters | Prague+ roll history updates and remaining environment cheatcodes |
 | State | load, store, deal, nonce setters/getters, ordinary etch | Etch of history-storage account |
 | Inspection | Logs, console and shared assertions, including non-reverting assertions | Traces, debugger, coverage, fuzz, invariants and opcode-interest selection |
 | Sessions | Block updates, diagnostics, deprecation observations | Pranks, expectations, mocks, snapshot/fork lifecycle |
-| Core ownership | Lazy backend reads and transaction-delta conversion | Native persistent backend/results; delete factory/context/REVM adapters |
-| Tools | Bounded Forge E2E | Cast, Script and Chisel compatibility |
+| Core ownership | Native transaction state changes and lazy backend reads | Native persistent backend; delete factory/context/REVM adapters |
+| Tools | Bounded Forge test and local Script E2E | Broadcast, simulation, Cast and Chisel compatibility |
 
 Unmigrated cheatcodes fail the execution even if Solidity catches their revert. Unknown
 selectors retain Foundry's ordinary catchable error. No automatic fallback executes a
@@ -120,3 +121,21 @@ A real-project performance claim remains unvalidated.
 The example accepts an optional final `compute`, `cheatcodes`, or `both` argument to
 reproduce each workload. Raw benchmark samples and differential reports are generated
 locally at the output paths supplied to the runners; they are not checked into this branch.
+
+## Native executor follow-up
+
+The minimal local `forge script --no-isolate` path now deploys contracts, executes
+nested calls and returns values through evm2. Script address protection also uses a
+native opcode hook. Trace production/debugging is temporarily unavailable; broadcast
+cheatcodes, fork simulation and isolation are still pending. This is not a REVM-free
+binary yet: environment, backend and execution-status consumers retain legacy types.
+
+The executor no longer directly depends on alloy-evm. Beacon-root calls use evm2's
+system-call API, and the ordinary replay loop uses native transaction execution.
+Canonical envelopes and BAL replay still require migration; unsupported inputs fail
+rather than invoking a REVM fallback. Native Rust sancov collection wraps evm2 execution.
+
+Transaction state changes carry evm2 account metadata and owned storage deltas through
+executor and fuzz consumers. `Backend::commit_native` is the remaining conversion into
+the REVM cache; it must disappear when persistent backend ownership moves to evm2.
+Anvil retains its separate REVM state type while its migration is deferred.

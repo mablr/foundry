@@ -616,12 +616,6 @@ impl<FEN: FoundryEvmNetwork> InspectorStack<FEN> {
         self.inner.execution_cancellation.as_ref()
     }
 
-    /// Returns whether this inspector halted execution due to cancellation.
-    #[inline]
-    pub(crate) const fn execution_cancelled(&self) -> bool {
-        self.inner.execution_cancelled
-    }
-
     #[cfg(test)]
     pub(crate) fn set_early_exit_test_gate(
         &mut self,

@@ -637,6 +637,7 @@ pub struct Backend<FEN: FoundryEvmNetwork = EthEvmNetwork> {
     /// The access point for managing forks
     forks: MultiFork<AnyNetwork, SpecFor<FEN>, BlockEnvFor<FEN>>,
     // The default in memory db
+    // TODO(evm2): Replace the REVM cache; keep deferred Anvil storage separate from this backend.
     mem_db: FoundryEvmInMemoryDB,
     /// The journaled_state to use to initialize new forks with
     ///
@@ -968,6 +969,51 @@ impl<FEN: FoundryEvmNetwork> Backend<FEN> {
     /// Returns the currently active `ForkDB`, if any
     pub fn active_fork_db_mut(&mut self) -> Option<&mut ForkDB<AnyNetwork, BlockEnvFor<FEN>>> {
         self.active_fork_mut().map(|f| &mut f.db)
+    }
+
+    /// Persists native execution changes through the remaining legacy database boundary.
+    pub fn commit_native(&mut self, changes: crate::state_changes::StateChangeset) {
+        // TODO(evm2): Remove this conversion when the backing cache and fork database own native
+        // accounts.
+        let changes = changes
+            .into_iter()
+            .map(|(address, change)| {
+                let mut account = Account::default();
+                account.info = AccountInfo {
+                    balance: change.info.balance,
+                    nonce: change.info.nonce,
+                    code_hash: change.info.code_hash,
+                    code: change.info.code.map(|code| Bytecode::new_raw(code.original_bytes())),
+                    ..Default::default()
+                };
+                if change.touched {
+                    account.mark_touch();
+                }
+                if change.created || change.storage_wiped {
+                    account.mark_created();
+                    account.mark_created_locally();
+                }
+                if change.deleted {
+                    account.mark_selfdestruct();
+                }
+                account.storage = change
+                    .storage
+                    .into_iter()
+                    .map(|(key, slot)| {
+                        (
+                            key,
+                            revm::state::EvmStorageSlot::new_changed(
+                                slot.original_value,
+                                slot.present_value,
+                                revm::state::TransactionId::ZERO,
+                            ),
+                        )
+                    })
+                    .collect();
+                (address, account)
+            })
+            .collect();
+        DatabaseCommit::commit(self, changes);
     }
 
     /// Returns the current database implementation as a `&dyn` value.

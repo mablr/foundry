@@ -48,6 +48,7 @@ pub mod hardfork;
 pub mod ic;
 pub mod opts;
 pub mod precompiles;
+pub mod state_changes;
 pub mod state_snapshot;
 // Disabled for the Ethereum-only EVM2 migration.
 // pub mod tempo;

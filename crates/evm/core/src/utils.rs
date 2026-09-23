@@ -1,3 +1,4 @@
+pub use crate::state_changes::StateChangeset;
 use crate::{EvmEnv, FoundryBlock, hardfork::FoundryHardfork};
 use alloy_chains::Chain;
 use alloy_consensus::{BlockHeader, private::alloy_eips::eip7840::BlobParams};
@@ -8,7 +9,6 @@ use alloy_provider::{Network, network::BlockResponse};
 use foundry_config::NamedChain;
 use foundry_evm_networks::NetworkConfigs;
 use revm::primitives::hardfork::SpecId;
-pub use revm::state::EvmState as StateChangeset;
 
 /// Hints to the compiler that this is a cold path, i.e. unlikely to be taken.
 #[cold]

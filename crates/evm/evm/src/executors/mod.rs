@@ -3,12 +3,11 @@
 //! Used for running tests, scripts, and interacting with the inner backend which holds the state.
 
 use crate::inspectors::{
-    Cheatcodes, CmpOperands, EdgeCoverage, EdgeIndexMap, InspectorData, InspectorStack,
+    Cheatcodes, CmpOperands, EdgeCoverage, EdgeIndexMap, InspectorStack,
     cheatcodes::BroadcastableTransactions,
 };
 use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
 use alloy_eips::eip4788::{BEACON_ROOTS_ADDRESS, SYSTEM_ADDRESS};
-use alloy_evm::Evm;
 use alloy_json_abi::Function;
 use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256, keccak256,
@@ -17,11 +16,8 @@ use alloy_primitives::{
 use alloy_sol_types::{SolCall, sol};
 use eyre::WrapErr;
 use foundry_evm_core::{
-    EvmEnv, FoundryBlock, FoundryChain, FoundryTransaction,
-    backend::{
-        Backend, BackendError, BackendResult, CowBackend, DatabaseError, DatabaseExt,
-        GLOBAL_FAIL_SLOT,
-    },
+    EvmEnv, FoundryBlock, FoundryTransaction,
+    backend::{Backend, BackendError, BackendResult, DatabaseExt, GLOBAL_FAIL_SLOT},
     constants::{
         CALLER, CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, DEFAULT_CREATE2_DEPLOYER,
         DEFAULT_CREATE2_DEPLOYER_CODE, DEFAULT_CREATE2_DEPLOYER_DEPLOYER,
@@ -31,10 +27,7 @@ use foundry_evm_core::{
         HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE, history_storage_slot, history_storage_value,
         history_window_start,
     },
-    evm::{
-        ChainFor, EthEvmNetwork, EvmEnvFor, FoundryEvmFactory, FoundryEvmNetwork,
-        IntoInstructionResult, SpecFor, TxEnvFor,
-    },
+    evm::{ChainFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
     utils::StateChangeset,
 };
 use foundry_evm_coverage::HitMaps;
@@ -43,17 +36,14 @@ use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::{SparsedTraceArena, TraceRequirements};
 use revm::{
     bytecode::Bytecode,
-    context::{Block, Cfg, ContextTr, Transaction},
+    context::{Block, Cfg, Transaction},
     context_interface::{
-        cfg::gas_params::Eip2780TxInfo,
-        result::{ExecutionResult, Output, ResultAndState},
-        transaction::SignedAuthorization,
+        cfg::gas_params::Eip2780TxInfo, result::Output, transaction::SignedAuthorization,
     },
-    database::{Database, DatabaseCommit, DatabaseRef},
-    interpreter::{InstructionResult, return_ok},
+    database::{Database, DatabaseRef},
+    interpreter::InstructionResult,
     primitives::hardfork::SpecId,
 };
-use sancov::SancovGuard;
 use std::{
     borrow::Cow,
     sync::{
@@ -846,26 +836,12 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         &mut self,
         parent_beacon_block_root: alloy_primitives::B256,
     ) -> eyre::Result<()> {
-        let calldata = Bytes::copy_from_slice(parent_beacon_block_root.as_slice());
-        let mut evm_env = self.evm_env.clone();
-        let inspector = self.inspector().clone();
-        let mut state = {
-            let mut backend = CowBackend::new_borrowed(self.backend());
-            let mut evm = FEN::EvmFactory::default().create_foundry_evm_with_inspector(
-                &mut backend,
-                evm_env.clone(),
-                inspector,
-            );
-            *evm.chain_mut() = ChainFor::<FEN>::for_transaction(&TxEnvFor::<FEN>::default());
-            let result =
-                evm.transact_system_call(SYSTEM_ADDRESS, BEACON_ROOTS_ADDRESS, calldata)?;
-            evm_env = evm.finish().1;
-            result.state
-        };
-        state.retain(|address, _| *address == BEACON_ROOTS_ADDRESS);
-
-        self.backend_mut().commit(state);
-        self.inspector_mut().set_block(evm_env.block_env);
+        let state = self.execute_evm2_system_call(
+            SYSTEM_ADDRESS,
+            BEACON_ROOTS_ADDRESS,
+            Bytes::copy_from_slice(parent_beacon_block_root.as_slice()),
+        )?;
+        self.backend_mut().commit_native(state);
 
         Ok(())
     }
@@ -918,7 +894,7 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
         Ok(result)
     }
 
-    /// Replays ordinary transactions and executes the target against one EVM instance.
+    /// Replays ordinary transactions through evm2, committing the prefix before the target.
     #[instrument(name = "transact_block_replay", level = "debug", skip_all)]
     pub fn transact_with_ordinary_block_replay(
         &mut self,
@@ -939,73 +915,29 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             );
         }
         let block_number = evm_env.block_env.number();
-        let mut stack = self.inspector().clone();
-        let sancov_edges = stack.inner.sancov_edges;
-        let sancov_trace_cmp = stack.inner.sancov_trace_cmp;
-        let sancov_active = sancov_edges || sancov_trace_cmp;
-        let backend = self.backend_mut();
-
-        let (result, evm_env, tx_env) = {
-            let caller = target_tx_env.caller();
-            backend.set_caller(caller).set_spec_id(evm_env.cfg_env.spec);
-            let target_contract = match target_tx_env.kind() {
-                TxKind::Call(to) => to,
-                // The prefix has not run yet, so use the canonical target nonce rather than the
-                // current database nonce.
-                TxKind::Create => caller.create(target_tx_env.nonce()),
-            };
-            backend.set_test_contract(target_contract);
-            let target_chain_context = ChainFor::<FEN>::for_transaction(&target_tx_env);
-            if !replay.is_empty() {
-                evm_env.cfg_env.disable_balance_check = true;
-            }
-            let mut evm = FEN::EvmFactory::default()
-                .create_foundry_evm_with_inspector(backend, evm_env, &mut stack);
-            *evm.chain_mut() = target_chain_context;
-            evm.disable_inspector();
-            for (tx_hash, tx_env) in replay {
-                let created = match tx_env.kind() {
-                    TxKind::Create => Some(tx_env.caller().create(tx_env.nonce())),
-                    TxKind::Call(_) => None,
-                };
-                let result = evm.transact(tx_env).wrap_err_with(|| {
-                    format!("Failed to execute transaction: {tx_hash:?} in block {block_number}")
-                })?;
-                if result.result.is_success()
+        if !replay.is_empty() {
+            evm_env.cfg_env.disable_balance_check = true;
+        }
+        // Prefix transactions must not execute test cheatcodes or collect target observations.
+        let inspector = std::mem::take(&mut self.inspector);
+        let replay_result = (|| -> eyre::Result<()> {
+            for (hash, tx) in replay {
+                let created = tx.kind().is_create().then(|| tx.caller().create(tx.nonce()));
+                let result = self
+                    .transact_with_env(evm_env.clone(), tx)
+                    .wrap_err_with(|| format!("Failed to replay {hash} in block {block_number}"))?;
+                if !result.reverted
                     && let Some(address) = created
                 {
-                    evm.db_mut().add_persistent_account(address);
+                    self.backend_mut().add_persistent_account(address);
                 }
-                evm.db_mut().commit(result.state);
             }
-
-            evm.enable_inspector();
-            let _guard = sancov_active.then(|| SancovGuard::new(sancov_edges, sancov_trace_cmp));
-            let result = evm.transact(target_tx_env).wrap_err("EVM error")?;
-            let tx_env = evm.tx().clone();
-            let evm_env = evm.finish().1;
-            (result, evm_env, tx_env)
-        };
-
-        let has_state_snapshot_failure = backend.has_state_snapshot_failure();
-        let fork_block_number = backend.active_fork_block_number();
-        let mut result = convert_executed_result(
-            evm_env,
-            tx_env,
-            stack,
-            result,
-            &*backend,
-            has_state_snapshot_failure,
-            fork_block_number,
-        )?;
-        if sancov_edges {
-            SancovGuard::append_edges_into(&mut result);
-        }
-        if sancov_trace_cmp {
-            SancovGuard::drain_cmp_into(&mut result);
-        }
-        self.commit(&mut result);
-        Ok(result)
+            Ok(())
+        })();
+        self.inspector = inspector;
+        replay_result?;
+        // TODO(evm2): Complete canonical envelope/BAL replay before enabling all Cast replay modes.
+        self.transact_with_env(evm_env, target_tx_env)
     }
 
     /// Commit the changeset to the database and adjust `self.inspector_config` values according to
@@ -1015,7 +947,7 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
     #[instrument(name = "commit", level = "debug", skip_all)]
     fn commit(&mut self, result: &mut RawCallResult<FEN>) {
         // Persist changes to db.
-        self.backend_mut().commit(result.state_changeset.clone());
+        self.backend_mut().commit_native(result.state_changeset.clone());
 
         // Persist cheatcode state.
         self.inspector_mut().cheatcodes = result.cheatcodes.take();
@@ -1182,7 +1114,7 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             // `false -> true` for the contract's `failed` variable and the `globalFailure` flag
             // in the state of the cheatcode address,
             // which are both read when we call `"failed()(bool)"` in the next step.
-            backend.commit(state_changeset.into_owned());
+            backend.commit_native(state_changeset.into_owned());
 
             // Check if a DSTest assertion failed
             let executor = self.clone_with_backend(backend);
@@ -1205,7 +1137,7 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
     pub fn has_pending_global_failure(state_changeset: &StateChangeset) -> bool {
         if let Some(acc) = state_changeset.get(&CHEATCODE_ADDRESS)
             && let Some(failed_slot) = acc.storage.get(&GLOBAL_FAIL_SLOT)
-            && !failed_slot.present_value().is_zero()
+            && !failed_slot.present_value.is_zero()
         {
             return true;
         }
@@ -1677,127 +1609,6 @@ pub(crate) fn calculate_stipend(tx_env: &impl Transaction, cfg: &impl Cfg) -> u6
     });
     revm::interpreter::gas::calculate_initial_tx_gas_for_tx(tx_env, cfg.spec().into(), eip2780)
         .initial_total_gas()
-}
-
-/// Converts the data aggregated in the `inspector` and `call` to a `RawCallResult`.
-fn convert_executed_result<FEN: FoundryEvmNetwork, H: IntoInstructionResult>(
-    evm_env: EvmEnvFor<FEN>,
-    tx_env: TxEnvFor<FEN>,
-    mut inspector: InspectorStack<FEN>,
-    ResultAndState { result, state: state_changeset }: ResultAndState<H>,
-    db: &dyn DatabaseRef<Error = DatabaseError>,
-    has_state_snapshot_failure: bool,
-    fork_block_number: Option<u64>,
-) -> eyre::Result<RawCallResult<FEN>> {
-    let execution_cancelled = inspector.execution_cancelled();
-    let (exit_reason, gas_refunded, gas_used, out, exec_logs) = match result {
-        ExecutionResult::Success { reason, gas, output, logs } => {
-            (reason.into(), gas.final_refunded(), gas.tx_gas_used(), Some(output), logs)
-        }
-        ExecutionResult::Revert { gas, output, logs } => {
-            (InstructionResult::Revert, 0_u64, gas.tx_gas_used(), Some(Output::Call(output)), logs)
-        }
-        ExecutionResult::Halt { reason, gas, logs } => {
-            (reason.into_instruction_result(), 0_u64, gas.tx_gas_used(), None, logs)
-        }
-    };
-    let stipend = calculate_stipend(&tx_env, &evm_env.cfg_env);
-
-    let result = match &out {
-        Some(Output::Call(data)) => data.clone(),
-        _ => Bytes::new(),
-    };
-    let observed_calls = inspector
-        .inner
-        .fuzzer
-        .as_mut()
-        .map(|fuzzer| fuzzer.take_observed_calls())
-        .unwrap_or_default();
-
-    let InspectorData {
-        mut logs,
-        labels,
-        traces,
-        line_coverage,
-        edge_coverage,
-        evm_cmp_values,
-        mut cheatcodes,
-        chisel_state,
-        reverter,
-    } = inspector.collect();
-    let fork_block_number = cheatcodes
-        .as_ref()
-        .and_then(|cheats| cheats.fork_block_number_override)
-        .or(fork_block_number);
-    let debug_bytecodes = collect_debug_bytecodes(traces.as_ref(), db);
-
-    if logs.is_empty() {
-        logs = exec_logs;
-    }
-
-    let transactions = cheatcodes
-        .as_ref()
-        .map(|c| c.broadcastable_transactions.clone())
-        .filter(|txs| !txs.is_empty());
-    let skip_payloads =
-        cheatcodes.as_mut().map(|c| std::mem::take(&mut c.skip_payloads)).unwrap_or_default();
-
-    Ok(RawCallResult {
-        exit_reason: Some(exit_reason),
-        execution_cancelled,
-        reverted: !matches!(exit_reason, return_ok!()),
-        has_state_snapshot_failure,
-        result,
-        gas_used,
-        gas_refunded,
-        stipend,
-        logs,
-        labels,
-        traces,
-        debug_bytecodes,
-        line_coverage,
-        edge_coverage,
-        evm_cmp_values,
-        observed_calls,
-        sancov_coverage: None,
-        sancov_cmp_values: None,
-        transactions,
-        state_changeset,
-        evm_env,
-        tx_env,
-        cheatcodes,
-        out,
-        fork_block_number,
-        chisel_state,
-        reverter,
-        skip_payloads,
-    })
-}
-
-fn collect_debug_bytecodes(
-    traces: Option<&SparsedTraceArena>,
-    db: &dyn DatabaseRef<Error = DatabaseError>,
-) -> AddressHashMap<Bytes> {
-    let mut bytecodes = HashMap::default();
-    let Some(traces) = traces else { return bytecodes };
-
-    for node in traces.arena.nodes() {
-        let address = node.trace.address;
-        if bytecodes.contains_key(&address) {
-            continue;
-        }
-
-        let Ok(Some(account)) = db.basic_ref(address) else { continue };
-        let code: Option<Bytecode> =
-            account.code.or_else(|| db.code_by_hash_ref(account.code_hash).ok());
-        let code: Bytes = code.map(|code| code.original_bytes()).unwrap_or_default();
-
-        if !code.is_empty() {
-            bytecodes.insert(address, code);
-        }
-    }
-
-    bytecodes
 }
 
 /// Timer for a fuzz test.

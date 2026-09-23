@@ -102,7 +102,7 @@ impl FuzzRunIdentifiedContracts {
             if setup_contracts.contains_key(address) {
                 continue;
             }
-            if !account.is_touched() {
+            if !account.touched {
                 continue;
             }
             let Some(code) = &account.info.code else {
@@ -112,11 +112,11 @@ impl FuzzRunIdentifiedContracts {
                 continue;
             }
             let code_hash = code.hash_slow();
-            let code = code.original_byte_slice();
+            let code = code.original_bytes();
             let Some(contract) = self.target_contract_for_code(
                 *address,
                 code_hash,
-                code,
+                &code,
                 project_contracts,
                 artifact_filters,
             )?
@@ -682,14 +682,13 @@ pub fn is_optimization_invariant(func: &Function) -> bool {
 mod tests {
     use super::*;
     use crate::CallDetails;
-    use alloy_primitives::U256;
     use foundry_compilers::{
         ArtifactId,
         artifacts::{
             BytecodeObject, CompactBytecode, CompactContractBytecode, CompactDeployedBytecode,
         },
     };
-    use revm::{bytecode::Bytecode, state::Account};
+    use foundry_evm_core::state_changes::AccountChange;
 
     fn abi_with_functions(functions: &[&str]) -> JsonAbi {
         let mut abi = JsonAbi::new();
@@ -758,11 +757,11 @@ mod tests {
         ContractsByArtifact::new([(artifact_id(name), artifact)])
     }
 
-    fn touched_account_with_code(code: Bytes) -> Account {
-        let mut account = Account::default();
-        account.info.balance = U256::ZERO;
-        account.info.code = Some(Bytecode::new_raw(code));
-        account.mark_touch();
+    fn touched_account_with_code(code: Bytes) -> AccountChange {
+        let mut account = AccountChange::default();
+        account.info.code_hash = alloy_primitives::keccak256(&code);
+        account.info.code = Some(foundry_evm_core::state_changes::Bytecode::new_raw(code));
+        account.touched = true;
         account
     }
 
@@ -866,7 +865,7 @@ mod tests {
         let mut state_changeset = StateChangeset::default();
         state_changeset.insert(existing, touched_account_with_code(runtime_code.clone()));
         state_changeset.insert(setup, touched_account_with_code(runtime_code.clone()));
-        state_changeset.insert(untouched, Account::default());
+        state_changeset.insert(untouched, AccountChange::default());
         state_changeset.insert(created, touched_account_with_code(runtime_code));
         let mut created_contracts = Vec::new();
         let setup_contracts =

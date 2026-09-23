@@ -1070,7 +1070,7 @@ fn call_config_from_tracer_config(
     GethDebugTracerConfig(tracer_config).into_call_config()
 }
 
-pub type State = foundry_evm::utils::StateChangeset;
+pub type State = revm::state::EvmState;
 
 #[derive(Clone, Debug, Default)]
 struct SimulationPrecompileOverrides {

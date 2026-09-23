@@ -20,10 +20,7 @@ use foundry_config::FuzzDictionaryConfig;
 use foundry_evm_core::{
     bytecode::InstIter, eip2935::is_history_storage_address, utils::StateChangeset,
 };
-use revm::{
-    database::{CacheDB, DatabaseRef, DbAccount},
-    state::AccountInfo,
-};
+use revm::database::{CacheDB, DatabaseRef, DbAccount};
 use std::{cell::RefCell, fmt, rc::Rc, sync::Arc};
 
 /// The maximum number of bytes we will look at in bytecodes to find push bytes (24 KiB).
@@ -368,7 +365,11 @@ impl FuzzDictionary {
             // Insert basic account information
             self.insert_value(address.into_word());
             // Insert push bytes
-            self.insert_push_bytes_values(address, &account.info);
+            self.insert_push_bytes_values(
+                address,
+                account.info.code_hash,
+                account.info.code.as_ref().map(|code| code.original_bytes()),
+            );
             // Insert storage values.
             if self.config.include_storage {
                 // Sort storage values before inserting to ensure deterministic dictionary.
@@ -507,7 +508,11 @@ impl FuzzDictionary {
             // Insert basic account information.
             self.insert_value(address.into_word());
             // Insert push bytes.
-            self.insert_push_bytes_values(address, &account.info);
+            self.insert_push_bytes_values(
+                address,
+                account.info.code_hash,
+                account.info.code.as_ref().map(|code| code.original_bytes()),
+            );
             // Insert storage values.
             if self.config.include_storage && !account.storage.is_empty() {
                 let slot_identifier_key = targets.get(address).and_then(|contract| {
@@ -566,20 +571,25 @@ impl FuzzDictionary {
     /// Insert values from push bytes into fuzz dictionary.
     /// Values are collected only once for a given bytecode.
     /// If values are newly collected then they are removed at the end of current run.
-    fn insert_push_bytes_values(&mut self, address: &Address, account_info: &AccountInfo) {
+    fn insert_push_bytes_values(
+        &mut self,
+        address: &Address,
+        code_hash: B256,
+        code: Option<Bytes>,
+    ) {
         if !self.config.include_push_bytes {
             return;
         }
 
-        let Some(code) = &account_info.code else {
+        let Some(code) = code else {
             return;
         };
         self.insert_address(*address);
         if self.values_full() {
             return;
         }
-        if self.push_bytecode_hashes.insert(account_info.code_hash) {
-            self.collect_push_bytes(ignore_metadata_hash(code.original_byte_slice()));
+        if self.push_bytecode_hashes.insert(code_hash) {
+            self.collect_push_bytes(ignore_metadata_hash(&code));
         }
     }
 
@@ -841,7 +851,7 @@ mod tests {
     use alloy_json_abi::{Event, JsonAbi};
     use alloy_primitives::keccak256;
     use foundry_evm_core::eip2935::HISTORY_STORAGE_ADDRESS;
-    use revm::{bytecode::Bytecode, database::EmptyDB};
+    use revm::{bytecode::Bytecode, database::EmptyDB, state::AccountInfo};
 
     fn account_with_code(raw: &'static [u8]) -> AccountInfo {
         let code = Bytecode::new_raw(Bytes::from_static(raw));
@@ -929,10 +939,24 @@ mod tests {
         let mut dictionary = FuzzDictionary::default();
         let account = account_with_code(&[0x60, 0x01]);
 
-        dictionary.insert_push_bytes_values(&Address::repeat_byte(0x11), &account);
+        {
+            let info = &account;
+            dictionary.insert_push_bytes_values(
+                &Address::repeat_byte(0x11),
+                info.code_hash,
+                info.code.as_ref().map(|code| code.original_bytes()),
+            );
+        }
         let hits_after_first_scan = dictionary.hits;
 
-        dictionary.insert_push_bytes_values(&Address::repeat_byte(0x22), &account);
+        {
+            let info = &account;
+            dictionary.insert_push_bytes_values(
+                &Address::repeat_byte(0x22),
+                info.code_hash,
+                info.code.as_ref().map(|code| code.original_bytes()),
+            );
+        }
 
         assert_eq!(dictionary.push_bytecode_hashes.len(), 1);
         assert_eq!(dictionary.addresses.len(), 2);
@@ -944,8 +968,22 @@ mod tests {
         let mut dictionary = FuzzDictionary::default();
         let address = Address::repeat_byte(0x22);
 
-        dictionary.insert_push_bytes_values(&address, &account_with_code(&[0x60, 0x01]));
-        dictionary.insert_push_bytes_values(&address, &account_with_code(&[0x60, 0x04]));
+        {
+            let info = &account_with_code(&[0x60, 0x01]);
+            dictionary.insert_push_bytes_values(
+                &address,
+                info.code_hash,
+                info.code.as_ref().map(|code| code.original_bytes()),
+            );
+        }
+        {
+            let info = &account_with_code(&[0x60, 0x04]);
+            dictionary.insert_push_bytes_values(
+                &address,
+                info.code_hash,
+                info.code.as_ref().map(|code| code.original_bytes()),
+            );
+        }
 
         assert_eq!(dictionary.addresses.len(), 1);
         assert_eq!(dictionary.push_bytecode_hashes.len(), 2);
@@ -959,12 +997,26 @@ mod tests {
         let address = Address::repeat_byte(0x33);
         let account_without_code = AccountInfo { code: None, ..Default::default() };
 
-        dictionary.insert_push_bytes_values(&address, &account_without_code);
+        {
+            let info = &account_without_code;
+            dictionary.insert_push_bytes_values(
+                &address,
+                info.code_hash,
+                info.code.as_ref().map(|code| code.original_bytes()),
+            );
+        }
 
         assert!(!dictionary.addresses.contains(&address));
         assert_eq!(dictionary.push_bytecode_hashes.len(), 0);
 
-        dictionary.insert_push_bytes_values(&address, &account_with_code(&[0x60, 0x04]));
+        {
+            let info = &account_with_code(&[0x60, 0x04]);
+            dictionary.insert_push_bytes_values(
+                &address,
+                info.code_hash,
+                info.code.as_ref().map(|code| code.original_bytes()),
+            );
+        }
 
         assert!(dictionary.addresses.contains(&address));
         assert_eq!(dictionary.push_bytecode_hashes.len(), 1);
@@ -979,13 +1031,27 @@ mod tests {
         dictionary.db_push_bytecode_hashes = dictionary.push_bytecode_hashes.len();
 
         let account = account_with_code(&[0x60, 0x01]);
-        dictionary.insert_push_bytes_values(&Address::repeat_byte(0x11), &account);
+        {
+            let info = &account;
+            dictionary.insert_push_bytes_values(
+                &Address::repeat_byte(0x11),
+                info.code_hash,
+                info.code.as_ref().map(|code| code.original_bytes()),
+            );
+        }
         assert_eq!(dictionary.push_bytecode_hashes.len(), 1);
 
         dictionary.revert();
         assert_eq!(dictionary.push_bytecode_hashes.len(), 0);
 
-        dictionary.insert_push_bytes_values(&Address::repeat_byte(0x22), &account);
+        {
+            let info = &account;
+            dictionary.insert_push_bytes_values(
+                &Address::repeat_byte(0x22),
+                info.code_hash,
+                info.code.as_ref().map(|code| code.original_bytes()),
+            );
+        }
         assert_eq!(dictionary.push_bytecode_hashes.len(), 1);
         assert!(dictionary.state_values.contains(&B256::from(U256::from(1))));
     }

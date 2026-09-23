@@ -60,7 +60,7 @@ use foundry_evm::{
     },
     opts::{EvmOpts, ExecutionSpecContext, resolve_execution_spec},
     revm::interpreter::InstructionResult,
-    traces::{InternalTraceMode, TraceRequirements, Traces},
+    traces::Traces,
 };
 use foundry_evm_networks::NetworkConfigs;
 use foundry_wallets::MultiWalletOpts;
@@ -1172,15 +1172,14 @@ impl<FEN: FoundryEvmNetwork> ScriptConfig<FEN> {
             Backend::spawn(None)?
         };
 
-        // We need to enable tracing to decode contract names: local or external.
+        // TODO(evm2): Restore trace production and contract-name decoding with a native inspector.
+        // The minimal native script path runs without REVM tracing; debugging remains unsupported.
+        eyre::ensure!(!debug, "evm2 script debugging is not migrated");
         let mut builder = self
             .executor_builder
             .clone()
             .inspectors(|stack| {
-                stack
-                    .logs(self.config.live_logs)
-                    .trace_requirements(script_trace_requirements(&self.config, debug))
-                    .create2_deployer(self.evm_opts.create2_deployer)
+                stack.logs(self.config.live_logs).create2_deployer(self.evm_opts.create2_deployer)
             })
             .gas_limit(self.evm_opts.gas_limit())
             .legacy_assertions(self.config.legacy_assertions);
@@ -1242,18 +1241,6 @@ impl<FEN: FoundryEvmNetwork> ScriptConfig<FEN> {
         );
         Ok((resolved, evm_env, tx_env))
     }
-}
-
-const fn script_trace_requirements(config: &Config, debug: bool) -> TraceRequirements {
-    TraceRequirements::none()
-        .with_calls(true)
-        .with_debug(debug)
-        .with_verbosity(config.tracing.verbosity)
-        .with_decode_internal(if config.tracing.decode_internal {
-            InternalTraceMode::Full
-        } else {
-            InternalTraceMode::None
-        })
 }
 
 #[cfg(test)]
@@ -1717,15 +1704,6 @@ mod tests {
             Err(error) => assert_missing_orphaned_block(&error),
         }
         assert_eq!(config.resolved_fork.as_ref(), Some(&pinned));
-    }
-
-    #[test]
-    fn script_trace_requirements_honor_tracing_verbosity() {
-        let mut config = Config::default();
-        config.tracing.verbosity = 5;
-
-        let tracing = script_trace_requirements(&config, false).into_config().unwrap();
-        assert!(tracing.record_state_diff);
     }
 
     #[test]

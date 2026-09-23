@@ -5,8 +5,8 @@
 //! adapter reconstructs a REVM journal or runs a REVM interpreter. This boundary is temporary
 //! until the backend and result consumers migrate to native state-change interfaces.
 
-use super::{EvmExecutionCancellation, Executor, RawCallResult};
-use crate::inspectors::LogCollector;
+use super::{EvmExecutionCancellation, Executor, RawCallResult, sancov::SancovGuard};
+use crate::inspectors::{InspectorStack, LogCollector};
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_primitives::{Address, B256, Bytes, Log, U256};
 use evm2::{
@@ -27,13 +27,11 @@ use foundry_evm_core::{
     utils::StateChangeset,
 };
 use revm::{
-    bytecode::Bytecode,
     context::{Block, Cfg, Transaction},
     context_interface::result::Output,
     database::DatabaseRef,
     interpreter::InstructionResult,
     primitives::hardfork::SpecId,
-    state::{AccountInfo, EvmStorageSlot, TransactionId},
 };
 use std::{any::TypeId, convert::Infallible};
 
@@ -74,32 +72,33 @@ impl StateChangeSink for Writes {
     fn account(&mut self, change: AccountChangeRef<'_>) -> Result<(), Self::Error> {
         let account = self.0.entry(change.address).or_default();
         if let Some(info) = change.current {
-            account.info = AccountInfo {
-                balance: info.balance,
-                nonce: info.nonce,
-                code_hash: info.code_hash,
-                code: info.code.as_ref().map(|code| Bytecode::new_raw(code.original_bytes())),
-                ..Default::default()
-            };
+            account.info = info.clone();
         }
-        account.mark_touch();
+        account.touched = true;
         if change.created {
-            account.mark_created();
-            account.mark_created_locally();
+            account.created = true;
         }
         if change.selfdestructed || change.current.is_none() {
-            account.mark_selfdestruct();
+            account.deleted = true;
         }
         Ok(())
     }
 
     fn storage(&mut self, change: StorageChange) -> Result<(), Self::Error> {
         let account = self.0.entry(change.address).or_default();
-        account.mark_touch();
+        account.touched = true;
         account.storage.insert(
             change.key,
-            EvmStorageSlot::new_changed(change.original, change.current, TransactionId::ZERO),
+            foundry_evm_core::state_changes::StorageChange {
+                original_value: change.original,
+                present_value: change.current,
+            },
         );
+        Ok(())
+    }
+
+    fn storage_wipe(&mut self, address: Address) -> Result<(), Self::Error> {
+        self.0.entry(address).or_default().storage_wiped = true;
         Ok(())
     }
 
@@ -113,13 +112,7 @@ impl StateChangeSink for Writes {
         if let Some(account) = self.0.get_mut(&address)
             && let Some(info) = info
         {
-            account.info = AccountInfo {
-                balance: info.balance,
-                nonce: info.nonce,
-                code_hash: info.code_hash,
-                code: info.code.as_ref().map(|code| Bytecode::new_raw(code.original_bytes())),
-                ..Default::default()
-            };
+            account.info = info.clone();
         }
         Ok(())
     }
@@ -133,11 +126,21 @@ struct MigrationInspector<'a> {
     log_collector: Option<LogCollector>,
     cancellation: Option<EvmExecutionCancellation>,
     cancelled: bool,
+    script_address: Option<Address>,
     cancellation_poll_counter: u8,
 }
 
 impl Inspector<BaseEvmTypes> for MigrationInspector<'_> {
     fn step(&mut self, interp: &mut Interpreter<'_, '_, BaseEvmTypes>) {
+        if self.script_address == Some(interp.message().destination)
+            && interp.message().destination == interp.message().code_address
+            && interp.opcode() == evm2::interpreter::op::ADDRESS
+        {
+            self.unsupported = Some("Usage of `address(this)` detected in script contract. Script contracts are ephemeral and their addresses should not be relied upon.".into());
+            interp.set_stop(InstrStop::Revert);
+            return;
+        }
+
         if let Some(cancellation) = &self.cancellation {
             let poll_deadline = self.cancellation_poll_counter == 0;
             self.cancellation_poll_counter = self.cancellation_poll_counter.wrapping_add(1);
@@ -257,6 +260,30 @@ impl Inspector<BaseEvmTypes> for MigrationInspector<'_> {
 }
 
 impl<FEN: FoundryEvmNetwork> Executor<FEN> {
+    pub(super) fn execute_evm2_system_call(
+        &self,
+        caller: Address,
+        destination: Address,
+        input: Bytes,
+    ) -> eyre::Result<StateChangeset> {
+        let (spec, version, block) = native_environment(&self.evm_env, self.inspector())?;
+        let mut evm = Evm::<BaseEvmTypes>::new_with_execution_config(
+            ExecutionConfig::for_spec_and_version(spec, version),
+            spec,
+            block,
+            ethereum_tx_registry(spec),
+            Db::new(BackendReads(self.backend())),
+            Precompiles::base(spec),
+        );
+        let mut writes = Writes::default();
+        let _result = evm
+            .system_call(evm2::evm::SystemTx::new(destination, input).with_caller(caller))?
+            .discard_with(&mut writes)
+            .unwrap();
+        writes.0.retain(|address, _| *address == destination);
+        Ok(writes.0)
+    }
+
     pub(super) fn execute_evm2(
         &self,
         mut evm_env: EvmEnvFor<FEN>,
@@ -281,12 +308,6 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             "evm2 fuzz/invariant/coverage/Chisel inspection is not migrated"
         );
         eyre::ensure!(
-            stack.script_execution_inspector.is_none()
-                && !stack.sancov_edges
-                && !stack.sancov_trace_cmp,
-            "evm2 script and native coverage inspection is not migrated"
-        );
-        eyre::ensure!(
             tx_env.tx_type() == 0 || tx_env.tx_type() == 2,
             "evm2 milestone 1 requires an ordinary synthetic test transaction"
         );
@@ -300,58 +321,7 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
                 && tx_env.blob_versioned_hashes().is_empty(),
             "evm2 access-list, authorization and blob transactions are not migrated"
         );
-        let cfg = &evm_env.cfg_env;
-        let spec = match cfg.spec.into() {
-            SpecId::MERGE => evm2::SpecId::MERGE,
-            SpecId::SHANGHAI => evm2::SpecId::SHANGHAI,
-            SpecId::CANCUN => evm2::SpecId::CANCUN,
-            SpecId::PRAGUE => evm2::SpecId::PRAGUE,
-            SpecId::OSAKA => evm2::SpecId::OSAKA,
-            other => eyre::bail!("evm2 milestone 1 hardfork not yet wired: {other:?}"),
-        };
-        let mut version = Version::new(spec);
-        version.chain_id = cfg.chain_id();
-        version.tx_gas_limit_cap = cfg.tx_gas_limit_cap();
-        version.memory_limit = cfg.memory_limit();
-        version.max_code_size = cfg.max_code_size();
-        version.max_initcode_size = cfg.max_initcode_size();
-        for (feature, enabled) in [
-            (EvmFeatures::NONCE_CHECK, !cfg.is_nonce_check_disabled()),
-            (EvmFeatures::BALANCE_CHECK, !cfg.is_balance_check_disabled()),
-            (EvmFeatures::BLOCK_GAS_LIMIT_CHECK, !cfg.is_block_gas_limit_disabled()),
-            (EvmFeatures::BASE_FEE_CHECK, !cfg.is_base_fee_check_disabled()),
-            (EvmFeatures::EIP3607, !cfg.is_eip3607_disabled()),
-            (EvmFeatures::FEE_CHARGE, !cfg.is_fee_charge_disabled()),
-            (EvmFeatures::TX_CHAIN_ID_CHECK, cfg.tx_chain_id_check()),
-        ] {
-            version.features.set(feature, enabled);
-        }
-        if cfg.is_eip7623_disabled() {
-            version.features.remove(EvmFeatures::EIP7623);
-        }
-        if let Some(cheats) = &stack.cheatcodes {
-            eyre::ensure!(
-                cheats.gas_price.is_none_or(|price| price == 0),
-                "evm2 synthetic gas-price overrides are not migrated"
-            );
-        }
-        let block = stack
-            .cheatcodes
-            .as_ref()
-            .and_then(|cheats| cheats.block.as_ref())
-            .unwrap_or(&evm_env.block_env);
-        let block = BlockEnvExt {
-            number: block.number(),
-            beneficiary: block.beneficiary(),
-            timestamp: block.timestamp(),
-            gas_limit: U256::from(block.gas_limit()),
-            basefee: U256::from(block.basefee()),
-            difficulty: block.difficulty(),
-            prevrandao: U256::from_be_bytes(block.prevrandao().unwrap_or_default().0),
-            blob_basefee: U256::from(block.blob_gasprice().unwrap_or_default()),
-            slot_num: U256::from(block.slot_num()),
-            ..Default::default()
-        };
+        let (spec, version, block) = native_environment(&evm_env, stack)?;
         let caller = tx_env.caller();
         let tx = TxLegacy {
             chain_id: tx_env.chain_id(),
@@ -367,6 +337,10 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             log_collector: stack.log_collector.as_deref().cloned(),
             config: stack.cheatcodes.as_ref().map(|cheats| cheats.config.as_ref()),
             cancellation: stack.execution_cancellation().cloned(),
+            script_address: stack
+                .script_execution_inspector
+                .as_ref()
+                .map(|inspector| inspector.script_address),
             ..Default::default()
         };
         let mut evm = Evm::<BaseEvmTypes>::new_with_execution_config(
@@ -378,6 +352,8 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             Precompiles::base(spec),
         );
         evm.set_inspector(&mut inspector);
+        let _coverage = (stack.sancov_edges || stack.sancov_trace_cmp)
+            .then(|| SancovGuard::new(stack.sancov_edges, stack.sancov_trace_cmp));
         let mut writes = Writes::default();
         let result = evm
             .transact(&Recovered::new_unchecked(TxEnvelope::Legacy(tx), caller))?
@@ -409,7 +385,7 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             None
         };
         tracing::debug!(target: "foundry_evm::evm2", ?spec, ?exit_reason, gas_used, "executed with evm2");
-        Ok(RawCallResult {
+        let mut result = RawCallResult {
             exit_reason: Some(exit_reason),
             reverted: !result.status,
             result: if tx_env.kind().is_create() && result.status {
@@ -431,8 +407,74 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             execution_cancelled: inspector.cancelled,
             out,
             ..Default::default()
-        })
+        };
+        if stack.sancov_edges {
+            SancovGuard::append_edges_into(&mut result);
+        }
+        if stack.sancov_trace_cmp {
+            SancovGuard::drain_cmp_into(&mut result);
+        }
+        Ok(result)
     }
+}
+
+fn native_environment<FEN: FoundryEvmNetwork>(
+    evm_env: &EvmEnvFor<FEN>,
+    stack: &InspectorStack<FEN>,
+) -> eyre::Result<(evm2::SpecId, Version, BlockEnvExt)> {
+    let cfg = &evm_env.cfg_env;
+    let spec = match cfg.spec.into() {
+        SpecId::MERGE => evm2::SpecId::MERGE,
+        SpecId::SHANGHAI => evm2::SpecId::SHANGHAI,
+        SpecId::CANCUN => evm2::SpecId::CANCUN,
+        SpecId::PRAGUE => evm2::SpecId::PRAGUE,
+        SpecId::OSAKA => evm2::SpecId::OSAKA,
+        other => eyre::bail!("evm2 milestone 1 hardfork not yet wired: {other:?}"),
+    };
+    let mut version = Version::new(spec);
+    version.chain_id = cfg.chain_id();
+    version.tx_gas_limit_cap = cfg.tx_gas_limit_cap();
+    version.memory_limit = cfg.memory_limit();
+    version.max_code_size = cfg.max_code_size();
+    version.max_initcode_size = cfg.max_initcode_size();
+    for (feature, enabled) in [
+        (EvmFeatures::NONCE_CHECK, !cfg.is_nonce_check_disabled()),
+        (EvmFeatures::BALANCE_CHECK, !cfg.is_balance_check_disabled()),
+        (EvmFeatures::BLOCK_GAS_LIMIT_CHECK, !cfg.is_block_gas_limit_disabled()),
+        (EvmFeatures::BASE_FEE_CHECK, !cfg.is_base_fee_check_disabled()),
+        (EvmFeatures::EIP3607, !cfg.is_eip3607_disabled()),
+        (EvmFeatures::FEE_CHARGE, !cfg.is_fee_charge_disabled()),
+        (EvmFeatures::TX_CHAIN_ID_CHECK, cfg.tx_chain_id_check()),
+    ] {
+        version.features.set(feature, enabled);
+    }
+    if cfg.is_eip7623_disabled() {
+        version.features.remove(EvmFeatures::EIP7623);
+    }
+    if let Some(cheats) = &stack.cheatcodes {
+        eyre::ensure!(
+            cheats.gas_price.is_none_or(|price| price == 0),
+            "evm2 synthetic gas-price overrides are not migrated"
+        );
+    }
+    let block = stack
+        .cheatcodes
+        .as_ref()
+        .and_then(|cheats| cheats.block.as_ref())
+        .unwrap_or(&evm_env.block_env);
+    let block = BlockEnvExt {
+        number: block.number(),
+        beneficiary: block.beneficiary(),
+        timestamp: block.timestamp(),
+        gas_limit: U256::from(block.gas_limit()),
+        basefee: U256::from(block.basefee()),
+        difficulty: block.difficulty(),
+        prevrandao: U256::from_be_bytes(block.prevrandao().unwrap_or_default().0),
+        blob_basefee: U256::from(block.blob_gasprice().unwrap_or_default()),
+        slot_num: U256::from(block.slot_num()),
+        ..Default::default()
+    };
+    Ok((spec, version, block))
 }
 
 fn instruction_result(stop: InstrStop) -> eyre::Result<InstructionResult> {
@@ -470,6 +512,7 @@ mod tests {
     };
     use foundry_evm_core::constants::CALLER;
     use foundry_evm_networks::NetworkConfigs;
+    use revm::bytecode::Bytecode;
 
     fn executor() -> Executor<EthEvmNetwork> {
         let mut executor =
@@ -583,5 +626,15 @@ mod tests {
         let result = evm.execute_message(&TxEnvExt::default(), &mut message);
         assert_eq!(result.stop, InstrStop::Revert);
         assert_eq!(evm.state_mut().account(&target, false).unwrap().balance(), U256::from(100));
+    }
+
+    #[test]
+    fn native_system_call_commits_without_bumping_sender_nonce() {
+        let mut executor = executor();
+        let address = alloy_eips::eip4788::BEACON_ROOTS_ADDRESS;
+        executor.set_code(address, Bytecode::new_raw(bytes!("60003560005500"))).unwrap();
+        executor.apply_beacon_root(B256::from(U256::from(42))).unwrap();
+        assert_eq!(executor.backend().storage_ref(address, U256::ZERO).unwrap(), U256::from(42));
+        assert_eq!(executor.get_nonce(alloy_eips::eip4788::SYSTEM_ADDRESS).unwrap(), 0);
     }
 }
