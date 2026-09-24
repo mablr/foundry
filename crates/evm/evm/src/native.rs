@@ -2,7 +2,7 @@
 
 use alloy_consensus::transaction::Recovered;
 use evm2::{
-    BaseEvmTypes, Evm, ExecutionConfig, Precompiles, TxResult,
+    BaseEvmTypes, Evm, ExecutionConfig, Inspector, Precompiles, TxResult,
     ethereum::{TxEnvelope, ethereum_tx_registry},
     evm::{Db, DynDatabase, registry::HandlerResult},
 };
@@ -59,10 +59,36 @@ impl EthereumExecutor {
         Ok(evm.transact(tx)?.discard())
     }
 
+    /// Executes an inspected transaction without accepting its state changes.
+    pub fn inspect_call<I: Inspector<BaseEvmTypes>>(
+        &self,
+        tx: &Recovered<TxEnvelope>,
+        inspector: &mut I,
+    ) -> HandlerResult<TxResult> {
+        let mut evm = EthereumFactory.create(self.env, Db::new(&self.state));
+        evm.set_inspector(inspector);
+        Ok(evm.transact(tx)?.discard())
+    }
+
     /// Executes and accepts a transaction's state changes.
     pub fn transact(&mut self, tx: &Recovered<TxEnvelope>) -> HandlerResult<TxResult> {
         let outcome = {
             let mut evm = EthereumFactory.create(self.env, Db::new(&self.state));
+            evm.transact(tx)?.detach()
+        };
+        self.state.commit(&outcome.pending_state);
+        Ok(outcome.result)
+    }
+
+    /// Executes an inspected transaction and accepts its state changes.
+    pub fn inspect_transact<I: Inspector<BaseEvmTypes>>(
+        &mut self,
+        tx: &Recovered<TxEnvelope>,
+        inspector: &mut I,
+    ) -> HandlerResult<TxResult> {
+        let outcome = {
+            let mut evm = EthereumFactory.create(self.env, Db::new(&self.state));
+            evm.set_inspector(inspector);
             evm.transact(tx)?.detach()
         };
         self.state.commit(&outcome.pending_state);
@@ -75,7 +101,15 @@ mod tests {
     use super::*;
     use alloy_consensus::TxLegacy;
     use alloy_primitives::{Address, Bytes, TxKind, U256};
-    use evm2::{SpecId, bytecode::Bytecode, env::BlockEnvExt, evm::AccountInfo};
+    use evm2::{
+        SpecId,
+        bytecode::Bytecode,
+        env::BlockEnvExt,
+        evm::AccountInfo,
+        interpreter::{
+            GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt,
+        },
+    };
     use foundry_compilers::artifacts::EvmVersion;
     use foundry_evm_core::opts::EvmOpts;
 
@@ -154,5 +188,62 @@ mod tests {
         assert!(!executor.transact(&tx).unwrap().status);
         assert_eq!(executor.state().database().cache.accounts[&caller].as_ref().unwrap().nonce, 1);
         assert!(!executor.state().database().cache.storage.contains_key(&recipient));
+    }
+
+    #[test]
+    fn inspector_mutations_follow_call_and_transaction_boundaries() {
+        struct BalanceInspector {
+            target: Address,
+            calls: usize,
+        }
+
+        impl Inspector<BaseEvmTypes> for BalanceInspector {
+            fn call(
+                &mut self,
+                interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+                message: &mut Message<BaseEvmTypes>,
+            ) -> Option<MessageResult<BaseEvmTypes>> {
+                self.calls += 1;
+                interp
+                    .host()
+                    .state_mut()
+                    .account(&self.target, false)
+                    .unwrap()
+                    .set_balance(U256::from(7));
+                Some(MessageResultExt {
+                    stop: InstrStop::Return,
+                    gas: GasTracker::new(message.gas_limit),
+                    ..Default::default()
+                })
+            }
+        }
+
+        let caller = Address::with_last_byte(0xa);
+        let target = Address::with_last_byte(0xb);
+        let env = EthereumEnv::new(
+            SpecId::CANCUN,
+            BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
+        );
+        let mut executor = EthereumExecutor::new(env, LocalState::default());
+        let tx = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                gas_limit: 100_000,
+                to: TxKind::Call(target),
+                ..Default::default()
+            }),
+            caller,
+        );
+        let mut inspector = BalanceInspector { target, calls: 0 };
+
+        assert!(executor.inspect_call(&tx, &mut inspector).unwrap().status);
+        assert_eq!(inspector.calls, 1);
+        assert!(!executor.state().database().cache.accounts.contains_key(&target));
+
+        assert!(executor.inspect_transact(&tx, &mut inspector).unwrap().status);
+        assert_eq!(inspector.calls, 2);
+        assert_eq!(
+            executor.state().database().cache.accounts[&target].as_ref().unwrap().balance,
+            U256::from(7)
+        );
     }
 }
