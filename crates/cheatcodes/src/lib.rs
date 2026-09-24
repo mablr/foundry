@@ -54,6 +54,8 @@ mod fs;
 mod inspector;
 pub use inspector::CheatcodeAnalysis;
 
+pub mod native;
+
 mod json;
 
 #[cfg(feature = "monad")]

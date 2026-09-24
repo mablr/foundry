@@ -101,6 +101,7 @@ mod tests {
     use super::*;
     use alloy_consensus::TxLegacy;
     use alloy_primitives::{Address, Bytes, TxKind, U256};
+    use alloy_sol_types::SolCall;
     use evm2::{
         SpecId,
         bytecode::Bytecode,
@@ -110,8 +111,9 @@ mod tests {
             GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt,
         },
     };
+    use foundry_cheatcodes::{Vm, native::NativeCheatcodes};
     use foundry_compilers::artifacts::EvmVersion;
-    use foundry_evm_core::opts::EvmOpts;
+    use foundry_evm_core::{constants::CHEATCODE_ADDRESS, opts::EvmOpts};
 
     #[test]
     fn executor_discards_calls_and_commits_copy_on_write_transactions() {
@@ -241,6 +243,38 @@ mod tests {
 
         assert!(executor.inspect_transact(&tx, &mut inspector).unwrap().status);
         assert_eq!(inspector.calls, 2);
+        assert_eq!(
+            executor.state().database().cache.accounts[&target].as_ref().unwrap().balance,
+            U256::from(7)
+        );
+    }
+
+    #[test]
+    fn native_deal_cheatcode_obeys_execution_boundaries() {
+        let caller = Address::with_last_byte(0xa);
+        let target = Address::with_last_byte(0xb);
+        let env = EthereumEnv::new(
+            SpecId::CANCUN,
+            BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
+        );
+        let mut executor = EthereumExecutor::new(env, LocalState::default());
+        let tx = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                gas_limit: 100_000,
+                to: TxKind::Call(CHEATCODE_ADDRESS),
+                input: Vm::dealCall { account: target, newBalance: U256::from(7) }
+                    .abi_encode()
+                    .into(),
+                ..Default::default()
+            }),
+            caller,
+        );
+        let mut inspector = NativeCheatcodes;
+
+        assert!(executor.inspect_call(&tx, &mut inspector).unwrap().status);
+        assert!(!executor.state().database().cache.accounts.contains_key(&target));
+
+        assert!(executor.inspect_transact(&tx, &mut inspector).unwrap().status);
         assert_eq!(
             executor.state().database().cache.accounts[&target].as_ref().unwrap().balance,
             U256::from(7)
