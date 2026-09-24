@@ -23,7 +23,6 @@ use foundry_evm::{
     executors::Executor,
     revm::{
         bytecode::{Bytecode, JumpTable, opcode},
-        context::Transaction,
         database::DatabaseRef,
         precompile::{blake2, bn254, hash, identity, kzg_point_evaluation, modexp, secp256k1},
         primitives::hardfork::SpecId,

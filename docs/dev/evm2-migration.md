@@ -15,8 +15,9 @@ is engine-independent, with REVM console-call outcomes constructed only in Anvil
 Core no longer has a direct production alloy-evm dependency. Anvil owns environment conversions;
 RPC transaction fields are projected directly, with alloy-evm retained only as a test oracle.
 Ethereum execution now carries a Foundry-owned transaction input and projects Ethereum RPC
-envelopes directly. Its remaining REVM trait implementation is a temporary adapter for shared
-legacy consumers.
+envelopes directly. Generic Foundry execution reads those fields through `FoundryTransaction`,
+without requiring REVM's transaction trait. Legacy transaction support remains in the shared
+environment for unmigrated consumers.
 The network metadata crate no longer depends directly on either legacy engine crate.
 Celo, Arbitrum and BSC REVM precompile adapters now live in Anvil; native execution
 still rejects unsupported network-specific execution rather than using these adapters.

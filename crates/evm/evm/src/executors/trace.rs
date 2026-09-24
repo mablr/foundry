@@ -250,7 +250,6 @@ mod tests {
     use super::*;
     use alloy_rpc_types::state::AccountOverride;
     use foundry_evm_core::{FoundryTransaction, evm::EthEvmNetwork};
-    use revm::context::Transaction;
 
     /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]

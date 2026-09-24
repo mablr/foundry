@@ -19,14 +19,13 @@ use evm2::{
 use foundry_cheatcodes::CheatsConfig;
 use foundry_common::ErrorExt;
 use foundry_evm_core::{
-    FoundryBlock,
+    FoundryBlock, FoundryTransaction,
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS},
     evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TxEnvFor},
     native::StateChangesetCollector,
     state_changes::ExecutionOutput,
     utils::StateChangeset,
 };
-use revm::context::Transaction;
 use std::any::TypeId;
 
 #[derive(Default)]
@@ -238,7 +237,7 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             "evm2 synthetic gas-price overrides are not migrated"
         );
         eyre::ensure!(
-            tx_env.access_list().is_none_or(|mut list| list.next().is_none())
+            tx_env.access_list_is_empty()
                 && tx_env.authorization_list_len() == 0
                 && tx_env.blob_versioned_hashes().is_empty(),
             "evm2 access-list, authorization and blob transactions are not migrated"

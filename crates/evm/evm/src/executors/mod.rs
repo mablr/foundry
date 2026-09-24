@@ -36,7 +36,6 @@ use foundry_evm_fuzz::ObservedCall;
 use foundry_evm_networks::NetworkConfigs;
 use foundry_evm_traces::{SparsedTraceArena, TraceRequirements};
 use revm::{
-    context::Transaction,
     context_interface::transaction::SignedAuthorization,
     database::{Database, DatabaseRef},
 };

@@ -1,4 +1,5 @@
 use super::*;
+use foundry_evm::core::FoundryTransaction;
 
 const MAX_BOUND_ANALYSIS_VISITS: usize = 256;
 

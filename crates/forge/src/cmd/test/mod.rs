@@ -65,7 +65,10 @@ use foundry_config::{
 };
 use foundry_debugger::{Debugger, DebuggerLayout};
 use foundry_evm::{
-    core::evm::{BlockEnvFor, EthEvmNetwork, FoundryEvmNetwork, SpecFor, TxEnvFor},
+    core::{
+        FoundryTransaction,
+        evm::{BlockEnvFor, EthEvmNetwork, FoundryEvmNetwork, SpecFor, TxEnvFor},
+    },
     executors::{ExecutorBuilder, ShowmapDomain},
     fork::ResolvedFork,
     fuzz::{BaseCounterExample, BasicTxDetails, CounterExample},
@@ -80,7 +83,7 @@ use foundry_tui::tui_mode;
 use quick_junit::{NonSuccessKind, Report, TestCase, TestCaseStatus, TestSuite};
 use rand::Rng;
 use regex::Regex;
-use revm::{bytecode::opcode::OpCode, context::Transaction};
+use revm::bytecode::opcode::OpCode;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,

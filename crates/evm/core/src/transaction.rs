@@ -1,17 +1,16 @@
 //! Foundry-owned Ethereum transaction input.
 //!
-//! TODO(evm2): Remove the REVM transaction trait adapter when the remaining generic
-//! consumers use Foundry transaction accessors directly.
+//! Legacy transaction parity is checked in tests while the backend migrates.
 
 use alloy_eips::{
     eip2930::AccessList,
     eip7702::{RecoveredAuthorization, SignedAuthorization},
 };
 use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
-use revm::{
-    context::TxEnv,
-    context_interface::{either::Either, transaction::Transaction},
-};
+use revm::context_interface::either::Either;
+
+#[cfg(test)]
+use revm::context::TxEnv;
 
 /// Execution fields shared by Foundry's Ethereum transaction workflows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,6 +52,7 @@ impl Default for TransactionEnv {
     }
 }
 
+#[cfg(test)]
 impl From<TxEnv> for TransactionEnv {
     fn from(tx: TxEnv) -> Self {
         Self {
@@ -71,57 +71,6 @@ impl From<TxEnv> for TransactionEnv {
             max_fee_per_blob_gas: tx.max_fee_per_blob_gas,
             authorization_list: tx.authorization_list,
         }
-    }
-}
-
-impl Transaction for TransactionEnv {
-    type AccessListItem<'a> = &'a alloy_eips::eip2930::AccessListItem;
-    type Authorization<'a> = &'a Either<SignedAuthorization, RecoveredAuthorization>;
-
-    fn tx_type(&self) -> u8 {
-        self.tx_type
-    }
-    fn caller(&self) -> Address {
-        self.caller
-    }
-    fn gas_limit(&self) -> u64 {
-        self.gas_limit
-    }
-    fn gas_price(&self) -> u128 {
-        self.gas_price
-    }
-    fn kind(&self) -> TxKind {
-        self.kind
-    }
-    fn value(&self) -> U256 {
-        self.value
-    }
-    fn input(&self) -> &Bytes {
-        &self.data
-    }
-    fn nonce(&self) -> u64 {
-        self.nonce
-    }
-    fn chain_id(&self) -> Option<u64> {
-        self.chain_id
-    }
-    fn access_list(&self) -> Option<impl Iterator<Item = Self::AccessListItem<'_>>> {
-        Some(self.access_list.0.iter())
-    }
-    fn blob_versioned_hashes(&self) -> &[B256] {
-        &self.blob_hashes
-    }
-    fn max_fee_per_blob_gas(&self) -> u128 {
-        self.max_fee_per_blob_gas
-    }
-    fn authorization_list_len(&self) -> usize {
-        self.authorization_list.len()
-    }
-    fn authorization_list(&self) -> impl Iterator<Item = Self::Authorization<'_>> {
-        self.authorization_list.iter()
-    }
-    fn max_priority_fee_per_gas(&self) -> Option<u128> {
-        self.gas_priority_fee
     }
 }
 

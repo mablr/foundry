@@ -5,7 +5,7 @@ use alloy_network::{AnyRpcTransaction, AnyTxEnvelope, TransactionResponse};
 use alloy_primitives::{Address, B256, Bytes, U256};
 use foundry_evm_networks::celo::CELO_DYNAMIC_FEE_TX_TYPE;
 use revm::{
-    context::{Transaction, TxEnv},
+    context::TxEnv,
     context_interface::{
         either::Either,
         transaction::{AccessList, RecoveredAuthorization, SignedAuthorization},
@@ -94,9 +94,22 @@ impl FoundryBlock for TempoBlockEnv {
 }
 */
 
-/// Extension of [`Transaction`] with mutable setters, allowing EVM-agnostic mutation of transaction
-/// fields.
-pub trait FoundryTransaction: Transaction {
+/// Execution fields and mutable setters used by Foundry workflows.
+pub trait FoundryTransaction {
+    fn tx_type(&self) -> u8;
+    fn caller(&self) -> Address;
+    fn gas_limit(&self) -> u64;
+    fn gas_price(&self) -> u128;
+    fn kind(&self) -> TxKind;
+    fn value(&self) -> U256;
+    fn input(&self) -> &Bytes;
+    fn nonce(&self) -> u64;
+    fn chain_id(&self) -> Option<u64>;
+    fn access_list_is_empty(&self) -> bool;
+    fn blob_versioned_hashes(&self) -> &[B256];
+    fn authorization_list_len(&self) -> usize;
+    fn max_priority_fee_per_gas(&self) -> Option<u128>;
+
     /// Sets the transaction type.
     fn set_tx_type(&mut self, tx_type: u8);
 
@@ -216,6 +229,46 @@ pub trait FoundryTransaction: Transaction {
 }
 
 impl FoundryTransaction for TxEnv {
+    fn tx_type(&self) -> u8 {
+        self.tx_type
+    }
+    fn caller(&self) -> Address {
+        self.caller
+    }
+    fn gas_limit(&self) -> u64 {
+        self.gas_limit
+    }
+    fn gas_price(&self) -> u128 {
+        self.gas_price
+    }
+    fn kind(&self) -> TxKind {
+        self.kind
+    }
+    fn value(&self) -> U256 {
+        self.value
+    }
+    fn input(&self) -> &Bytes {
+        &self.data
+    }
+    fn nonce(&self) -> u64 {
+        self.nonce
+    }
+    fn chain_id(&self) -> Option<u64> {
+        self.chain_id
+    }
+    fn access_list_is_empty(&self) -> bool {
+        self.access_list.0.is_empty()
+    }
+    fn blob_versioned_hashes(&self) -> &[B256] {
+        &self.blob_hashes
+    }
+    fn authorization_list_len(&self) -> usize {
+        self.authorization_list.len()
+    }
+    fn max_priority_fee_per_gas(&self) -> Option<u128> {
+        self.gas_priority_fee
+    }
+
     fn set_tx_type(&mut self, tx_type: u8) {
         self.tx_type = tx_type;
     }
@@ -276,6 +329,46 @@ impl FoundryTransaction for TxEnv {
 }
 
 impl FoundryTransaction for TransactionEnv {
+    fn tx_type(&self) -> u8 {
+        self.tx_type
+    }
+    fn caller(&self) -> Address {
+        self.caller
+    }
+    fn gas_limit(&self) -> u64 {
+        self.gas_limit
+    }
+    fn gas_price(&self) -> u128 {
+        self.gas_price
+    }
+    fn kind(&self) -> TxKind {
+        self.kind
+    }
+    fn value(&self) -> U256 {
+        self.value
+    }
+    fn input(&self) -> &Bytes {
+        &self.data
+    }
+    fn nonce(&self) -> u64 {
+        self.nonce
+    }
+    fn chain_id(&self) -> Option<u64> {
+        self.chain_id
+    }
+    fn access_list_is_empty(&self) -> bool {
+        self.access_list.0.is_empty()
+    }
+    fn blob_versioned_hashes(&self) -> &[B256] {
+        &self.blob_hashes
+    }
+    fn authorization_list_len(&self) -> usize {
+        self.authorization_list.len()
+    }
+    fn max_priority_fee_per_gas(&self) -> Option<u128> {
+        self.gas_priority_fee
+    }
+
     fn set_tx_type(&mut self, value: u8) {
         self.tx_type = value;
     }

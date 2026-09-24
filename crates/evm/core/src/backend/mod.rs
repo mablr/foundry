@@ -30,7 +30,7 @@ pub use foundry_fork_db::{
 use revm::{
     Database, DatabaseCommit, JournalEntry,
     bytecode::Bytecode,
-    context::{JournalInner, Transaction},
+    context::JournalInner,
     context_interface::journaled_state::account::JournaledAccountTr,
     database::{AccountState, CacheDB, DatabaseRef},
     database_interface::bal::BalState,
