@@ -4,6 +4,9 @@ use crate::opts::EvmOpts;
 use alloy_primitives::U256;
 use evm2::{EvmFeatures, SpecId, Version, env::BlockEnvExt};
 use foundry_common::DEV_CHAIN_ID;
+use foundry_config::Config;
+use foundry_evm_hardforks::{FoundryHardfork, ethereum_spec_from_evm_version, ethereum_spec_id};
+use foundry_evm_networks::NetworkVariant;
 
 /// Configuration and block data for an Ethereum execution.
 #[derive(Clone, Copy, Debug)]
@@ -44,12 +47,30 @@ impl EthereumEnv {
         env.version.features.set(EvmFeatures::BLOCK_GAS_LIMIT_CHECK, !opts.disable_block_gas_limit);
         env
     }
+
+    /// Selects the configured Ethereum hardfork and applies local execution options.
+    pub fn local_from_config(config: &Config, opts: &EvmOpts) -> eyre::Result<Self> {
+        eyre::ensure!(
+            opts.networks.execution_network() == NetworkVariant::Ethereum,
+            "native Ethereum execution requires the Ethereum network"
+        );
+        let spec = match config.hardfork {
+            Some(FoundryHardfork::Ethereum(hardfork)) => ethereum_spec_id(hardfork),
+            Some(hardfork) => {
+                eyre::bail!("{} is not an Ethereum hardfork", String::from(hardfork))
+            }
+            None => ethereum_spec_from_evm_version(config.evm_version),
+        };
+        Ok(Self::local(spec, opts))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use alloy_primitives::Address;
+    use foundry_compilers::artifacts::EvmVersion;
+    use foundry_evm_hardforks::{EthereumHardfork, TempoHardfork};
 
     #[test]
     fn local_environment_applies_foundry_execution_options() {
@@ -76,5 +97,21 @@ mod tests {
         assert!(!env.version.feature(EvmFeatures::EIP3607));
         assert!(!env.version.feature(EvmFeatures::NONCE_CHECK));
         assert!(!env.version.feature(EvmFeatures::BLOCK_GAS_LIMIT_CHECK));
+    }
+
+    #[test]
+    fn local_config_selects_only_ethereum_hardforks() {
+        let mut config = Config { evm_version: EvmVersion::London, ..Default::default() };
+        let opts = EvmOpts::default();
+        assert_eq!(EthereumEnv::local_from_config(&config, &opts).unwrap().spec, SpecId::LONDON);
+
+        config.hardfork = Some(FoundryHardfork::Ethereum(EthereumHardfork::Cancun));
+        assert_eq!(EthereumEnv::local_from_config(&config, &opts).unwrap().spec, SpecId::CANCUN);
+
+        config.hardfork = Some(FoundryHardfork::Tempo(TempoHardfork::T3));
+        assert_eq!(
+            EthereumEnv::local_from_config(&config, &opts).unwrap_err().to_string(),
+            "tempo:T3 is not an Ethereum hardfork"
+        );
     }
 }

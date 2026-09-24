@@ -39,11 +39,13 @@ mod tests {
         ethereum::TxEnvelope,
         evm::{AccountInfo, InMemoryDB},
     };
+    use foundry_compilers::artifacts::EvmVersion;
     use foundry_evm_core::opts::EvmOpts;
 
     #[test]
     fn factory_preserves_call_and_transaction_state_boundaries() {
-        let spec = SpecId::CANCUN;
+        let config =
+            foundry_config::Config { evm_version: EvmVersion::Cancun, ..Default::default() };
         let caller = Address::with_last_byte(0xa);
         let recipient = Address::with_last_byte(0xb);
         let mut database = InMemoryDB::default();
@@ -57,7 +59,9 @@ mod tests {
         opts.env.chain_id = Some(31_337);
         opts.env.gas_limit = foundry_config::GasLimit(30_000_000);
         opts.memory_limit = 1_000_000;
-        let mut evm = EthereumFactory.create(EthereumEnv::local(spec, &opts), database);
+        let env = EthereumEnv::local_from_config(&config, &opts).unwrap();
+        assert_eq!(env.spec, SpecId::CANCUN);
+        let mut evm = EthereumFactory.create(env, database);
         let tx = Recovered::new_unchecked(
             TxEnvelope::Legacy(TxLegacy {
                 gas_limit: 30_000,
