@@ -1,7 +1,7 @@
 //! Ethereum cheatcodes executed through evm2 inspection hooks.
 
 use crate::Vm;
-use alloy_primitives::Bytes;
+use alloy_primitives::{Bytes, U256};
 use alloy_sol_types::SolInterface;
 use evm2::{
     BaseEvmTypes, Inspector,
@@ -42,22 +42,53 @@ impl Inspector<BaseEvmTypes> for NativeCheatcodes {
             return None;
         }
 
-        let stop = match Vm::VmCalls::abi_decode(&message.input) {
+        let (stop, output) = match Vm::VmCalls::abi_decode(&message.input) {
             Ok(Vm::VmCalls::deal(call)) => {
                 match interp.host().state_mut().account(&call.account, false) {
                     Ok(mut account) => {
                         account.set_balance(call.newBalance);
-                        InstrStop::Return
+                        (InstrStop::Return, Bytes::new())
                     }
-                    Err(_) => InstrStop::Revert,
+                    Err(_) => (InstrStop::Revert, Bytes::new()),
                 }
             }
-            _ => InstrStop::Revert,
+            Ok(Vm::VmCalls::load(call)) => {
+                let state = interp.host().state_mut();
+                let account_loaded = state.account(&call.target, false).is_ok();
+                let value = account_loaded.then(|| {
+                    state
+                        .storage_slot(&call.target, U256::from_be_bytes(call.slot.0), false)
+                        .map(|slot| slot.current())
+                });
+                match value {
+                    Some(Ok(value)) => (InstrStop::Return, value.to_be_bytes::<32>().into()),
+                    _ => (InstrStop::Revert, Bytes::new()),
+                }
+            }
+            Ok(Vm::VmCalls::store(call)) => {
+                if interp.host().precompiles().contains(&call.target) {
+                    (InstrStop::Revert, Bytes::new())
+                } else {
+                    let state = interp.host().state_mut();
+                    let account_loaded = state.account(&call.target, false).is_ok();
+                    let stored = account_loaded
+                        && state
+                            .storage_slot(&call.target, U256::from_be_bytes(call.slot.0), false)
+                            .map(|mut slot| slot.set(U256::from_be_bytes(call.value.0)))
+                            .is_ok();
+                    if stored {
+                        (InstrStop::Return, Bytes::new())
+                    } else {
+                        (InstrStop::Revert, Bytes::new())
+                    }
+                }
+            }
+            _ => (InstrStop::Revert, Bytes::new()),
         };
         Some(MessageResultExt {
             stop,
             gas: GasTracker::new(message.gas_limit),
-            output: Bytes::new(),
+            output,
             ..Default::default()
         })
     }
