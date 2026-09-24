@@ -8,6 +8,9 @@ use evm2::{
 };
 use foundry_evm_core::native::{EthereumEnv, LocalState};
 
+mod inspector;
+pub use inspector::EthereumInspectorStack;
+
 /// Constructs the Ethereum execution host used by Foundry.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EthereumFactory;

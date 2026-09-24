@@ -5344,7 +5344,6 @@ dependencies = [
  "forge-sol-macro-gen",
  "forge-verify",
  "foundry-block-explorers",
- "foundry-cheatcodes",
  "foundry-cli",
  "foundry-common",
  "foundry-compilers",

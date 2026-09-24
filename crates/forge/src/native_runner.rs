@@ -8,13 +8,12 @@ use crate::{
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_json_abi::Function;
-use alloy_primitives::{Address, Bytes, TxKind, U256};
+use alloy_primitives::{Address, Bytes, Log, TxKind, U256};
 use evm2::{
     TxResult,
     ethereum::{TxEnvelope, intrinsic_gas},
 };
 use eyre::{Result, ensure};
-use foundry_cheatcodes::native::NativeCheatcodes;
 use foundry_common::{LIBRARY_DEPLOYER, TestFunctionKind};
 use foundry_compilers::ProjectCompileOutput;
 use foundry_config::{Config, InlineConfig};
@@ -26,7 +25,7 @@ use foundry_evm::{
         },
         native::{EthereumEnv, LocalState},
     },
-    native::EthereumExecutor,
+    native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
 };
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
@@ -44,7 +43,7 @@ pub(crate) struct NativeMultiContractRunner {
 #[derive(Clone, Debug)]
 pub struct NativeContractRunner {
     executor: EthereumExecutor,
-    inspector: NativeCheatcodes,
+    inspector: EthereumInspectorStack,
     address: Address,
     gas_limit: u64,
     gas_price: u128,
@@ -68,7 +67,7 @@ impl NativeContractRunner {
         libraries: NativeLibraries<'_>,
     ) -> Result<Self> {
         let mut state = LocalState::default();
-        let mut inspector = NativeCheatcodes;
+        let mut inspector = EthereumInspectorStack::default();
         inspector.install(&mut state);
         state.set_balance(sender, U256::MAX);
         state.set_nonce(sender, 1);
@@ -181,10 +180,11 @@ impl NativeContractRunner {
     }
 
     /// Executes one no-argument unit test against an isolated copy of setup state.
-    pub fn run_unit(&self, function: &Function) -> Result<TxResult> {
+    pub fn run_unit(&self, function: &Function) -> Result<(TxResult, Vec<Log>)> {
         ensure!(function.inputs.is_empty(), "native unit execution requires no arguments");
         let mut runner = self.clone();
-        runner.execute(function.selector().into())
+        let result = runner.execute(function.selector().into())?;
+        Ok((result, runner.inspector.take_logs()))
     }
 
     fn execute(&mut self, input: Bytes) -> Result<TxResult> {
@@ -203,7 +203,7 @@ impl NativeContractRunner {
 
     fn deploy_code(
         executor: &mut EthereumExecutor,
-        inspector: &mut NativeCheatcodes,
+        inspector: &mut EthereumInspectorStack,
         caller: Address,
         nonce: u64,
         code: Bytes,
@@ -218,7 +218,7 @@ impl NativeContractRunner {
 
     fn deploy_create2_factory(
         executor: &mut EthereumExecutor,
-        inspector: &mut NativeCheatcodes,
+        inspector: &mut EthereumInspectorStack,
         gas_limit: u64,
         gas_price: u128,
     ) -> Result<()> {
@@ -322,7 +322,7 @@ impl NativeMultiContractRunner {
                     "native execution does not yet support {} tests",
                     kind.name()
                 );
-                let result = runner.run_unit(function)?;
+                let (result, logs) = runner.run_unit(function)?;
                 let passed = result.status;
                 let reason = (!passed).then(|| {
                     if result.output.is_empty() {
@@ -347,7 +347,7 @@ impl NativeMultiContractRunner {
                         status: if passed { TestStatus::Success } else { TestStatus::Failure },
                         reason,
                         kind: TestKind::Unit { gas: result.tx_gas_used().saturating_sub(stipend) },
-                        logs: result.logs,
+                        logs,
                         ..Default::default()
                     },
                 );
@@ -396,7 +396,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(runner.address(), sender.create(1));
-        let result = runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();
+        let (result, _) = runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();
         assert!(result.status);
         assert_eq!(U256::from_be_slice(&result.output), U256::from(42));
     }

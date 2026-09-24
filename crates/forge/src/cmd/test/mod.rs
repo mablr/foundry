@@ -2164,7 +2164,7 @@ impl TestArgs {
                 && self.evm_profile.is_none()
                 && !config.isolate
                 && self.showmap_out.is_none()
-                && config.tracing.verbosity == 0
+                && config.tracing.verbosity < 3
                 && execution.multi_network.all_override_networks.is_empty()
                 && execution.replay_symbolic_artifact.is_none()
                 && execution.fuzz_input.is_none()
@@ -2208,6 +2208,11 @@ impl TestArgs {
                 sh_println!("Ran {len} {tests} for {contract_name}")?;
                 for (name, result) in &suite.test_results {
                     sh_println!("{}", result.short_result_with_suite(name, contract_name))?;
+                    if config.tracing.verbosity >= 2
+                        && (!self.suppress_successful_traces || result.status.is_failure())
+                    {
+                        print_test_logs(result)?;
+                    }
                 }
                 sh_println!("{}", suite.summary())?;
             }
@@ -2592,15 +2597,7 @@ impl TestArgs {
 
                     // We only display logs at level 2 and above
                     if verbosity >= 2 && show_traces {
-                        // We only decode logs from Hardhat and DS-style console events
-                        let console_logs = decode_console_logs(&result.logs);
-                        if !console_logs.is_empty() {
-                            sh_println!("Logs:")?;
-                            for log in console_logs {
-                                sh_println!("  {log}")?;
-                            }
-                            sh_println!()?;
-                        }
+                        print_test_logs(result)?;
                     }
                 }
 
@@ -2895,6 +2892,18 @@ impl TestArgs {
 /// Returns the names of the enabled flags.
 fn enabled_flags<const N: usize>(flags: [(bool, &'static str); N]) -> Vec<&'static str> {
     flags.into_iter().filter_map(|(enabled, name)| enabled.then_some(name)).collect()
+}
+
+fn print_test_logs(result: &TestResult) -> Result<()> {
+    let logs = decode_console_logs(&result.logs);
+    if !logs.is_empty() {
+        sh_println!("Logs:")?;
+        for log in logs {
+            sh_println!("  {log}")?;
+        }
+        sh_println!()?;
+    }
+    Ok(())
 }
 
 fn prepare_results_for_json(

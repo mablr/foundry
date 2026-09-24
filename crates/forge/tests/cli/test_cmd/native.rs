@@ -193,3 +193,46 @@ Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 0 skipped (1 total tests)
 "#
     ]]);
 });
+
+forgetest_init!(evm2_reports_console_and_opcode_logs, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativeLogs.t.sol",
+        r#"
+import "forge-std/console.sol";
+
+contract NativeLogsTest {
+    event log(string message);
+
+    function setUp() public {
+        emit log("setup");
+    }
+
+    function testLogs() public {
+        console.log("console");
+        emit log("event");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.args(["test", "--match-test", "testLogs", "-vv"]).assert_success().stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeLogs.t.sol:NativeLogsTest
+[PASS] testLogs() ([GAS])
+Logs:
+  setup
+  console
+  event
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]]);
+});
