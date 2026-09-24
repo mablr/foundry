@@ -28,6 +28,7 @@ foundry-evm-traces.workspace = true
 
 evm2.workspace = true
 
+alloy-consensus.workspace = true
 alloy-dyn-abi = { workspace = true, features = ["arbitrary", "eip712"] }
 alloy-eips.workspace = true
 alloy-evm.workspace = true
@@ -66,9 +67,6 @@ serde.workspace = true
 uuid.workspace = true
 rayon.workspace = true
 tokio.workspace = true
-
-[dev-dependencies]
-alloy-consensus.workspace = true
 
 [features]
 default = ["optimism"]
