@@ -25,6 +25,7 @@ mod fuzz;
 mod invariant;
 mod logs;
 mod mutation;
+mod native;
 mod repros;
 mod showmap;
 mod spec;

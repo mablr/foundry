@@ -1,13 +1,12 @@
 //! The Forge test runner.
 
 use crate::{
-    MultiContractRunner, TestFilter,
+    MultiContractRunner, TestContract, TestFilter,
     coverage::HitMaps,
     fuzz::{BaseCounterExample, FuzzTestResult},
     multi_runner::{
         FuzzMinimizeConfig, FuzzMinimizeMode, FuzzMinimizeObservation, LibraryDeployment,
-        TestContract, TestFunctionMatcher, TestRunnerConfig,
-        is_generated_symbolic_regression_contract,
+        TestFunctionMatcher, TestRunnerConfig, is_generated_symbolic_regression_contract,
     },
     progress::TestsProgress,
     result::{

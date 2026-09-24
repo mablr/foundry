@@ -5,13 +5,32 @@ use alloy_primitives::Bytes;
 use alloy_sol_types::SolInterface;
 use evm2::{
     BaseEvmTypes, Inspector,
+    bytecode::Bytecode,
+    evm::AccountInfo,
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
-use foundry_evm_core::constants::CHEATCODE_ADDRESS;
+use foundry_evm_core::{
+    constants::{CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH},
+    native::LocalState,
+};
 
 /// Cheatcode dispatch for native Ethereum execution.
 #[derive(Clone, Debug, Default)]
 pub struct NativeCheatcodes;
+
+impl NativeCheatcodes {
+    /// Installs code at the cheatcode address for Solidity `EXTCODESIZE` checks.
+    pub fn install(&self, state: &mut LocalState) {
+        state.database_mut().insert_account_info(
+            &CHEATCODE_ADDRESS,
+            AccountInfo {
+                code_hash: CHEATCODE_CONTRACT_HASH,
+                code: Some(Bytecode::new_legacy(Bytes::from_static(&[0]))),
+                ..Default::default()
+            },
+        );
+    }
+}
 
 impl Inspector<BaseEvmTypes> for NativeCheatcodes {
     fn call(

@@ -26,6 +26,11 @@ pub mod gas_report;
 pub mod multi_runner;
 pub use multi_runner::{MultiContractRunner, MultiContractRunnerBuilder};
 
+pub mod native_runner;
+
+mod test_contract;
+pub use test_contract::{DeployableContracts, TestContract};
+
 pub mod mutation;
 
 pub mod workspace;

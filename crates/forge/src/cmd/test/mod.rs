@@ -32,7 +32,7 @@ use alloy_primitives::U256;
 use chrono::Utc;
 use clap::{Parser, ValueEnum, ValueHint};
 use dialoguer::{Select, console::Term};
-use eyre::{Context, OptionExt, Result, bail};
+use eyre::{Context, OptionExt, Result, bail, ensure};
 use foundry_cli::{
     opts::{BuildOpts, EvmArgs, GlobalArgs, TracingArgs},
     utils::{self, FoundryPathExt, LoadConfig},
@@ -2221,6 +2221,21 @@ impl TestArgs {
         output: &ProjectCompileOutput,
     ) -> Result<TestOutcome> {
         let fuzz_seed = config.fuzz.seed;
+        let native = std::env::var_os("FOUNDRY_EVM2_NATIVE").is_some();
+        if native {
+            ensure!(
+                !self.debug
+                    && !self.gas_report
+                    && !self.flamegraph
+                    && !self.flamechart
+                    && self.evm_profile.is_none()
+                    && !runner.line_coverage
+                    && !runner.isolation
+                    && runner.showmap.is_none()
+                    && runner.config.tracing.verbosity == 0,
+                "native tracing, coverage, isolation, and campaign reporting are not implemented"
+            );
+        }
 
         trace!(target: "forge::test", "running all tests");
 
@@ -2340,7 +2355,11 @@ impl TestArgs {
         let serialize_json =
             self.mutate.is_none() && !self.gas_report && !self.summary && shell::is_json();
         if serialize_json || self.junit {
-            let mut results = runner.test_collect(filter)?;
+            let mut results = if native {
+                runner.test_native_collect(filter)?
+            } else {
+                runner.test_collect(filter)?
+            };
             if serialize_json {
                 prepare_results_for_json(&mut results, verbosity, tracing.trace_depth);
             }
@@ -2383,7 +2402,13 @@ impl TestArgs {
         let show_progress = config.show_progress;
         let handle = tokio::task::spawn_blocking({
             let filter = filter.clone();
-            move || runner.test(&filter, tx, show_progress).map(|()| runner)
+            move || {
+                if native {
+                    runner.test_native(&filter, tx).map(|()| runner)
+                } else {
+                    runner.test(&filter, tx, show_progress).map(|()| runner)
+                }
+            }
         });
 
         // Set up trace identifiers.

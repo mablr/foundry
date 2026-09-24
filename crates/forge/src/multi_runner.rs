@@ -1,7 +1,7 @@
 //! Forge test runner for multiple contracts.
 
 use crate::{
-    ContractRunner, TestFilter,
+    ContractRunner, DeployableContracts, TestContract, TestFilter,
     progress::TestsProgress,
     result::{SuiteResult, SymbolicCounterexampleArtifact, SymbolicCounterexampleArtifactKind},
     runner::{
@@ -43,21 +43,12 @@ use foundry_linking::{DetailedLinkOutput, LinkOutput, Linker, LinkerError, Resol
 use rayon::prelude::*;
 use std::{
     borrow::Borrow,
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     ops::{Deref, DerefMut},
     path::PathBuf,
     sync::{Arc, Mutex, mpsc},
     time::Instant,
 };
-
-#[derive(Debug, Clone)]
-pub struct TestContract {
-    pub abi: JsonAbi,
-    pub bytecode: Bytes,
-    pub library_addresses: BTreeSet<Address>,
-}
-
-pub type DeployableContracts = BTreeMap<ArtifactId, TestContract>;
 
 /// A multi contract runner receives a set of contracts deployed in an EVM instance and proceeds
 /// to run all test functions in these contracts.
@@ -1017,7 +1008,7 @@ impl<'a> TestFunctionMatcher<'a> {
     }
 
     /// Returns the test functions of `abi` that match `filter`.
-    fn matching_test_functions<'b>(
+    pub(crate) fn matching_test_functions<'b>(
         self,
         filter: &dyn TestFilter,
         id: &ArtifactId,
