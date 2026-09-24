@@ -9,6 +9,7 @@ use crate::{
         TestFunctionMatcher, is_generated_symbolic_regression_contract,
     },
     mutation::{MutationRunConfig, run_mutation_testing},
+    native_runner::NativeMultiContractRunner,
     result::{
         SYMBOLIC_COUNTEREXAMPLE_ARTIFACT_SCHEMA, SuiteResult, SymbolicCounterexampleArtifact,
         SymbolicReplayStatus, TestKind, TestKindReport, TestOutcome, TestResult, TestStatus,
@@ -2145,6 +2146,82 @@ impl TestArgs {
             .build::<FEN, MultiCompiler>(output, evm_env, tx_env, evm_opts, executor_builder)
     }
 
+    /// Runs the experimental local Ethereum path using independently prepared artifacts.
+    fn run_native_network_pass(
+        &self,
+        config: Arc<Config>,
+        evm_opts: EvmOpts,
+        output: &ProjectCompileOutput,
+        filter: &ProjectPathsAwareFilter,
+        execution: TestExecutionOptions,
+    ) -> Result<(Libraries, TestOutcome)> {
+        ensure!(
+            !execution.coverage
+                && !self.debug
+                && !self.gas_report
+                && !self.flamegraph
+                && !self.flamechart
+                && self.evm_profile.is_none()
+                && !config.isolate
+                && self.showmap_out.is_none()
+                && config.tracing.verbosity == 0
+                && execution.multi_network.all_override_networks.is_empty()
+                && execution.replay_symbolic_artifact.is_none()
+                && execution.fuzz_input.is_none()
+                && self.mutate.is_none()
+                && !self.fuzz_only
+                && !self.fuzz_failure_replay,
+            "native tracing, coverage, isolation, replay, and campaign modes are not implemented"
+        );
+        let sender = evm_opts.sender;
+        let create2_deployer_available =
+            evm_opts.create2_deployer == foundry_evm::constants::DEFAULT_CREATE2_DEPLOYER;
+        let runner = NativeMultiContractRunner::new(
+            config.clone(),
+            execution.inline_config,
+            output,
+            evm_opts,
+            sender,
+            create2_deployer_available,
+        )?;
+        let libraries = runner.prepared.libraries.clone();
+        let timer = Instant::now();
+        let mut results = runner.test_collect(filter)?;
+        let known_contracts = runner.prepared.known_contracts;
+
+        if shell::is_json() || self.junit {
+            let rendered = if shell::is_json() {
+                prepare_results_for_json(&mut results, 0, config.tracing.trace_depth);
+                serde_json::to_string(&results)?
+            } else {
+                junit_xml_report(&results, 0).to_string()?
+            };
+            sh_println!("{rendered}")?;
+        } else {
+            for (contract_name, suite) in &results {
+                if suite.test_results.is_empty() {
+                    continue;
+                }
+                let len = suite.len();
+                let tests = if len == 1 { "test" } else { "tests" };
+                sh_println!()?;
+                sh_println!("Ran {len} {tests} for {contract_name}")?;
+                for (name, result) in &suite.test_results {
+                    sh_println!("{}", result.short_result_with_suite(name, contract_name))?;
+                }
+                sh_println!("{}", suite.summary())?;
+            }
+        }
+
+        let outcome =
+            TestOutcome::new(Some(known_contracts), results, self.allow_failure, config.fuzz.seed);
+        if !shell::is_json() && !self.junit {
+            self.print_summary(&outcome, timer.elapsed())?;
+        }
+        persist_run_failures(&config, &outcome);
+        Ok((libraries, outcome))
+    }
+
     /// Builds the runner for one network pass and runs its tests.
     async fn run_network_pass(
         &self,
@@ -2156,6 +2233,19 @@ impl TestArgs {
     ) -> Result<(Libraries, TestOutcome)> {
         let NetworkPass { config, evm_opts, multi_network } = pass;
         let execution = TestExecutionOptions { multi_network, ..execution };
+        if std::env::var_os("FOUNDRY_EVM2_NATIVE").is_some() {
+            ensure!(
+                resolved_fork.is_none() && evm_opts.fork_url.is_none(),
+                "native fork execution is not implemented"
+            );
+            return self.run_native_network_pass(
+                Arc::new(config),
+                evm_opts,
+                output,
+                filter,
+                execution,
+            );
+        }
         let verbosity = evm_opts.verbosity;
         let config = Arc::new(config);
         dispatch_network!(&evm_opts, |Net| {
@@ -2221,21 +2311,6 @@ impl TestArgs {
         output: &ProjectCompileOutput,
     ) -> Result<TestOutcome> {
         let fuzz_seed = config.fuzz.seed;
-        let native = std::env::var_os("FOUNDRY_EVM2_NATIVE").is_some();
-        if native {
-            ensure!(
-                !self.debug
-                    && !self.gas_report
-                    && !self.flamegraph
-                    && !self.flamechart
-                    && self.evm_profile.is_none()
-                    && !runner.line_coverage
-                    && !runner.isolation
-                    && runner.showmap.is_none()
-                    && runner.config.tracing.verbosity == 0,
-                "native tracing, coverage, isolation, and campaign reporting are not implemented"
-            );
-        }
 
         trace!(target: "forge::test", "running all tests");
 
@@ -2355,11 +2430,7 @@ impl TestArgs {
         let serialize_json =
             self.mutate.is_none() && !self.gas_report && !self.summary && shell::is_json();
         if serialize_json || self.junit {
-            let mut results = if native {
-                runner.test_native_collect(filter)?
-            } else {
-                runner.test_collect(filter)?
-            };
+            let mut results = runner.test_collect(filter)?;
             if serialize_json {
                 prepare_results_for_json(&mut results, verbosity, tracing.trace_depth);
             }
@@ -2402,13 +2473,7 @@ impl TestArgs {
         let show_progress = config.show_progress;
         let handle = tokio::task::spawn_blocking({
             let filter = filter.clone();
-            move || {
-                if native {
-                    runner.test_native(&filter, tx).map(|()| runner)
-                } else {
-                    runner.test(&filter, tx, show_progress).map(|()| runner)
-                }
-            }
+            move || runner.test(&filter, tx, show_progress).map(|()| runner)
         });
 
         // Set up trace identifiers.

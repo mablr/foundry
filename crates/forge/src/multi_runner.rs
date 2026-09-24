@@ -9,17 +9,15 @@ use crate::{
         function_matches_network_pass,
     },
     symbolic_regression::SYMBOLIC_REGRESSION_MARKER,
+    test_contract::PreparedTestArtifacts,
 };
 use alloy_json_abi::{Function, JsonAbi};
 use alloy_primitives::{Address, Bytes, ChainId, U256};
 use eyre::Result;
 use foundry_cli::opts::configure_pcx_from_compile_output;
-use foundry_common::{
-    ContractsByArtifact, ContractsByArtifactBuilder, EmptyTestFilter, LIBRARY_DEPLOYER,
-    TestFunctionKind, get_contract_name,
-};
+use foundry_common::{ContractsByArtifact, TestFunctionKind, get_contract_name};
 use foundry_compilers::{
-    Artifact, ArtifactId, Compiler, ProjectCompileOutput,
+    ArtifactId, Compiler, ProjectCompileOutput,
     artifacts::{Contract, Libraries},
 };
 use foundry_config::{Config, FoundryHardfork, InlineConfig};
@@ -39,16 +37,16 @@ use foundry_evm::{
 };
 use foundry_evm_networks::NetworkVariant;
 
-use foundry_linking::{DetailedLinkOutput, LinkOutput, Linker, LinkerError, Resolver};
 use rayon::prelude::*;
 use std::{
-    borrow::Borrow,
     collections::BTreeMap,
     ops::{Deref, DerefMut},
     path::PathBuf,
     sync::{Arc, Mutex, mpsc},
     time::Instant,
 };
+
+pub use crate::test_contract::LibraryDeployment;
 
 /// A multi contract runner receives a set of contracts deployed in an EVM instance and proceeds
 /// to run all test functions in these contracts.
@@ -83,13 +81,6 @@ pub struct MultiContractRunner<FEN: FoundryEvmNetwork> {
 
     /// The base configuration for the test runner.
     pub tcfg: TestRunnerConfig<FEN>,
-}
-
-/// Forge-local library deployment strategy.
-#[derive(Clone, Copy, Debug)]
-pub enum LibraryDeployment {
-    Nonce,
-    Create2 { deployer: Address, salt: alloy_primitives::B256 },
 }
 
 impl<FEN: FoundryEvmNetwork> Deref for MultiContractRunner<FEN> {
@@ -750,102 +741,23 @@ impl MultiContractRunnerBuilder {
         evm_opts: EvmOpts,
         executor_builder: ExecutorBuilder<FEN>,
     ) -> Result<MultiContractRunner<FEN>> {
-        let root = &self.config.root;
-        let contracts = output
-            .artifact_ids()
-            .map(|(id, v)| (id.with_stripped_file_prefixes(root), v))
-            .collect();
-        let linker = Linker::new(root, contracts);
-
-        // Build revert decoder from ABIs of all artifacts.
-        let abis = linker
-            .contracts
-            .values()
-            .filter_map(|contract| contract.abi.as_ref().map(|abi| abi.borrow()));
-        let revert_decoder = RevertDecoder::new().with_abis(abis);
-
-        let configured_libraries = self.config.libraries_with_remappings()?;
-        let create2 = if self.create2_deployer_available(&evm_opts) {
-            match linker.link_with_create2_detailed(
-                configured_libraries.clone(),
-                evm_opts.create2_deployer,
-                self.config.create2_library_salt,
-                linker.contracts.keys(),
-            ) {
-                Ok(output) => Some(output),
-                Err(LinkerError::CyclicDependency) => None,
-                Err(err) => return Err(err.into()),
-            }
-        } else {
-            None
-        };
-        let (
-            DetailedLinkOutput {
-                output: LinkOutput { libraries, library_addresses, libs_to_deploy },
-                artifact_libraries,
-                ..
-            },
+        let PreparedTestArtifacts {
+            contracts: deployable_contracts,
+            known_contracts,
+            revert_decoder,
+            libs_to_deploy,
+            library_addresses,
             library_deployment,
-        ) = match create2 {
-            Some(output) => {
-                let deployment = if output.output.libs_to_deploy.is_empty() {
-                    LibraryDeployment::Nonce
-                } else {
-                    LibraryDeployment::Create2 {
-                        deployer: evm_opts.create2_deployer,
-                        salt: self.config.create2_library_salt,
-                    }
-                };
-                (output, deployment)
-            }
-            None => (
-                linker.link_with_nonce_or_address_detailed(
-                    configured_libraries,
-                    LIBRARY_DEPLOYER,
-                    0,
-                    linker.contracts.keys(),
-                )?,
-                LibraryDeployment::Nonce,
-            ),
-        };
-
-        let linked_contracts = linker
-            .get_linked_artifacts_cow_with_artifact_libraries(&libraries, &artifact_libraries)?;
-        let inline_config = self.inline_config;
-
-        // Collect every deployable test contract: a test contract with a default constructor.
-        let mut deployable_contracts = DeployableContracts::default();
-        let test_matcher = TestFunctionMatcher::new(
+            libraries,
+        } = PreparedTestArtifacts::new(
             &self.config,
-            &inline_config,
+            &self.inline_config,
             self.symbolic_artifact_replay.as_ref(),
-        );
-        let empty_filter = EmptyTestFilter::default();
-        let resolver = Resolver::new(&linker);
-        for (id, contract) in linked_contracts.iter() {
-            let Some(abi) = contract.abi.as_ref() else { continue };
-            if abi.constructor.as_ref().is_some_and(|c| !c.inputs.is_empty())
-                || !test_matcher.matches_contract(&empty_filter, id, abi)
-            {
-                continue;
-            }
-            linker.ensure_linked(contract, id)?;
-            let Some(bytecode) =
-                contract.get_bytecode_bytes().map(|b| b.into_owned()).filter(|b| !b.is_empty())
-            else {
-                continue;
-            };
-            let artifact_libraries = artifact_libraries.get(id).unwrap_or(&libraries);
-            let library_addresses = resolver.linked_library_addresses(id, artifact_libraries)?;
-            deployable_contracts.insert(
-                id.clone(),
-                TestContract { abi: abi.clone().into_owned(), bytecode, library_addresses },
-            );
-        }
-
-        // Create known contracts from linked contracts and storage layout information (if any).
-        let known_contracts =
-            ContractsByArtifactBuilder::new(linked_contracts).with_output(output, root).build();
+            output,
+            &evm_opts,
+            self.create2_deployer_available(&evm_opts),
+        )?;
+        let inline_config = self.inline_config;
 
         // Initialize and configure the solar compiler.
         let mut analysis = solar::sema::Compiler::new(

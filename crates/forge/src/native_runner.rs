@@ -2,25 +2,40 @@
 
 use crate::{
     TestContract, TestFilter,
-    multi_runner::{MultiContractRunner, is_generated_symbolic_regression_contract},
+    multi_runner::{TestFunctionMatcher, is_generated_symbolic_regression_contract},
     result::{SuiteResult, TestKind, TestResult, TestStatus},
+    test_contract::PreparedTestArtifacts,
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_json_abi::Function;
 use alloy_primitives::{Address, Bytes, TxKind, U256};
-use evm2::{TxResult, ethereum::TxEnvelope};
+use evm2::{
+    TxResult,
+    ethereum::{TxEnvelope, intrinsic_gas},
+};
 use eyre::{Result, ensure};
 use foundry_cheatcodes::native::NativeCheatcodes;
 use foundry_common::TestFunctionKind;
+use foundry_compilers::ProjectCompileOutput;
+use foundry_config::{Config, InlineConfig};
 use foundry_evm::{
     core::{
         constants::CALLER,
-        evm::FoundryEvmNetwork,
         native::{EthereumEnv, LocalState},
     },
     native::EthereumExecutor,
+    opts::EvmOpts,
 };
-use std::{collections::BTreeMap, sync::mpsc, time::Instant};
+use std::{collections::BTreeMap, sync::Arc, time::Instant};
+
+/// Linked local tests and native Ethereum execution options.
+pub(crate) struct NativeMultiContractRunner {
+    pub prepared: PreparedTestArtifacts,
+    config: Arc<Config>,
+    inline_config: Arc<InlineConfig>,
+    evm_opts: EvmOpts,
+    sender: Address,
+}
 
 /// A deployed test contract with state shared by its individual test runs.
 #[derive(Clone, Debug)]
@@ -137,35 +152,44 @@ impl NativeContractRunner {
     }
 }
 
-impl<FEN: FoundryEvmNetwork> MultiContractRunner<FEN> {
-    /// Collects results from local unit tests executed through evm2.
-    pub fn test_native_collect(
-        &self,
-        filter: &dyn TestFilter,
-    ) -> Result<BTreeMap<String, SuiteResult>> {
-        let (tx, rx) = mpsc::channel();
-        self.test_native(filter, tx)?;
-        Ok(rx.into_iter().collect())
+impl NativeMultiContractRunner {
+    /// Prepares linked test artifacts without constructing a REVM executor.
+    pub fn new(
+        config: Arc<Config>,
+        inline_config: Arc<InlineConfig>,
+        output: &ProjectCompileOutput,
+        evm_opts: EvmOpts,
+        sender: Address,
+        create2_deployer_available: bool,
+    ) -> Result<Self> {
+        let prepared = PreparedTestArtifacts::new(
+            &config,
+            &inline_config,
+            None,
+            output,
+            &evm_opts,
+            create2_deployer_available,
+        )?;
+        Ok(Self { prepared, config, inline_config, evm_opts, sender })
     }
 
-    /// Runs local unit tests through evm2 while the native Forge runner is being migrated.
-    pub fn test_native(
-        &self,
-        filter: &dyn TestFilter,
-        tx: mpsc::Sender<(String, SuiteResult)>,
-    ) -> Result<()> {
-        ensure!(self.fork.is_none(), "native fork execution is not implemented");
-        let env = EthereumEnv::local_from_config(&self.tcfg.config, &self.tcfg.evm_opts)?;
+    /// Executes selected local unit tests through evm2 and collects their results.
+    pub fn test_collect(&self, filter: &dyn TestFilter) -> Result<BTreeMap<String, SuiteResult>> {
+        let env = EthereumEnv::local_from_config(&self.config, &self.evm_opts)?;
         let gas_price = u128::try_from(env.block.basefee)?;
-        let matcher = self.test_function_matcher();
-        for (id, contract) in self.matching_contracts(filter) {
+        let matcher = TestFunctionMatcher::new(&self.config, &self.inline_config, None);
+        let mut suites = BTreeMap::new();
+        for (id, contract) in &self.prepared.contracts {
+            if !matcher.matches_contract(filter, id, &contract.abi) {
+                continue;
+            }
             let timer = Instant::now();
             let runner = NativeContractRunner::new(
                 contract,
                 env,
-                self.tcfg.sender,
-                self.tcfg.evm_opts.initial_balance,
-                self.tcfg.evm_opts.gas_limit(),
+                self.sender,
+                self.evm_opts.initial_balance,
+                self.evm_opts.gas_limit(),
                 gas_price,
             )?;
             let mut tests = BTreeMap::new();
@@ -182,22 +206,31 @@ impl<FEN: FoundryEvmNetwork> MultiContractRunner<FEN> {
                 );
                 let result = runner.run_unit(function)?;
                 let passed = result.status;
+                let input = Bytes::copy_from_slice(function.selector().as_slice());
+                let stipend = intrinsic_gas(
+                    &env.version,
+                    CALLER,
+                    TxKind::Call(runner.address()),
+                    &input,
+                    0,
+                    0,
+                    U256::ZERO,
+                );
                 tests.insert(
                     function.signature(),
                     TestResult {
                         status: if passed { TestStatus::Success } else { TestStatus::Failure },
                         reason: (!passed)
                             .then(|| format!("EVM execution stopped: {:?}", result.stop)),
-                        kind: TestKind::Unit { gas: result.tx_gas_used() },
+                        kind: TestKind::Unit { gas: result.tx_gas_used().saturating_sub(stipend) },
                         logs: result.logs,
                         ..Default::default()
                     },
                 );
             }
-            let _ =
-                tx.send((id.identifier(), SuiteResult::new(timer.elapsed(), tests, Vec::new())));
+            suites.insert(id.identifier(), SuiteResult::new(timer.elapsed(), tests, Vec::new()));
         }
-        Ok(())
+        Ok(suites)
     }
 }
 
