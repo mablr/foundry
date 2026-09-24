@@ -2,6 +2,71 @@
 
 use foundry_test_utils::{forgetest_init, str};
 
+forgetest_init!(evm2_deploys_linked_libraries, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_source(
+        "NativeLib.sol",
+        r#"
+library NativeLib {
+    function identity(uint256 value) external pure returns (uint256) {
+        return value;
+    }
+}
+"#,
+    );
+    prj.add_test(
+        "NativeLibrary.t.sol",
+        r#"
+import "src/NativeLib.sol";
+
+contract NativeLibraryTest {
+    uint256 value;
+
+    constructor() {
+        value = NativeLib.identity(42);
+    }
+
+    function testLibrary() public view {
+        require(value == 42, "library call failed");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.args(["test", "--match-test", "testLibrary"]).assert_success();
+
+    prj.update_config(|config| config.create2_deployer = alloy_primitives::Address::ZERO);
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.args(["test", "--match-test", "testLibrary"]).assert_success();
+});
+
+forgetest_init!(evm2_installs_create2_factory_after_constructor, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativeFactory.t.sol",
+        r#"
+contract NativeFactoryTest {
+    address constant FACTORY = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
+
+    constructor() {
+        require(FACTORY.code.length == 0, "factory installed before constructor");
+    }
+
+    function testFactoryInstalled() public view {
+        require(FACTORY.code.length > 0, "factory not installed after constructor");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.args(["test", "--match-test", "testFactoryInstalled"]).assert_success();
+});
+
 forgetest_init!(evm2_runs_compiled_setup_and_unit_test, |prj, cmd| {
     prj.update_config(|config| config.isolate = false);
     prj.add_test(

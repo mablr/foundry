@@ -2,7 +2,9 @@
 
 use crate::{
     TestContract, TestFilter,
-    multi_runner::{TestFunctionMatcher, is_generated_symbolic_regression_contract},
+    multi_runner::{
+        LibraryDeployment, TestFunctionMatcher, is_generated_symbolic_regression_contract,
+    },
     result::{SuiteResult, TestKind, TestResult, TestStatus},
     test_contract::PreparedTestArtifacts,
 };
@@ -15,12 +17,15 @@ use evm2::{
 };
 use eyre::{Result, ensure};
 use foundry_cheatcodes::native::NativeCheatcodes;
-use foundry_common::TestFunctionKind;
+use foundry_common::{LIBRARY_DEPLOYER, TestFunctionKind};
 use foundry_compilers::ProjectCompileOutput;
 use foundry_config::{Config, InlineConfig};
 use foundry_evm::{
     core::{
-        constants::CALLER,
+        constants::{
+            CALLER, DEFAULT_CREATE2_DEPLOYER, DEFAULT_CREATE2_DEPLOYER_CODE,
+            DEFAULT_CREATE2_DEPLOYER_DEPLOYER,
+        },
         native::{EthereumEnv, LocalState},
     },
     native::EthereumExecutor,
@@ -47,43 +52,111 @@ pub struct NativeContractRunner {
     gas_price: u128,
 }
 
+/// Libraries linked into a native test contract.
+pub(crate) struct NativeLibraries<'a> {
+    code: &'a [Bytes],
+    deployment: LibraryDeployment,
+}
+
 impl NativeContractRunner {
     /// Deploys a linked test contract and executes its optional `setUp()` function.
-    pub fn new(
+    pub(crate) fn new(
         contract: &TestContract,
         env: EthereumEnv,
         sender: Address,
         initial_balance: U256,
         gas_limit: u64,
         gas_price: u128,
+        libraries: NativeLibraries<'_>,
     ) -> Result<Self> {
-        ensure!(
-            contract.library_addresses.is_empty(),
-            "native library deployment is not implemented"
-        );
         let mut state = LocalState::default();
         let mut inspector = NativeCheatcodes;
         inspector.install(&mut state);
         state.set_balance(sender, U256::MAX);
         state.set_nonce(sender, 1);
         state.set_balance(CALLER, U256::MAX);
+        state.set_balance(LIBRARY_DEPLOYER, U256::MAX);
         let expected_address = sender.create(1);
         state.set_balance(expected_address, initial_balance);
         let mut executor = EthereumExecutor::new(env, state);
-        let deploy = Self::transaction(
+        if let LibraryDeployment::Create2 { deployer, .. } = libraries.deployment
+            && !libraries.code.is_empty()
+        {
+            ensure!(
+                deployer == DEFAULT_CREATE2_DEPLOYER,
+                "native custom CREATE2 deployer is not implemented"
+            );
+            Self::deploy_create2_factory(&mut executor, &mut inspector, gas_limit, gas_price)?;
+        }
+        for (index, code) in libraries.code.iter().enumerate() {
+            match libraries.deployment {
+                LibraryDeployment::Nonce => {
+                    let address = Self::deploy_code(
+                        &mut executor,
+                        &mut inspector,
+                        LIBRARY_DEPLOYER,
+                        index as u64,
+                        code.clone(),
+                        gas_limit,
+                        gas_price,
+                    )?;
+                    ensure!(
+                        address == LIBRARY_DEPLOYER.create(index as u64),
+                        "native library deployment returned an unexpected address"
+                    );
+                }
+                LibraryDeployment::Create2 { deployer, salt } => {
+                    let expected = deployer.create2_from_code(salt, code);
+                    let mut input = Vec::with_capacity(32 + code.len());
+                    input.extend_from_slice(salt.as_slice());
+                    input.extend_from_slice(code);
+                    let tx = Self::transaction(
+                        LIBRARY_DEPLOYER,
+                        index as u64,
+                        TxKind::Call(deployer),
+                        input.into(),
+                        gas_limit,
+                        gas_price,
+                    );
+                    let result = executor.inspect_transact(&tx, &mut inspector)?;
+                    ensure!(
+                        result.status,
+                        "native CREATE2 library deployment failed: {:?}",
+                        result.stop
+                    );
+                    ensure!(
+                        executor.state().database().account_info(&expected).is_some_and(|info| {
+                            executor
+                                .state()
+                                .database()
+                                .cache
+                                .contracts
+                                .get(&info.code_hash)
+                                .is_some_and(|code| !code.is_empty())
+                        }),
+                        "native CREATE2 library deployment produced no code at {expected}"
+                    );
+                }
+            }
+        }
+        let address = Self::deploy_code(
+            &mut executor,
+            &mut inspector,
             sender,
             1,
-            TxKind::Create,
             contract.bytecode.clone(),
             gas_limit,
             gas_price,
-        );
-        let result = executor.inspect_transact(&deploy, &mut inspector)?;
-        ensure!(result.status, "native test contract deployment failed: {:?}", result.stop);
-        let address = result
-            .created_address
-            .ok_or_else(|| eyre::eyre!("native deployment returned no address"))?;
+        )?;
         ensure!(address == expected_address, "native deployment returned an unexpected address");
+
+        executor.state_mut().set_balance(sender, initial_balance);
+        executor.state_mut().set_balance(CALLER, initial_balance);
+        executor.state_mut().set_balance(LIBRARY_DEPLOYER, initial_balance);
+
+        if matches!(libraries.deployment, LibraryDeployment::Nonce) {
+            Self::deploy_create2_factory(&mut executor, &mut inspector, gas_limit, gas_price)?;
+        }
 
         let mut runner = Self { executor, inspector, address, gas_limit, gas_price };
         if let Some(setup) = contract
@@ -128,6 +201,49 @@ impl NativeContractRunner {
             self.gas_price,
         );
         Ok(self.executor.inspect_transact(&tx, &mut self.inspector)?)
+    }
+
+    fn deploy_code(
+        executor: &mut EthereumExecutor,
+        inspector: &mut NativeCheatcodes,
+        caller: Address,
+        nonce: u64,
+        code: Bytes,
+        gas_limit: u64,
+        gas_price: u128,
+    ) -> Result<Address> {
+        let tx = Self::transaction(caller, nonce, TxKind::Create, code, gas_limit, gas_price);
+        let result = executor.inspect_transact(&tx, inspector)?;
+        ensure!(result.status, "native contract deployment failed: {:?}", result.stop);
+        result.created_address.ok_or_else(|| eyre::eyre!("native deployment returned no address"))
+    }
+
+    fn deploy_create2_factory(
+        executor: &mut EthereumExecutor,
+        inspector: &mut NativeCheatcodes,
+        gas_limit: u64,
+        gas_price: u128,
+    ) -> Result<()> {
+        let creator = DEFAULT_CREATE2_DEPLOYER_DEPLOYER;
+        let balance = executor
+            .state()
+            .database()
+            .account_info(&creator)
+            .map_or(U256::ZERO, |info| info.balance);
+        executor.state_mut().set_balance(creator, U256::MAX);
+        let nonce = executor.state().database().account_info(&creator).map_or(0, |info| info.nonce);
+        let address = Self::deploy_code(
+            executor,
+            inspector,
+            creator,
+            nonce,
+            DEFAULT_CREATE2_DEPLOYER_CODE.into(),
+            gas_limit,
+            gas_price,
+        )?;
+        ensure!(address == DEFAULT_CREATE2_DEPLOYER, "native CREATE2 factory address mismatch");
+        executor.state_mut().set_balance(creator, balance);
+        Ok(())
     }
 
     fn transaction(
@@ -191,6 +307,10 @@ impl NativeMultiContractRunner {
                 self.evm_opts.initial_balance,
                 self.evm_opts.gas_limit(),
                 gas_price,
+                NativeLibraries {
+                    code: &self.prepared.libs_to_deploy,
+                    deployment: self.prepared.library_deployment,
+                },
             )?;
             let mut tests = BTreeMap::new();
             for function in matcher.matching_test_functions(filter, id, &contract.abi) {
@@ -260,8 +380,16 @@ mod tests {
             BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
         );
         let sender = Address::with_last_byte(0xa);
-        let runner =
-            NativeContractRunner::new(&contract, env, sender, U256::ZERO, 100_000, 0).unwrap();
+        let runner = NativeContractRunner::new(
+            &contract,
+            env,
+            sender,
+            U256::ZERO,
+            100_000,
+            0,
+            NativeLibraries { code: &[], deployment: LibraryDeployment::Nonce },
+        )
+        .unwrap();
 
         assert_eq!(runner.address(), sender.create(1));
         let result = runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();
