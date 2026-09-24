@@ -8,7 +8,10 @@ use foundry_evm_core::constants::CHEATCODE_ADDRESS;
 use revm::{
     Inspector,
     context::{ContextTr, JournalTr, Transaction},
-    interpreter::{CallInput, CallInputs, CallOutcome, CallScheme, CallValue, Interpreter},
+    interpreter::{
+        CallInput, CallInputs, CallOutcome, CallScheme, CallValue, Interpreter,
+        interpreter_types::Jumps,
+    },
 };
 
 /// A sub-call observed by the [`Fuzzer`] inspector.
@@ -108,17 +111,28 @@ impl<CTX: ContextTr> Inspector<CTX> for Fuzzer {
 impl Fuzzer {
     fn capture_mapping_hash(&mut self, interpreter: &Interpreter) {
         if let Some(mapping_slots) = &mut self.mapping_slots {
-            mapping_step(mapping_slots, interpreter);
-            self.pending_mapping_hash = capture_mapping_hash(interpreter);
+            mapping_step(
+                mapping_slots,
+                interpreter.bytecode.opcode(),
+                interpreter.input.target_address,
+                || interpreter.stack.peek(0).ok(),
+            );
+            self.pending_mapping_hash = capture_mapping_hash(
+                interpreter.bytecode.opcode(),
+                interpreter.input.target_address,
+                |index| interpreter.stack.peek(index).ok(),
+            );
         }
     }
 
     fn record_mapping_hash(&mut self, interpreter: &Interpreter) {
         if let Some(pending) = self.pending_mapping_hash.take()
             && interpreter.bytecode.action.is_none()
+            && let Ok(result) = interpreter.stack.peek(0)
             && let Some(mapping_slots) = &mut self.mapping_slots
         {
-            record_mapping_hash(mapping_slots, interpreter, pending);
+            let preimage = interpreter.memory.slice_len(pending.offset, 0x40);
+            record_mapping_hash(mapping_slots, pending, result, &preimage);
         }
     }
 

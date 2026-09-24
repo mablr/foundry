@@ -2,10 +2,9 @@ use alloy_primitives::{
     Address, B256, U256,
     map::{AddressHashMap, B256HashMap},
 };
-use revm::{
-    bytecode::opcode,
-    interpreter::{Interpreter, interpreter_types::Jumps},
-};
+
+const KECCAK256: u8 = 0x20;
+const SSTORE: u8 = 0x55;
 
 /// Provenance recovered for a Solidity mapping storage slot.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -86,26 +85,27 @@ pub struct PendingMappingHash {
 }
 
 /// Captures a 64-byte Keccak operation before execution.
-pub fn capture_hash(interpreter: &Interpreter) -> Option<PendingMappingHash> {
-    if interpreter.bytecode.opcode() != opcode::KECCAK256
-        || interpreter.stack.peek(1).ok()? != U256::from(0x40)
-    {
+pub fn capture_hash(
+    opcode: u8,
+    address: Address,
+    stack: impl Fn(usize) -> Option<U256>,
+) -> Option<PendingMappingHash> {
+    if opcode != KECCAK256 || stack(1)? != U256::from(0x40) {
         return None;
     }
-    Some(PendingMappingHash {
-        address: interpreter.input.target_address,
-        offset: interpreter.stack.peek(0).ok()?.try_into().ok()?,
-    })
+    Some(PendingMappingHash { address, offset: stack(0)?.try_into().ok()? })
 }
 
 /// Records a successfully executed 64-byte Keccak operation after memory expansion.
 pub fn record_hash(
     mapping_slots: &mut AddressHashMap<MappingSlots>,
-    interpreter: &Interpreter,
     pending: PendingMappingHash,
+    result: U256,
+    data: &[u8],
 ) {
-    let Ok(result) = interpreter.stack.peek(0) else { return };
-    let data = interpreter.memory.slice_len(pending.offset, 0x40);
+    if data.len() != 0x40 {
+        return;
+    }
     let key = B256::from_slice(&data[..0x20]);
     let parent = B256::from_slice(&data[0x20..]);
     mapping_slots.entry(pending.address).or_default().record_hash(result.into(), key, parent);
@@ -113,10 +113,15 @@ pub fn record_hash(
 
 /// Function to be used in `Inspector::step` to record mapping slots.
 #[cold]
-pub fn step(mapping_slots: &mut AddressHashMap<MappingSlots>, interpreter: &Interpreter) {
-    if interpreter.bytecode.opcode() == opcode::SSTORE
-        && let Some(mapping_slots) = mapping_slots.get_mut(&interpreter.input.target_address)
-        && let Ok(slot) = interpreter.stack.peek(0)
+pub fn step(
+    mapping_slots: &mut AddressHashMap<MappingSlots>,
+    opcode: u8,
+    address: Address,
+    slot: impl FnOnce() -> Option<U256>,
+) {
+    if opcode == SSTORE
+        && let Some(mapping_slots) = mapping_slots.get_mut(&address)
+        && let Some(slot) = slot()
     {
         mapping_slots.insert(slot.into());
     }
@@ -126,6 +131,27 @@ pub fn step(mapping_slots: &mut AddressHashMap<MappingSlots>, interpreter: &Inte
 mod tests {
     use super::*;
     use alloy_primitives::keccak256;
+
+    #[test]
+    fn records_mapping_from_engine_values() {
+        let address = Address::with_last_byte(1);
+        let key = B256::with_last_byte(2);
+        let parent = B256::with_last_byte(3);
+        let preimage = [key.as_slice(), parent.as_slice()].concat();
+        let slot = keccak256(&preimage);
+        let pending = capture_hash(KECCAK256, address, |index| {
+            Some(if index == 1 { U256::from(64) } else { U256::ZERO })
+        })
+        .unwrap();
+        let mut mappings = AddressHashMap::default();
+        record_hash(&mut mappings, pending, U256::from_be_bytes(slot.0), &preimage);
+        step(&mut mappings, SSTORE, address, || Some(U256::from_be_bytes(slot.0)));
+
+        assert_eq!(
+            mappings[&address].resolve(slot),
+            Some(MappingProvenance { root_slot: parent, keys: vec![key] })
+        );
+    }
 
     #[test]
     fn resolves_mapping_keys_from_root_to_leaf() {

@@ -2251,7 +2251,12 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcode
         if self.mapping_slots.is_some() || !self.mapping_storage_store_hooks.is_empty() {
             // `startMappingRecording`: record SSTORE.
             if let Some(mapping_slots) = &mut self.mapping_slots {
-                mapping_step(mapping_slots, interpreter);
+                mapping_step(
+                    mapping_slots,
+                    interpreter.bytecode.opcode(),
+                    interpreter.input.target_address,
+                    || interpreter.stack.peek(0).ok(),
+                );
             }
 
             let account = interpreter.input.target_address;
@@ -2261,10 +2266,17 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcode
                     .get(&account)
                     .is_some_and(|hooks| !hooks.is_empty());
             if mapping_hook_active {
-                mapping_step(&mut self.storage_hook_mapping_slots, interpreter);
+                mapping_step(
+                    &mut self.storage_hook_mapping_slots,
+                    interpreter.bytecode.opcode(),
+                    account,
+                    || interpreter.stack.peek(0).ok(),
+                );
             }
             self.pending_mapping_hash = if self.mapping_slots.is_some() || mapping_hook_active {
-                capture_mapping_hash(interpreter)
+                capture_mapping_hash(interpreter.bytecode.opcode(), account, |index| {
+                    interpreter.stack.peek(index).ok()
+                })
             } else {
                 None
             };
@@ -2335,9 +2347,11 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcode
                 .as_ref()
                 .and_then(InterpreterAction::instruction_result)
                 .is_none()
+            && let Ok(result) = interpreter.stack.peek(0)
         {
+            let preimage = interpreter.memory.slice_len(pending.offset, 0x40);
             if let Some(mapping_slots) = &mut self.mapping_slots {
-                record_mapping_hash(mapping_slots, interpreter, pending);
+                record_mapping_hash(mapping_slots, pending, result, &preimage);
             }
             if self
                 .mapping_storage_store_hooks
@@ -2345,7 +2359,12 @@ impl<FEN: FoundryEvmNetwork> Inspector<FoundryContextFor<'_, FEN>> for Cheatcode
                 .is_some_and(|hooks| !hooks.is_empty())
                 && self.active_storage_hook.is_none()
             {
-                record_mapping_hash(&mut self.storage_hook_mapping_slots, interpreter, pending);
+                record_mapping_hash(
+                    &mut self.storage_hook_mapping_slots,
+                    pending,
+                    result,
+                    &preimage,
+                );
             }
         }
 
