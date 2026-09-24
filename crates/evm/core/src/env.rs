@@ -1,4 +1,4 @@
-use crate::{BlockEnv, ExecutionConfig};
+use crate::{BlockEnv, ExecutionConfig, TransactionEnv};
 use alloy_chains::NamedChain;
 use alloy_consensus::{Transaction as _, Typed2718};
 use alloy_network::{AnyRpcTransaction, AnyTxEnvelope, TransactionResponse};
@@ -24,7 +24,7 @@ use op_revm::transaction::deposit::DEPOSIT_TRANSACTION_TYPE;
 
 /// Foundry-owned execution configuration, independent of an EVM factory.
 ///
-/// TODO(evm2): Replace the remaining REVM transaction inputs in the shared environment.
+/// TODO(evm2): Remove the remaining legacy transaction adapters in the shared environment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EvmEnv<Spec = evm2::SpecId, B = BlockEnv> {
     pub cfg_env: ExecutionConfig<Spec>,
@@ -275,6 +275,53 @@ impl FoundryTransaction for TxEnv {
     }
 }
 
+impl FoundryTransaction for TransactionEnv {
+    fn set_tx_type(&mut self, value: u8) {
+        self.tx_type = value;
+    }
+    fn set_caller(&mut self, value: Address) {
+        self.caller = value;
+    }
+    fn set_gas_limit(&mut self, value: u64) {
+        self.gas_limit = value;
+    }
+    fn set_gas_price(&mut self, value: u128) {
+        self.gas_price = value;
+    }
+    fn set_kind(&mut self, value: TxKind) {
+        self.kind = value;
+    }
+    fn set_value(&mut self, value: U256) {
+        self.value = value;
+    }
+    fn set_data(&mut self, value: Bytes) {
+        self.data = value;
+    }
+    fn set_nonce(&mut self, value: u64) {
+        self.nonce = value;
+    }
+    fn set_chain_id(&mut self, value: Option<u64>) {
+        self.chain_id = value;
+    }
+    fn set_access_list(&mut self, value: AccessList) {
+        self.access_list = value;
+    }
+    fn authorization_list_mut(
+        &mut self,
+    ) -> &mut Vec<Either<SignedAuthorization, RecoveredAuthorization>> {
+        &mut self.authorization_list
+    }
+    fn set_gas_priority_fee(&mut self, value: Option<u128>) {
+        self.gas_priority_fee = value;
+    }
+    fn set_blob_hashes(&mut self, value: Vec<B256>) {
+        self.blob_hashes = value;
+    }
+    fn set_max_fee_per_blob_gas(&mut self, value: u128) {
+        self.max_fee_per_blob_gas = value;
+    }
+}
+
 /* EVM2 migration: disabled non-Ethereum execution.
 impl FoundryTransaction for TempoTxEnv {
     fn set_tx_type(&mut self, tx_type: u8) {
@@ -393,6 +440,36 @@ impl<Tx> FoundryChain<Tx> for () {}
 pub trait FromAnyRpcTransaction: Sized {
     /// Tries to convert an [`AnyRpcTransaction`] into `Self`.
     fn from_any_rpc_transaction(tx: &AnyRpcTransaction) -> eyre::Result<Self>;
+}
+
+impl FromAnyRpcTransaction for TransactionEnv {
+    fn from_any_rpc_transaction(tx: &AnyRpcTransaction) -> eyre::Result<Self> {
+        let Some(envelope) = tx.as_envelope() else {
+            eyre::bail!("evm2 Ethereum execution requires a supported Ethereum transaction");
+        };
+        Ok(Self {
+            tx_type: envelope.ty(),
+            caller: tx.from(),
+            gas_limit: envelope.gas_limit(),
+            gas_price: envelope.max_fee_per_gas(),
+            gas_priority_fee: envelope.max_priority_fee_per_gas(),
+            kind: envelope.kind(),
+            value: envelope.value(),
+            data: envelope.input().clone(),
+            nonce: envelope.nonce(),
+            chain_id: envelope.chain_id(),
+            access_list: envelope.access_list().cloned().unwrap_or_default(),
+            blob_hashes: envelope.blob_versioned_hashes().unwrap_or_default().to_vec(),
+            max_fee_per_blob_gas: envelope.max_fee_per_blob_gas().unwrap_or_default(),
+            authorization_list: envelope
+                .authorization_list()
+                .unwrap_or_default()
+                .iter()
+                .cloned()
+                .map(|auth| Either::Right(auth.into_recovered()))
+                .collect(),
+        })
+    }
 }
 
 impl FromAnyRpcTransaction for TxEnv {
@@ -1163,8 +1240,10 @@ mod tests {
                 Recovered::new_unchecked(envelope, caller),
                 TransactionInfo::default(),
             );
-            let actual = TxEnv::from_any_rpc_transaction(&rpc.into()).unwrap();
+            let rpc = rpc.into();
+            let actual = TxEnv::from_any_rpc_transaction(&rpc).unwrap();
             assert_eq!(actual, expected);
+            assert_eq!(TransactionEnv::from_any_rpc_transaction(&rpc).unwrap(), actual.into());
         }
     }
 
@@ -1211,6 +1290,10 @@ mod tests {
 
         let result = TxEnv::from_any_rpc_transaction(&any_tx).unwrap_err();
         assert!(result.to_string().contains("unknown transaction type"));
+        assert_eq!(
+            TransactionEnv::from_any_rpc_transaction(&any_tx).unwrap_err().to_string(),
+            "evm2 Ethereum execution requires a supported Ethereum transaction"
+        );
     }
 
     #[test]

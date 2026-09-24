@@ -1740,9 +1740,8 @@ mod tests {
     use ::evm2::{EvmFeatures, SpecId as NativeSpecId, constants::MAX_CODE_SIZE_AMSTERDAM};
     use foundry_cheatcodes::{CheatsConfig, Vm::mockCallRevert_1Call};
     use foundry_config::Config;
-    use foundry_evm_core::{constants::MAGIC_SKIP, opts::EvmOpts};
+    use foundry_evm_core::{TransactionEnv as TxEnv, constants::MAGIC_SKIP, opts::EvmOpts};
     use foundry_evm_traces::InternalTraceMode;
-    use revm::context::TxEnv;
     use std::{sync::mpsc, thread};
 
     /* EVM2 migration: disabled non-Ethereum execution.

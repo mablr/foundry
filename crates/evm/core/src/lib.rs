@@ -52,6 +52,8 @@ pub mod spec;
 pub mod state_changes;
 pub mod state_snapshot;
 pub use spec::SpecIdConversion;
+pub mod transaction;
+pub use transaction::TransactionEnv;
 // Disabled for the Ethereum-only EVM2 migration.
 // pub mod tempo;
 pub mod utils;
