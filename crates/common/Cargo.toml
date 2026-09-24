@@ -50,8 +50,6 @@ op-alloy-rpc-types = { workspace = true, optional = true }
 base-common-network = { workspace = true, optional = true, features = ["serde", "std"] }
 base-common-rpc-types = { workspace = true, optional = true, features = ["serde", "std"] }
 
-revm.workspace = true
-
 solar.workspace = true
 
 tower.workspace = true

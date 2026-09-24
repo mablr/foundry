@@ -59,7 +59,7 @@ use foundry_evm::{
         cheatcodes::{BroadcastableTransactions, Wallets},
     },
     opts::{EvmOpts, ExecutionSpecContext, resolve_execution_spec},
-    revm::interpreter::InstructionResult,
+    revm::{interpreter::InstructionResult, primitives::hardfork::SpecId},
     traces::{InternalTraceMode, TraceRequirements, Traces},
 };
 use foundry_evm_networks::NetworkConfigs;
@@ -830,7 +830,8 @@ impl ScriptArgs {
             })
             .unwrap_or_else(|| {
                 let spec_id: SpecFor<FEN> = config.evm_spec_id();
-                ContractSizeLimits::for_spec_id(spec_id.into())
+                let spec_id: SpecId = spec_id.into();
+                ContractSizeLimits::for_amsterdam(spec_id.is_enabled_in(SpecId::AMSTERDAM))
             })
     }
 

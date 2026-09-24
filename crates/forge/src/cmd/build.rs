@@ -29,6 +29,7 @@ use foundry_config::{
     },
     filter::{expand_globs, is_ignored_path},
 };
+use revm::primitives::hardfork::SpecId;
 use serde::Serialize;
 use solar::{
     interface::{Session, config::CompileOpts},
@@ -322,7 +323,10 @@ fn contract_size_limits(config: &Config) -> ContractSizeLimits {
                 .contract_size_limits()
                 .map(|limits| ContractSizeLimits::new(limits.runtime, limits.initcode))
         })
-        .unwrap_or_else(|| ContractSizeLimits::for_spec_id(config.evm_spec_id()))
+        .unwrap_or_else(|| {
+            let spec_id: SpecId = config.evm_spec_id();
+            ContractSizeLimits::for_amsterdam(spec_id.is_enabled_in(SpecId::AMSTERDAM))
+        })
 }
 /// Notice shown on lint-on-build failure; printed separately so it survives single-line
 /// cause-chain rendering.

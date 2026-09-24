@@ -26,7 +26,6 @@ use foundry_compilers::{
     solc::SolcSettings,
 };
 use num_format::{Locale, ToFormattedString};
-use revm::primitives::{eip170, eip3860, hardfork::SpecId};
 use solar::{
     ast::{Arena, ContractKind, ItemKind},
     interface::{Session, source_map::FileName},
@@ -414,10 +413,10 @@ impl ProjectCompiler {
 }
 
 // https://eips.ethereum.org/EIPS/eip-170
-const CONTRACT_RUNTIME_SIZE_LIMIT: usize = eip170::MAX_CODE_SIZE;
+const CONTRACT_RUNTIME_SIZE_LIMIT: usize = 24_576;
 
 // https://eips.ethereum.org/EIPS/eip-3860
-const CONTRACT_INITCODE_SIZE_LIMIT: usize = eip3860::MAX_INITCODE_SIZE;
+const CONTRACT_INITCODE_SIZE_LIMIT: usize = 49_152;
 
 // https://eips.ethereum.org/EIPS/eip-7954
 const AMSTERDAM_CONTRACT_RUNTIME_SIZE_LIMIT: usize = 65_536;
@@ -446,9 +445,9 @@ impl ContractSizeLimits {
         Self { runtime, initcode: runtime.saturating_mul(2) }
     }
 
-    /// Returns the protocol limits active for an EVM specification.
-    pub const fn for_spec_id(spec_id: SpecId) -> Self {
-        if spec_id.is_enabled_in(SpecId::AMSTERDAM) {
+    /// Returns the protocol limits active before or after Amsterdam.
+    pub const fn for_amsterdam(amsterdam: bool) -> Self {
+        if amsterdam {
             Self::new(AMSTERDAM_CONTRACT_RUNTIME_SIZE_LIMIT, AMSTERDAM_CONTRACT_INITCODE_SIZE_LIMIT)
         } else {
             Self::new(CONTRACT_RUNTIME_SIZE_LIMIT, CONTRACT_INITCODE_SIZE_LIMIT)
@@ -1014,9 +1013,9 @@ mod tests {
 
     #[test]
     fn contract_size_limits_follow_evm_spec() {
-        assert_eq!(ContractSizeLimits::for_spec_id(SpecId::OSAKA), ContractSizeLimits::default());
+        assert_eq!(ContractSizeLimits::for_amsterdam(false), ContractSizeLimits::default());
         assert_eq!(
-            ContractSizeLimits::for_spec_id(SpecId::AMSTERDAM),
+            ContractSizeLimits::for_amsterdam(true),
             ContractSizeLimits::new(65_536, 131_072)
         );
     }
