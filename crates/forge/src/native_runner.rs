@@ -324,6 +324,13 @@ impl NativeMultiContractRunner {
                 );
                 let result = runner.run_unit(function)?;
                 let passed = result.status;
+                let reason = (!passed).then(|| {
+                    if result.output.is_empty() {
+                        format!("EvmError: {:?}", result.stop)
+                    } else {
+                        self.prepared.revert_decoder.decode(&result.output, None)
+                    }
+                });
                 let input = Bytes::copy_from_slice(function.selector().as_slice());
                 let stipend = intrinsic_gas(
                     &env.version,
@@ -338,8 +345,7 @@ impl NativeMultiContractRunner {
                     function.signature(),
                     TestResult {
                         status: if passed { TestStatus::Success } else { TestStatus::Failure },
-                        reason: (!passed)
-                            .then(|| format!("EVM execution stopped: {:?}", result.stop)),
+                        reason,
                         kind: TestKind::Unit { gas: result.tx_gas_used().saturating_sub(stipend) },
                         logs: result.logs,
                         ..Default::default()

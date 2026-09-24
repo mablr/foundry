@@ -117,7 +117,7 @@ Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
 No files changed, compilation skipped
 
 Ran 1 test for test/Native.t.sol:NativeTest
-[FAIL: EVM execution stopped: Revert] testBroken() ([GAS])
+[FAIL: expected failure] testBroken() ([GAS])
 Suite result: FAILED. 0 passed; 1 failed; 0 skipped; [ELAPSED]
 
 Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 0 skipped (1 total tests)
