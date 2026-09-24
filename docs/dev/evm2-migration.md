@@ -211,5 +211,7 @@ observer dependencies from Forge.
 
 Execution configuration now stores Foundry overrides and derives native evm2 versions;
 it no longer embeds REVM CfgEnv or its gas table. Anvil keeps its complete legacy configuration
-and applies only shared replay metadata changes. The network spec association and block/transaction
-types remain legacy boundaries; unsupported execution modes are still rejected explicitly.
+and applies only shared replay metadata changes. Foundry's Ethereum block inputs now use
+an owned serializable type with the existing fork-cache format. Anvil converts at its
+legacy execution boundary. Network spec and transaction types remain legacy boundaries;
+unsupported execution modes are still rejected explicitly.

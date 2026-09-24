@@ -1245,16 +1245,14 @@ mod tests {
     use alloy_primitives::{B256, address};
     use alloy_provider::Provider as _;
     use alloy_rpc_types::TransactionRequest;
+    use foundry_evm::core::FoundryBlock;
 
     use anvil::{NodeConfig, spawn};
     use foundry_cli::opts::TEMPO_SESSION_ID_ENV;
     use foundry_common::tempo::TEMPO_HOME_ENV;
     use foundry_config::UnresolvedEnvVarError;
-    use foundry_evm::{
-        revm::context::Block as _,
-        traces::{
-            CallKind, CallTrace, CallTraceArena, CallTraceNode, SparsedTraceArena, TraceKind,
-        },
+    use foundry_evm::traces::{
+        CallKind, CallTrace, CallTraceArena, CallTraceNode, SparsedTraceArena, TraceKind,
     };
     // use semver::Version;
     use std::{fs, sync::LazyLock};

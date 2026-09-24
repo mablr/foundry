@@ -1,6 +1,7 @@
 //! A revm database that forks off a remote client
 
 use crate::{
+    BlockEnv,
     backend::{
         DatabaseError, LegacyForkDb, RevertStateSnapshotAction, StateSnapshot,
         legacy_fork::{to_legacy_account, to_native_account},
@@ -15,7 +16,6 @@ use parking_lot::Mutex;
 use revm::{
     Database, DatabaseCommit,
     bytecode::Bytecode,
-    context::BlockEnv,
     database::{CacheDB, DatabaseRef},
     primitives::AddressMap,
     state::{Account, AccountInfo},

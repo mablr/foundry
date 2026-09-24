@@ -1,4 +1,5 @@
 //! The `forge verify-bytecode` command.
+
 use crate::{
     etherscan::EtherscanVerificationProvider,
     utils::{
@@ -36,7 +37,7 @@ use foundry_config::{Chain, Config, figment, impl_figment_convert};
 use foundry_evm::{
     constants::DEFAULT_CREATE2_DEPLOYER,
     core::{
-        FoundryChain, FoundryTransaction as _,
+        FoundryBlock, FoundryChain, FoundryTransaction as _,
         env::FromAnyRpcTransaction as _,
         evm::{ChainFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TxEnvFor},
     },
@@ -45,7 +46,7 @@ use foundry_evm::{
     utils::apply_chain_specific_tx_replay_env_changes_for_chain,
 };
 use foundry_evm_networks::NetworkVariant;
-use revm::{context::Block as _, state::AccountInfo};
+use revm::state::AccountInfo;
 use std::path::PathBuf;
 
 /* EVM2 migration: disabled non-Ethereum execution.

@@ -1575,6 +1575,7 @@ async fn option_try_or_else<T, E>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::BlockEnv;
     use alloy_chains::NamedChain;
     use alloy_network::TransactionBuilder;
     use alloy_primitives::bytes;
@@ -1584,7 +1585,7 @@ mod tests {
         spawn_rpc_proxy_internal_error_after, spawn_rpc_proxy_method_not_found_before,
         spawn_rpc_proxy_rejecting_method_after,
     };
-    use revm::context::{BlockEnv, TxEnv};
+    use revm::context::TxEnv;
 
     /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]

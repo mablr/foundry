@@ -9,7 +9,6 @@ use foundry_evm_core::{
     evm::{BlockEnvFor, FoundryEvmNetwork},
 };
 use foundry_evm_fuzz::BasicTxDetails;
-use revm::context::Block;
 
 /// The small set of execution policies which differ between fuzzing modes.
 #[derive(Clone, Copy, Debug)]

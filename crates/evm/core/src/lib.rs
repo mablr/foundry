@@ -29,6 +29,9 @@ pub mod abi {
 pub mod env;
 pub use env::*;
 
+pub mod block;
+pub use block::{BlockEnv, FoundryBlock};
+
 pub mod backend;
 pub mod buffer;
 pub mod bytecode;

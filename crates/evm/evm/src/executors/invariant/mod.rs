@@ -2389,6 +2389,7 @@ mod tests {
     use foundry_cheatcodes::CheatsConfig;
     use foundry_config::FuzzDictionaryConfig;
     use foundry_evm_core::{
+        FoundryBlock,
         backend::Backend,
         evm::{EthEvmNetwork, EvmEnvFor, TxEnvFor},
     };
@@ -2398,10 +2399,7 @@ mod tests {
         strategy::{Strategy, ValueTree},
         test_runner::Config,
     };
-    use revm::{
-        context::Block,
-        database::{CacheDB, EmptyDB},
-    };
+    use revm::database::{CacheDB, EmptyDB};
     use serde_json::json;
     use std::{sync::mpsc, thread};
 

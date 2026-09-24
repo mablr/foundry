@@ -19,11 +19,11 @@ use foundry_cheatcodes_spec::{SymbolicVm, Vm};
 use foundry_config::{SymbolicConfig, SymbolicExplorationOrder, SymbolicStorageLayout};
 use foundry_evm::{
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, HARDHAT_CONSOLE_ADDRESS},
-    core::{backend::DatabaseExt, evm::FoundryEvmNetwork},
+    core::{FoundryBlock, backend::DatabaseExt, evm::FoundryEvmNetwork},
     executors::Executor,
     revm::{
         bytecode::{Bytecode, JumpTable, opcode},
-        context::{Block, Transaction},
+        context::Transaction,
         database::DatabaseRef,
         precompile::{blake2, bn254, hash, identity, kzg_point_evaluation, modexp, secp256k1},
         primitives::hardfork::SpecId,

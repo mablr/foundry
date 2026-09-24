@@ -1,7 +1,7 @@
 //! Foundry's main executor backend abstraction and implementation.
 
 use crate::{
-    EvmEnv, FoundryBlock, FoundryChain, FoundryTransaction,
+    BlockEnv, EvmEnv, FoundryBlock, FoundryChain, FoundryTransaction,
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, TEST_CONTRACT_ADDRESS},
     evm::{BlockEnvFor, ChainFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
     fork::{CreateFork, ForkId, ForkResult, MultiFork},
@@ -30,7 +30,7 @@ pub use foundry_fork_db::{
 use revm::{
     Database, DatabaseCommit, JournalEntry,
     bytecode::Bytecode,
-    context::{Block, BlockEnv, JournalInner, Transaction},
+    context::{JournalInner, Transaction},
     context_interface::journaled_state::account::JournaledAccountTr,
     database::{AccountState, CacheDB, DatabaseRef},
     database_interface::bal::BalState,
@@ -3184,7 +3184,7 @@ fn publish_fork_db<N: Network, B: ForkBlockEnv>(
 mod tests {
     use super::{Fork, ForkAccountField, ReplayInputs, publish_fork_db, update_env_block};
     use crate::{
-        EvmEnv,
+        BlockEnv, EvmEnv,
         backend::{Backend, DatabaseExt, ForkPosition},
         evm::EthEvmNetwork,
         fork::{CreateFork, ForkId, MultiFork},
@@ -3215,7 +3215,7 @@ mod tests {
     };
     use revm::{
         DatabaseCommit,
-        context::{BlockEnv, JournalInner, TxEnv},
+        context::{JournalInner, TxEnv},
         database::{AccountState, CacheDB, DatabaseRef, DbAccount},
         primitives::{KECCAK_EMPTY, hardfork::SpecId},
         state::{Account, AccountInfo, EvmState, EvmStorageSlot, TransactionId},

@@ -3,10 +3,11 @@
 //! TODO(evm2): Delete this adapter with the REVM fork cache. The RPC database itself is native.
 
 use super::{DatabaseError, DatabaseResult};
+use crate::BlockEnv;
 use alloy_network::{AnyNetwork, Network};
 use alloy_primitives::{Address, B256, U256};
 use foundry_fork_db::{ForkBlockEnv, SharedBackend};
-use revm::{bytecode::Bytecode, context::BlockEnv, database::DatabaseRef, state::AccountInfo};
+use revm::{bytecode::Bytecode, database::DatabaseRef, state::AccountInfo};
 use std::ops::{Deref, DerefMut};
 
 /// Adapts the native RPC reader for remaining REVM cache consumers.

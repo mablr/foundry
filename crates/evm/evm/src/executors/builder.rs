@@ -1,11 +1,12 @@
 use crate::{executors::Executor, inspectors::InspectorStackBuilder};
 use alloy_primitives::Address;
 use foundry_evm_core::{
+    FoundryBlock,
     backend::Backend,
     evm::{BlockEnvFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
 };
 use foundry_evm_networks::NetworkConfigs;
-use revm::context::{Block, Transaction};
+use revm::context::Transaction;
 
 /* EVM2 migration: disabled non-Ethereum execution.
 #[cfg(feature = "base")]

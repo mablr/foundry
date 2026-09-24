@@ -242,10 +242,9 @@ pub fn get_function<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ExecutionConfig;
+    use crate::{BlockEnv, ExecutionConfig};
     use alloy_network::{AnyHeader, AnyNetwork, AnyRpcBlock, AnyRpcHeader};
     use alloy_rpc_types::{Block, BlockTransactions};
-    use revm::context::BlockEnv;
 
     #[test]
     fn block_env_preserves_slot_number() {
@@ -422,7 +421,7 @@ mod tests {
     #[test]
     fn tx_replay_env_changes_disable_priority_fee_check_only_for_arbitrum() {
         let mut evm_env =
-            EvmEnv::new(ExecutionConfig::<SpecId>::default(), revm::context::BlockEnv::default());
+            EvmEnv::new(ExecutionConfig::<SpecId>::default(), crate::BlockEnv::default());
         evm_env.cfg_env.chain_id = NamedChain::Arbitrum as u64;
 
         apply_chain_specific_tx_replay_env_changes(&mut evm_env);
@@ -438,7 +437,7 @@ mod tests {
     #[test]
     fn tx_replay_env_changes_use_source_chain() {
         let mut evm_env =
-            EvmEnv::new(ExecutionConfig::<SpecId>::default(), revm::context::BlockEnv::default());
+            EvmEnv::new(ExecutionConfig::<SpecId>::default(), crate::BlockEnv::default());
         evm_env.cfg_env.chain_id = NamedChain::Mainnet as u64;
 
         apply_chain_specific_tx_replay_env_changes_for_chain(

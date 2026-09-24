@@ -4,9 +4,10 @@
 //! conversion to its compatibility boundary.
 
 use super::{FoundryEvmNetwork, IntoInstructionResult};
+use crate::BlockEnv;
 use alloy_network::Ethereum;
 use revm::{
-    context::{BlockEnv, TxEnv, result::HaltReason},
+    context::{TxEnv, result::HaltReason},
     interpreter::InstructionResult,
     primitives::hardfork::SpecId,
 };

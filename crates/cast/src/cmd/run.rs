@@ -58,7 +58,6 @@ use foundry_evm_networks::NetworkConfigs;
 use futures::TryFutureExt;
 use revm::{
     DatabaseRef,
-    context::Block,
     primitives::hardfork::SpecId,
     state::bal::{Bal, BlockAccessIndex},
 };

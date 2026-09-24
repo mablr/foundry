@@ -18,7 +18,6 @@ use foundry_evm_core::{
 use foundry_evm_fuzz::{BaseCounterExample, BasicTxDetails, invariant::InvariantContract};
 use indicatif::ProgressBar;
 use proptest::bits::{BitSetLike, VarBitSet};
-use revm::context::Block;
 use std::{cell::Cell, fmt::Write, hash::Hash};
 
 const LIVE_SHRINK_SEQUENCE_EDGE_CALLS: usize = 16;

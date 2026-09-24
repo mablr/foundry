@@ -29,18 +29,58 @@ pub(crate) fn foundry_replay_env(env: &alloy_evm::EvmEnv) -> foundry_evm::core::
             disable_priority_fee_check: env.cfg_env.disable_priority_fee_check,
             ..Default::default()
         },
-        env.block_env.clone(),
+        foundry_block(&env.block_env),
     )
 }
 
 /// Publishes shared replay metadata changes without replacing Anvil's execution configuration.
-pub(crate) const fn apply_foundry_replay_env(
+pub(crate) fn apply_foundry_replay_env(
     env: &mut alloy_evm::EvmEnv,
     updated: foundry_evm::core::EvmEnv,
 ) {
     env.cfg_env.chain_id = updated.cfg_env.chain_id;
     env.cfg_env.disable_priority_fee_check = updated.cfg_env.disable_priority_fee_check;
-    env.block_env = updated.block_env;
+    env.block_env = legacy_block(updated.block_env);
+}
+
+/// Copies serializable header inputs out of Anvil's execution environment.
+fn foundry_block(block: &revm::context::BlockEnv) -> foundry_evm::core::BlockEnv {
+    foundry_evm::core::BlockEnv {
+        number: block.number,
+        beneficiary: block.beneficiary,
+        timestamp: block.timestamp,
+        gas_limit: block.gas_limit,
+        basefee: block.basefee,
+        difficulty: block.difficulty,
+        prevrandao: block.prevrandao,
+        slot_num: block.slot_num,
+        blob_excess_gas_and_price: block.blob_excess_gas_and_price.map(|blob| {
+            foundry_evm::core::block::BlobExcessGasAndPrice {
+                excess_blob_gas: blob.excess_blob_gas,
+                blob_gasprice: blob.blob_gasprice,
+            }
+        }),
+    }
+}
+
+/// Applies shared header normalization to an Anvil execution block.
+fn legacy_block(block: foundry_evm::core::BlockEnv) -> revm::context::BlockEnv {
+    revm::context::BlockEnv {
+        number: block.number,
+        beneficiary: block.beneficiary,
+        timestamp: block.timestamp,
+        gas_limit: block.gas_limit,
+        basefee: block.basefee,
+        difficulty: block.difficulty,
+        prevrandao: block.prevrandao,
+        slot_num: block.slot_num,
+        blob_excess_gas_and_price: block.blob_excess_gas_and_price.map(|blob| {
+            revm::context_interface::block::BlobExcessGasAndPrice {
+                excess_blob_gas: blob.excess_blob_gas,
+                blob_gasprice: blob.blob_gasprice,
+            }
+        }),
+    }
 }
 
 #[cfg(test)]

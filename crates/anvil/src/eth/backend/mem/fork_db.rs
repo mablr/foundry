@@ -8,7 +8,7 @@ use alloy_primitives::{Address, B256, U256, map::AddressMap};
 use alloy_rpc_types::BlockId;
 use foundry_evm::{
     backend::{
-        BlockchainDb, DatabaseResult, LegacyForkDb, RevertStateSnapshotAction, StateSnapshot,
+        BlockchainDb, DatabaseResult, RevertStateSnapshotAction, StateSnapshot,
         legacy_fork::{to_legacy_account, to_native_account},
     },
     fork::database::ForkDbStateSnapshot,
@@ -19,7 +19,9 @@ use revm::{
     state::AccountInfo,
 };
 
-pub use foundry_evm::fork::database::ForkedDatabase;
+/// Anvil retains the REVM block environment until its execution engine migrates.
+pub type ForkedDatabase<N> = foundry_evm::fork::database::ForkedDatabase<N, BlockEnv>;
+type LegacyForkDb<N> = foundry_evm::backend::LegacyForkDb<N, BlockEnv>;
 
 impl<N: Network> MaybeFullDatabase for LegacyForkDb<N> {
     fn clear_into_state_snapshot(&mut self) -> StateSnapshot {
@@ -171,7 +173,7 @@ impl<N: Network> MaybeFullDatabase for ForkedDatabase<N> {
     }
 }
 
-impl<N: Network> MaybeFullDatabase for ForkDbStateSnapshot<N> {
+impl<N: Network> MaybeFullDatabase for ForkDbStateSnapshot<N, BlockEnv> {
     fn maybe_as_full_db(&self) -> Option<&AddressMap<DbAccount>> {
         Some(&self.local.cache.accounts)
     }
