@@ -36,10 +36,10 @@ mod tests {
     use evm2::{
         SpecId,
         bytecode::Bytecode,
-        env::BlockEnvExt,
         ethereum::TxEnvelope,
         evm::{AccountInfo, InMemoryDB},
     };
+    use foundry_evm_core::opts::EvmOpts;
 
     #[test]
     fn factory_preserves_call_and_transaction_state_boundaries() {
@@ -53,12 +53,11 @@ mod tests {
                 0x46, 0x5f, 0x52, 0x60, 0x20, 0x5f, 0xf3,
             ]))),
         );
-        let mut env = EthereumEnv::new(
-            spec,
-            BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
-        );
-        env.version.chain_id = 31_337;
-        let mut evm = EthereumFactory.create(env, database);
+        let mut opts = EvmOpts::default();
+        opts.env.chain_id = Some(31_337);
+        opts.env.gas_limit = foundry_config::GasLimit(30_000_000);
+        opts.memory_limit = 1_000_000;
+        let mut evm = EthereumFactory.create(EthereumEnv::local(spec, &opts), database);
         let tx = Recovered::new_unchecked(
             TxEnvelope::Legacy(TxLegacy {
                 gas_limit: 30_000,
