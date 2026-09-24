@@ -4,7 +4,7 @@ use alloy_consensus::transaction::Recovered;
 use evm2::{
     BaseEvmTypes, Evm, ExecutionConfig, Inspector, Precompiles, TxResult,
     ethereum::{TxEnvelope, ethereum_tx_registry},
-    evm::{Db, DynDatabase, registry::HandlerResult},
+    evm::{Database, Db, DynDatabase, EmptyDB, registry::HandlerResult},
 };
 use foundry_evm_core::native::{EthereumEnv, LocalState};
 
@@ -35,30 +35,31 @@ impl EthereumFactory {
 
 /// Ethereum execution with copy-on-write local state.
 #[derive(Clone, Debug)]
-pub struct EthereumExecutor {
+pub struct EthereumExecutor<D: Database + Clone = EmptyDB> {
     env: EthereumEnv,
-    state: LocalState,
+    state: LocalState<D>,
 }
 
-impl EthereumExecutor {
+impl<D: Database + Clone> EthereumExecutor<D> {
     /// Creates an executor over local Ethereum state.
-    pub const fn new(env: EthereumEnv, state: LocalState) -> Self {
+    pub const fn new(env: EthereumEnv, state: LocalState<D>) -> Self {
         Self { env, state }
     }
 
     /// Returns the accepted state.
-    pub const fn state(&self) -> &LocalState {
+    pub const fn state(&self) -> &LocalState<D> {
         &self.state
     }
 
     /// Returns mutable accepted state, cloning it if shared by another executor.
-    pub const fn state_mut(&mut self) -> &mut LocalState {
+    pub const fn state_mut(&mut self) -> &mut LocalState<D> {
         &mut self.state
     }
 
     /// Executes a transaction without accepting its state changes.
     pub fn call(&self, tx: &Recovered<TxEnvelope>) -> HandlerResult<TxResult> {
-        let mut evm = EthereumFactory.create(self.env, Db::new(&self.state));
+        let mut state = self.state.clone();
+        let mut evm = EthereumFactory.create(self.env, Db::new(&mut state));
         Ok(evm.transact(tx)?.discard())
     }
 
@@ -68,7 +69,8 @@ impl EthereumExecutor {
         tx: &Recovered<TxEnvelope>,
         inspector: &mut I,
     ) -> HandlerResult<TxResult> {
-        let mut evm = EthereumFactory.create(self.env, Db::new(&self.state));
+        let mut state = self.state.clone();
+        let mut evm = EthereumFactory.create(self.env, Db::new(&mut state));
         evm.set_inspector(inspector);
         Ok(evm.transact(tx)?.discard())
     }
@@ -76,7 +78,7 @@ impl EthereumExecutor {
     /// Executes and accepts a transaction's state changes.
     pub fn transact(&mut self, tx: &Recovered<TxEnvelope>) -> HandlerResult<TxResult> {
         let outcome = {
-            let mut evm = EthereumFactory.create(self.env, Db::new(&self.state));
+            let mut evm = EthereumFactory.create(self.env, Db::new(&mut self.state));
             evm.transact(tx)?.detach()
         };
         self.state.commit(&outcome.pending_state);
@@ -90,7 +92,7 @@ impl EthereumExecutor {
         inspector: &mut I,
     ) -> HandlerResult<TxResult> {
         let outcome = {
-            let mut evm = EthereumFactory.create(self.env, Db::new(&self.state));
+            let mut evm = EthereumFactory.create(self.env, Db::new(&mut self.state));
             evm.set_inspector(inspector);
             evm.transact(tx)?.detach()
         };
@@ -109,7 +111,7 @@ mod tests {
         SpecId,
         bytecode::Bytecode,
         env::BlockEnvExt,
-        evm::AccountInfo,
+        evm::{AccountInfo, InMemoryDB},
         interpreter::{
             GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt,
         },
@@ -192,7 +194,10 @@ mod tests {
 
         assert!(!executor.transact(&tx).unwrap().status);
         assert_eq!(executor.state().database().cache.accounts[&caller].as_ref().unwrap().nonce, 1);
-        assert!(!executor.state().database().cache.storage.contains_key(&recipient));
+        assert_eq!(
+            Database::get_storage(&mut executor.state_mut(), &recipient, &U256::ZERO).unwrap(),
+            U256::ZERO
+        );
     }
 
     #[test]
@@ -384,7 +389,7 @@ mod tests {
         );
 
         assert!(!executor.inspect_transact(&tx, &mut NativeCheatcodes).unwrap().status);
-        assert!(!executor.state().database().cache.accounts.contains_key(&target));
+        assert!(executor.state().database().account_info(&target).is_none());
 
         let mut success_executor = executor.clone();
         success_executor.state_mut().database_mut().insert_account_info(
@@ -406,6 +411,46 @@ mod tests {
         assert_eq!(
             success_executor.state().database().account_info(&target).unwrap().balance,
             U256::from(7)
+        );
+    }
+
+    #[test]
+    fn executor_reads_backing_storage_and_commits_only_to_overlay() {
+        let caller = Address::with_last_byte(0xa);
+        let contract = Address::with_last_byte(0xb);
+        let mut backing = InMemoryDB::default();
+        backing.insert_account_info(
+            &contract,
+            AccountInfo::default().with_code(Bytecode::new_legacy(Bytes::from_static(&[
+                0x5f, 0x54, 0x60, 0x01, 0x01, 0x5f, 0x55, 0x5f, 0x54, 0x5f, 0x52, 0x60, 0x20, 0x5f,
+                0xf3,
+            ]))),
+        );
+        backing.insert_account_storage(&contract, &U256::ZERO, &U256::from(3));
+        let env = EthereumEnv::new(
+            SpecId::CANCUN,
+            BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
+        );
+        let mut executor = EthereumExecutor::new(env, LocalState::new(backing));
+        let tx = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                gas_limit: 100_000,
+                to: TxKind::Call(contract),
+                ..Default::default()
+            }),
+            caller,
+        );
+
+        assert_eq!(U256::from_be_slice(&executor.call(&tx).unwrap().output), U256::from(4));
+        assert!(!executor.state().database().cache.storage.contains_key(&contract));
+        assert_eq!(U256::from_be_slice(&executor.transact(&tx).unwrap().output), U256::from(4));
+        assert_eq!(
+            executor.state().database().cache.storage[&contract].slots[&U256::ZERO],
+            U256::from(4)
+        );
+        assert_eq!(
+            executor.state().database().db.inner().cache.storage[&contract].slots[&U256::ZERO],
+            U256::from(3)
         );
     }
 }
