@@ -11,7 +11,7 @@ use alloy_rlp::Decodable;
 use foundry_common::{FoundryReceiptResponse, FoundryTransactionBuilder, fmt::UIfmt};
 use foundry_config::ExecutionSpec;
 use foundry_fork_db::ForkBlockEnv;
-use revm::{interpreter::InstructionResult, primitives::hardfork::SpecId};
+use revm::interpreter::InstructionResult;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -65,7 +65,7 @@ pub trait FoundryEvmNetwork: Copy + Debug + Default + 'static {
                                     + Serialize,
             ReceiptResponse: FoundryReceiptResponse,
         >;
-    type Spec: Into<SpecId>
+    type Spec: crate::SpecIdConversion
         + ExecutionSpec
         + Default
         + Copy

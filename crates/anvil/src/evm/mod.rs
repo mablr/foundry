@@ -1,5 +1,6 @@
 use alloy_evm::precompiles::{DynPrecompile, PrecompilesMap};
 use alloy_primitives::Address;
+use foundry_evm::core::SpecIdConversion;
 use std::fmt::Debug;
 
 /* EVM2 migration: disabled non-Ethereum execution.
@@ -24,7 +25,7 @@ pub trait PrecompileFactory: Send + Sync + Unpin + Debug {
 pub(crate) fn foundry_replay_env(env: &alloy_evm::EvmEnv) -> foundry_evm::core::EvmEnv {
     foundry_evm::core::EvmEnv::new(
         foundry_evm::core::ExecutionConfig {
-            spec: env.cfg_env.spec,
+            spec: env.cfg_env.spec.native_spec(),
             chain_id: env.cfg_env.chain_id,
             disable_priority_fee_check: env.cfg_env.disable_priority_fee_check,
             ..Default::default()

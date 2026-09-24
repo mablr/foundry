@@ -10,7 +10,7 @@ use revm::{
         either::Either,
         transaction::{AccessList, RecoveredAuthorization, SignedAuthorization},
     },
-    primitives::{TxKind, hardfork::SpecId},
+    primitives::TxKind,
 };
 use std::fmt::Debug;
 /* EVM2 migration: disabled non-Ethereum execution.
@@ -24,9 +24,9 @@ use op_revm::transaction::deposit::DEPOSIT_TRANSACTION_TYPE;
 
 /// Foundry-owned execution configuration, independent of an EVM factory.
 ///
-/// TODO(evm2): Replace the remaining REVM spec and block fields with native inputs.
+/// TODO(evm2): Replace the remaining REVM transaction inputs in the shared environment.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EvmEnv<Spec = SpecId, B = BlockEnv> {
+pub struct EvmEnv<Spec = evm2::SpecId, B = BlockEnv> {
     pub cfg_env: ExecutionConfig<Spec>,
     pub block_env: B,
 }

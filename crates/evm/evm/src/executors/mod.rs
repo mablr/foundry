@@ -16,7 +16,7 @@ use alloy_primitives::{
 use alloy_sol_types::{SolCall, sol};
 use eyre::WrapErr;
 use foundry_evm_core::{
-    EvmEnv, FoundryBlock, FoundryTransaction,
+    EvmEnv, FoundryBlock, FoundryTransaction, SpecIdConversion,
     backend::{Backend, BackendError, BackendResult, DatabaseExt, GLOBAL_FAIL_SLOT},
     constants::{
         CALLER, CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, DEFAULT_CREATE2_DEPLOYER,
@@ -39,7 +39,6 @@ use revm::{
     context::Transaction,
     context_interface::transaction::SignedAuthorization,
     database::{Database, DatabaseRef},
-    primitives::hardfork::SpecId,
 };
 use std::{
     borrow::Cow,
@@ -322,7 +321,9 @@ impl<FEN: FoundryEvmNetwork> Executor<FEN> {
             );
         }
 
-        if !backend.is_in_forking_mode() && evm_env.cfg_env.spec.into() >= SpecId::PRAGUE {
+        if !backend.is_in_forking_mode()
+            && evm_env.cfg_env.spec.native_spec() >= ::evm2::SpecId::PRAGUE
+        {
             let mut account = backend
                 .native_account(HISTORY_STORAGE_ADDRESS)
                 .unwrap_or_default()
@@ -2212,11 +2213,11 @@ mod tests {
             NetworkConfigs::default(),
         );
 
-        executor.evm_env_mut().cfg_env.set_spec(SpecId::HOMESTEAD);
+        executor.evm_env_mut().cfg_env.set_spec(NativeSpecId::HOMESTEAD);
         let before = executor.evm_env().cfg_env.version(NativeSpecId::HOMESTEAD);
         assert!(!before.features.contains(EvmFeatures::EIP8037));
-        executor.set_spec_id(SpecId::AMSTERDAM);
-        assert_eq!(executor.spec_id(), SpecId::AMSTERDAM);
+        executor.set_spec_id(NativeSpecId::AMSTERDAM);
+        assert_eq!(executor.spec_id(), NativeSpecId::AMSTERDAM);
         let after = executor.evm_env().cfg_env.version(NativeSpecId::AMSTERDAM);
         assert!(after.features.contains(EvmFeatures::EIP8037));
         assert_eq!(after.max_code_size, MAX_CODE_SIZE_AMSTERDAM);
@@ -2230,7 +2231,7 @@ mod tests {
         let backend = Backend::<EthEvmNetwork>::spawn(None).unwrap();
         let mut executor = ExecutorBuilder::default()
             .inspectors(|stack| stack.cheatcodes(cheats_config))
-            .spec_id(SpecId::AMSTERDAM)
+            .spec_id(NativeSpecId::AMSTERDAM)
             .gas_limit(1_000_000)
             .build(EvmEnv::default(), TxEnv::default(), backend, NetworkConfigs::default());
 
@@ -2265,8 +2266,10 @@ mod tests {
         assert!(!result.reverted);
         assert!(
             result.gas_used
-                < revm::context_interface::cfg::GasParams::new_spec(SpecId::AMSTERDAM)
-                    .new_account_state_gas(),
+                < revm::context_interface::cfg::GasParams::new_spec(
+                    revm::primitives::hardfork::SpecId::AMSTERDAM
+                )
+                .new_account_state_gas(),
             "reverted mocked CALL retained its conditional state-gas charge"
         );
     }
@@ -2408,7 +2411,7 @@ mod tests {
     #[test]
     fn beacon_root_system_call_does_not_persist_system_address() {
         let backend = Backend::<EthEvmNetwork>::spawn(None).unwrap();
-        let mut executor = ExecutorBuilder::default().spec_id(SpecId::CANCUN).build(
+        let mut executor = ExecutorBuilder::default().spec_id(NativeSpecId::CANCUN).build(
             EvmEnvFor::<EthEvmNetwork>::default(),
             TxEnvFor::<EthEvmNetwork>::default(),
             backend,

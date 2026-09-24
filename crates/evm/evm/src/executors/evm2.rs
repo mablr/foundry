@@ -374,12 +374,12 @@ mod tests {
     };
     use foundry_evm_core::{backend::Backend, constants::CALLER, decode::RevertDecoder};
     use foundry_evm_networks::NetworkConfigs;
-    use revm::{database::DatabaseRef, primitives::hardfork::SpecId};
+    use revm::database::DatabaseRef;
     use std::{sync::mpsc, thread, time::Duration};
 
     fn executor() -> Executor<EthEvmNetwork> {
         let mut executor =
-            ExecutorBuilder::default().spec_id(SpecId::CANCUN).gas_limit(1_000_000).build(
+            ExecutorBuilder::default().spec_id(evm2::SpecId::CANCUN).gas_limit(1_000_000).build(
                 EvmEnvFor::<EthEvmNetwork>::default(),
                 TxEnvFor::<EthEvmNetwork>::default(),
                 Backend::spawn(None).unwrap(),

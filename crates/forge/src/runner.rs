@@ -41,7 +41,7 @@ use foundry_config::{
 };
 use foundry_evm::{
     constants::{CALLER, MAGIC_ASSUME},
-    core::{backend::DatabaseExt, evm::FoundryEvmNetwork},
+    core::{SpecIdConversion, backend::DatabaseExt, evm::FoundryEvmNetwork},
     decode::{RevertDecoder, SkipReason},
     executors::{
         CallResult, DynamicTargetCtx, EvmError, Executor, ITest, InvariantReplayOptions,
@@ -5254,7 +5254,7 @@ impl<'a, FEN: FoundryEvmNetwork> FunctionRunner<'a, FEN> {
                 address,
                 &ITest::beforeTestSetupCall { testSelector: func.selector() },
             ) {
-                let spec_id: SpecId = self.executor.spec_id().into();
+                let spec_id: SpecId = self.executor.spec_id().legacy_spec();
                 debug!(?calldata, spec=%spec_id, "applying before_test_setup");
                 // Apply before test configured calldata.
                 let Ok(call_result) = self.executor.to_mut().transact_raw(

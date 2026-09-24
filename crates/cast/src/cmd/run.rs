@@ -45,7 +45,7 @@ use foundry_config::{
 };
 use foundry_evm::{
     core::{
-        FoundryBlock as _,
+        FoundryBlock as _, SpecIdConversion,
         env::FromAnyRpcTransaction as _,
         evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, TxEnvFor},
     },
@@ -545,7 +545,7 @@ impl RunArgs {
 
         evm_env.cfg_env.set_spec(executor.spec_id());
 
-        let spec_id = evm_env.cfg_env.spec.into();
+        let spec_id = evm_env.cfg_env.spec.legacy_spec();
 
         if let Some(parent_beacon_block_root) =
             parent_beacon_block_root_for_network(networks, spec_id, parent_beacon_block_root)

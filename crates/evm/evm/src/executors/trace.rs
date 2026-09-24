@@ -301,7 +301,7 @@ mod tests {
             NetworkConfigs::default(),
             "ethereum:shanghai".parse().unwrap(),
             EvmVersion::Cancun,
-            revm::primitives::hardfork::SpecId::CANCUN,
+            evm2::SpecId::CANCUN,
             None,
         );
     }

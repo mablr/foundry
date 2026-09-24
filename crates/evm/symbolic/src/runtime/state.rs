@@ -2305,7 +2305,7 @@ impl SymbolicWorld {
         executor: &Executor<FEN>,
         address: Address,
     ) -> Result<bool, SymbolicError> {
-        let spec_id: SpecId = executor.spec_id().into();
+        let spec_id: SpecId = executor.spec_id().legacy_spec();
         if is_known_cheatcode(address) || is_supported_precompile(address, spec_id) {
             return Ok(true);
         }
@@ -2361,7 +2361,7 @@ impl SymbolicWorld {
         if is_known_cheatcode(address) {
             return Ok(SymCode::concrete(cx, vec![0]));
         }
-        let spec_id: SpecId = executor.spec_id().into();
+        let spec_id: SpecId = executor.spec_id().legacy_spec();
         if is_supported_precompile(address, spec_id) {
             return Ok(SymCode::empty(cx));
         }
@@ -2514,7 +2514,7 @@ impl SymbolicWorld {
         addresses.sort_unstable();
 
         let mut targets = Vec::new();
-        let spec_id: SpecId = executor.spec_id().into();
+        let spec_id: SpecId = executor.spec_id().legacy_spec();
         for address in addresses {
             if is_known_cheatcode(address) || is_supported_precompile(address, spec_id) {
                 continue;

@@ -1,7 +1,7 @@
 //! Foundry's main executor backend abstraction and implementation.
 
 use crate::{
-    BlockEnv, EvmEnv, FoundryBlock, FoundryChain, FoundryTransaction,
+    BlockEnv, EvmEnv, FoundryBlock, FoundryChain, FoundryTransaction, SpecIdConversion,
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, TEST_CONTRACT_ADDRESS},
     evm::{BlockEnvFor, ChainFor, EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TxEnvFor},
     fork::{CreateFork, ForkId, ForkResult, MultiFork},
@@ -34,7 +34,7 @@ use revm::{
     context_interface::journaled_state::account::JournaledAccountTr,
     database::{AccountState, CacheDB, DatabaseRef},
     database_interface::bal::BalState,
-    primitives::{AddressMap, HashMap as Map, KECCAK_EMPTY, Log, hardfork::SpecId},
+    primitives::{AddressMap, HashMap as Map, KECCAK_EMPTY, Log},
     state::{Account, AccountInfo, EvmState, EvmStorageSlot, TransactionId},
 };
 use std::{
@@ -2964,33 +2964,15 @@ impl<FEN: FoundryEvmNetwork> BackendInner<FEN> {
     }
 
     pub fn precompile_addresses(&self) -> AddressSet {
-        let spec: SpecId = self.spec_id.into();
-        // Only activation points that change the precompile registry matter here.
-        let native = if spec >= SpecId::AMSTERDAM {
-            evm2::SpecId::AMSTERDAM
-        } else if spec >= SpecId::OSAKA {
-            evm2::SpecId::OSAKA
-        } else if spec >= SpecId::PRAGUE {
-            evm2::SpecId::PRAGUE
-        } else if spec >= SpecId::CANCUN {
-            evm2::SpecId::CANCUN
-        } else if spec >= SpecId::BERLIN {
-            evm2::SpecId::BERLIN
-        } else if spec >= SpecId::ISTANBUL {
-            evm2::SpecId::ISTANBUL
-        } else if spec >= SpecId::BYZANTIUM {
-            evm2::SpecId::BYZANTIUM
-        } else {
-            evm2::SpecId::FRONTIER
-        };
-        evm2::Precompiles::<evm2::BaseEvmTypes>::base(native).as_map().addresses().collect()
+        let spec = self.spec_id.native_spec();
+        evm2::Precompiles::<evm2::BaseEvmTypes>::base(spec).as_map().addresses().collect()
     }
 
     /// Returns a new, empty, `JournaledState` with set precompiles
     pub fn new_journaled_state(&self) -> JournaledState {
         let mut journal = {
             let mut journal_inner = JournalInner::new();
-            journal_inner.set_spec_id(self.spec_id.into());
+            journal_inner.set_spec_id(self.spec_id.legacy_spec());
             journal_inner
         };
         let precompile_addresses = self.precompile_addresses();
@@ -3112,7 +3094,7 @@ fn is_contract_in_state(evm_state: &EvmState, acc: Address) -> bool {
 }
 
 /// Updates the evm env's block with the block's data
-fn update_env_block<N: Network, SPEC: Into<SpecId> + Copy, BLOCK: FoundryBlock>(
+fn update_env_block<N: Network, SPEC: crate::SpecIdConversion + Copy, BLOCK: FoundryBlock>(
     evm_env: &mut EvmEnv<SPEC, BLOCK>,
     block: &N::BlockResponse,
     source_chain_id: ChainId,
@@ -3206,6 +3188,7 @@ mod tests {
     use alloy_serde::WithOtherFields;
     use alloy_sol_types::SolValue;
     use anvil::{NodeConfig, spawn};
+    use evm2::SpecId;
     use foundry_common::{SYSTEM_TRANSACTION_TYPE, provider::get_http_provider};
     use foundry_config::{Config, NamedChain};
     use foundry_evm_networks::{NetworkConfigs, celo::transfer::CELO_TRANSFER_ADDRESS};
@@ -3217,7 +3200,7 @@ mod tests {
         DatabaseCommit,
         context::{JournalInner, TxEnv},
         database::{AccountState, CacheDB, DatabaseRef, DbAccount},
-        primitives::{KECCAK_EMPTY, hardfork::SpecId},
+        primitives::KECCAK_EMPTY,
         state::{Account, AccountInfo, EvmState, EvmStorageSlot, TransactionId},
     };
 
@@ -4154,6 +4137,7 @@ mod tests {
 #[cfg(test)]
 mod native_config_tests {
     use super::*;
+    use evm2::SpecId;
 
     #[test]
     fn native_precompile_registry_tracks_activation() {

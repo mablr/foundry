@@ -60,7 +60,7 @@ pub fn apply_chain_specific_tx_replay_env_changes_for_chain<SPEC, BLOCK>(
 /// [`FoundryBlock`] type.
 pub fn apply_chain_and_block_specific_env_changes<
     N: Network,
-    SPEC: Into<SpecId> + Copy,
+    SPEC: crate::SpecIdConversion + Copy,
     BLOCK: FoundryBlock,
 >(
     evm_env: &mut EvmEnv<SPEC, BLOCK>,
@@ -78,7 +78,7 @@ pub fn apply_chain_and_block_specific_env_changes<
 /// This keeps fork-specific header handling independent from an execution `CHAINID` override.
 pub fn apply_chain_and_block_specific_env_changes_for_chain<
     N: Network,
-    SPEC: Into<SpecId> + Copy,
+    SPEC: crate::SpecIdConversion + Copy,
     BLOCK: FoundryBlock,
 >(
     evm_env: &mut EvmEnv<SPEC, BLOCK>,

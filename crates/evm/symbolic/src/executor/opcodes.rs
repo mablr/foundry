@@ -1298,7 +1298,7 @@ impl SymbolicExecutor {
                     state.return_data = SymReturnData::empty(&mut self.cx);
                     return Ok(StepOutcome::Revert);
                 }
-                let spec_id: SpecId = executor.spec_id().into();
+                let spec_id: SpecId = executor.spec_id().legacy_spec();
                 let (beneficiary_word, beneficiary) =
                     state.pop_address_word_or_symbolic_slot(&mut self.cx)?;
                 if spec_id < SpecId::CANCUN

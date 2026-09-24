@@ -18,7 +18,6 @@ use futures::{
     stream::Fuse,
     task::{Context, Poll},
 };
-use revm::primitives::hardfork::SpecId;
 use std::{
     fmt::{self, Write},
     pin::Pin,
@@ -120,7 +119,7 @@ pub struct MultiFork<N: Network, SPEC, BLOCK: ForkBlockEnv> {
 
 impl<
     N: Network,
-    SPEC: Into<SpecId> + Default + Copy + Unpin + Send + 'static,
+    SPEC: crate::SpecIdConversion + Default + Copy + Unpin + Send + 'static,
     BLOCK: FoundryBlock + ForkBlockEnv + Default + Unpin,
 > MultiFork<N, SPEC, BLOCK>
 {
@@ -335,7 +334,7 @@ pub struct MultiForkHandler<N: Network, SPEC, BLOCK: ForkBlockEnv> {
 
 impl<
     N: Network,
-    SPEC: Into<SpecId> + Default + Copy + 'static,
+    SPEC: crate::SpecIdConversion + Default + Copy + 'static,
     BLOCK: FoundryBlock + ForkBlockEnv + Default,
 > MultiForkHandler<N, SPEC, BLOCK>
 {
@@ -515,7 +514,7 @@ impl<
 // This future will finish once all underlying BackendHandler are completed.
 impl<
     N: Network,
-    SPEC: Into<SpecId> + Default + Copy + Unpin + 'static,
+    SPEC: crate::SpecIdConversion + Default + Copy + Unpin + 'static,
     BLOCK: FoundryBlock + ForkBlockEnv + Default + Unpin,
 > Future for MultiForkHandler<N, SPEC, BLOCK>
 {
@@ -683,7 +682,7 @@ impl<N: Network, SPEC, BLOCK: ForkBlockEnv> Drop for ShutDownMultiFork<N, SPEC, 
 /// This will establish a new `Provider` to the endpoint and return the Fork Backend.
 async fn create_fork<
     N: Network,
-    SPEC: Into<SpecId> + Default + Copy,
+    SPEC: crate::SpecIdConversion + Default + Copy,
     BLOCK: FoundryBlock + ForkBlockEnv + Default,
 >(
     mut fork: CreateFork,

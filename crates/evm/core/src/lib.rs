@@ -48,8 +48,10 @@ pub mod ic;
 pub mod native;
 pub mod opts;
 pub mod precompiles;
+pub mod spec;
 pub mod state_changes;
 pub mod state_snapshot;
+pub use spec::SpecIdConversion;
 // Disabled for the Ethereum-only EVM2 migration.
 // pub mod tempo;
 pub mod utils;

@@ -1,6 +1,6 @@
 //! Ethereum network types for native execution.
 //!
-//! TODO(evm2): Replace the remaining legacy environment types and move the Anvil-only halt
+//! TODO(evm2): Replace the remaining legacy transaction type and move the Anvil-only halt
 //! conversion to its compatibility boundary.
 
 use super::{FoundryEvmNetwork, IntoInstructionResult};
@@ -9,7 +9,6 @@ use alloy_network::Ethereum;
 use revm::{
     context::{TxEnv, result::HaltReason},
     interpreter::InstructionResult,
-    primitives::hardfork::SpecId,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -17,7 +16,7 @@ pub struct EthEvmNetwork;
 
 impl FoundryEvmNetwork for EthEvmNetwork {
     type Network = Ethereum;
-    type Spec = SpecId;
+    type Spec = evm2::SpecId;
     type Block = BlockEnv;
     type Tx = TxEnv;
     type Chain = ();

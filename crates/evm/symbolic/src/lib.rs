@@ -19,7 +19,7 @@ use foundry_cheatcodes_spec::{SymbolicVm, Vm};
 use foundry_config::{SymbolicConfig, SymbolicExplorationOrder, SymbolicStorageLayout};
 use foundry_evm::{
     constants::{CALLER, CHEATCODE_ADDRESS, DEFAULT_CREATE2_DEPLOYER, HARDHAT_CONSOLE_ADDRESS},
-    core::{FoundryBlock, backend::DatabaseExt, evm::FoundryEvmNetwork},
+    core::{FoundryBlock, SpecIdConversion, backend::DatabaseExt, evm::FoundryEvmNetwork},
     executors::Executor,
     revm::{
         bytecode::{Bytecode, JumpTable, opcode},

@@ -21,7 +21,6 @@ use foundry_common::{
 use foundry_compilers::artifacts::EvmVersion;
 use foundry_config::{Chain, Config, ExecutionSpec, FoundryHardfork, GasLimit};
 use foundry_evm_networks::{NetworkConfigs, NetworkVariant};
-use revm::primitives::hardfork::SpecId;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 use url::Url;
@@ -867,7 +866,7 @@ impl EvmOpts {
     /// `block_env.number` may be remapped (to the L1 block number) and therefore cannot be used
     /// to pin the fork.
     pub async fn env<
-        SPEC: Into<SpecId> + Default + Copy,
+        SPEC: crate::SpecIdConversion + Default + Copy,
         BLOCK: FoundryBlock + Default,
         TX: FoundryTransaction + Default,
     >(
@@ -883,7 +882,7 @@ impl EvmOpts {
     /// the endpoint changes. Downstream preflight reads and backend construction should reuse the
     /// returned [`ResolvedFork`] instead of carrying only its block number.
     pub async fn env_resolved<
-        SPEC: Into<SpecId> + Default + Copy,
+        SPEC: crate::SpecIdConversion + Default + Copy,
         BLOCK: FoundryBlock + Default,
         TX: FoundryTransaction + Default,
     >(
@@ -928,7 +927,7 @@ impl EvmOpts {
     /// The source chain ID is always fetched from the fork endpoint, even when the execution
     /// environment applies a configured `CHAINID` opcode override.
     pub async fn env_with_fork_context<
-        SPEC: Into<SpecId> + Default + Copy,
+        SPEC: crate::SpecIdConversion + Default + Copy,
         BLOCK: FoundryBlock + Default,
         TX: FoundryTransaction + Default,
     >(
@@ -940,7 +939,7 @@ impl EvmOpts {
 
     /// Returns the EVM and transaction environments at an already resolved fork.
     pub async fn env_with_resolved_fork<
-        SPEC: Into<SpecId> + Default + Copy,
+        SPEC: crate::SpecIdConversion + Default + Copy,
         BLOCK: FoundryBlock + Default,
         TX: FoundryTransaction + Default,
     >(
@@ -986,7 +985,7 @@ impl EvmOpts {
     /// Returns the [`EvmEnv`] (cfg + block) and [`BlockNumber`] fetched from the fork endpoint via
     /// provider
     pub async fn fork_evm_env<
-        SPEC: Into<SpecId> + Default + Copy,
+        SPEC: crate::SpecIdConversion + Default + Copy,
         BLOCK: FoundryBlock + Default,
         N: Network,
         P: Provider<N>,
@@ -1002,7 +1001,7 @@ impl EvmOpts {
 
     /// Returns the EVM environment and block identity fetched from the fork endpoint.
     pub(crate) async fn fork_evm_env_resolved<
-        SPEC: Into<SpecId> + Default + Copy,
+        SPEC: crate::SpecIdConversion + Default + Copy,
         BLOCK: FoundryBlock + Default,
         N: Network,
         P: Provider<N>,
@@ -1019,7 +1018,7 @@ impl EvmOpts {
 
     /// Returns the fork environment, exact block, and endpoint identity resolved together.
     async fn fork_evm_env_resolved_with_context<
-        SPEC: Into<SpecId> + Default + Copy,
+        SPEC: crate::SpecIdConversion + Default + Copy,
         BLOCK: FoundryBlock + Default,
         N: Network,
         P: Provider<N>,
@@ -1173,7 +1172,7 @@ impl EvmOpts {
     }
 
     async fn fork_evm_env_at_resolved_with_context<
-        SPEC: Into<SpecId> + Default + Copy,
+        SPEC: crate::SpecIdConversion + Default + Copy,
         BLOCK: FoundryBlock + Default,
         N: Network,
         P: Provider<N>,
@@ -1203,7 +1202,7 @@ impl EvmOpts {
 
     /// Reconstructs the fork environment at an already resolved exact block.
     pub(crate) async fn fork_evm_env_at_resolved<
-        SPEC: Into<SpecId> + Default + Copy,
+        SPEC: crate::SpecIdConversion + Default + Copy,
         BLOCK: FoundryBlock + Default,
         N: Network,
         P: Provider<N>,
@@ -1221,7 +1220,7 @@ impl EvmOpts {
     }
 
     fn fork_env_from_block<
-        SPEC: Into<SpecId> + Default + Copy,
+        SPEC: crate::SpecIdConversion + Default + Copy,
         BLOCK: FoundryBlock + Default,
         N: Network,
     >(
@@ -1246,7 +1245,10 @@ impl EvmOpts {
     }
 
     /// Returns the [`EvmEnv`] configured with only local settings.
-    fn local_evm_env<SPEC: Into<SpecId> + Default + Clone, BLOCK: FoundryBlock + Default>(
+    fn local_evm_env<
+        SPEC: crate::SpecIdConversion + Default + Clone,
+        BLOCK: FoundryBlock + Default,
+    >(
         &self,
     ) -> EvmEnv<SPEC, BLOCK> {
         let cfg_env = self.cfg_env(self.env.chain_id.unwrap_or(foundry_common::DEV_CHAIN_ID));
@@ -1285,7 +1287,7 @@ impl EvmOpts {
     }
 
     /// Builds an [`ExecutionConfig`] from the options, using the provided [`ChainId`].
-    fn cfg_env<SPEC: Into<SpecId> + Default + Clone>(
+    fn cfg_env<SPEC: crate::SpecIdConversion + Default + Clone>(
         &self,
         chain_id: ChainId,
     ) -> ExecutionConfig<SPEC> {
@@ -1486,7 +1488,7 @@ pub fn resolve_execution_spec<SPEC, BLOCK>(
     explicit_spec: Option<SPEC>,
 ) -> Option<FoundryHardfork>
 where
-    SPEC: ExecutionSpec + Into<SpecId> + Copy,
+    SPEC: ExecutionSpec + crate::SpecIdConversion + Copy,
     BLOCK: FoundryBlock,
 {
     let (spec, hardfork) = if let Some(spec) = explicit_spec {
@@ -1585,7 +1587,7 @@ mod tests {
         spawn_rpc_proxy_internal_error_after, spawn_rpc_proxy_method_not_found_before,
         spawn_rpc_proxy_rejecting_method_after,
     };
-    use revm::context::TxEnv;
+    use revm::{context::TxEnv, primitives::hardfork::SpecId};
 
     /* EVM2 migration: disabled non-Ethereum execution.
     #[cfg(feature = "base")]

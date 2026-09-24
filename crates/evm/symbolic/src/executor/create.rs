@@ -1,5 +1,5 @@
 use super::*;
-use foundry_evm::core::{ExecutionConfig, native};
+use foundry_evm::core::ExecutionConfig;
 
 impl SymbolicExecutor {
     pub(super) fn create<FEN: FoundryEvmNetwork>(
@@ -126,7 +126,7 @@ impl SymbolicExecutor {
         let mut parents = VecDeque::with_capacity(outcomes.len());
         for mut outcome in outcomes {
             let runtime = &outcome.state.frame.return_data;
-            let spec_id: SpecId = executor.spec_id().into();
+            let spec_id: SpecId = executor.spec_id().legacy_spec();
             let mut rejected_runtime = false;
             if matches!(outcome.status, CallStatus::Success) {
                 if runtime_exceeds_code_size_limit(&executor.evm_env().cfg_env, spec_id, runtime) {
@@ -206,14 +206,14 @@ impl SymbolicExecutor {
     }
 }
 
-fn runtime_exceeds_code_size_limit<S: Copy + Into<SpecId>>(
+fn runtime_exceeds_code_size_limit<S: SpecIdConversion>(
     cfg: &ExecutionConfig<S>,
     spec_id: SpecId,
     runtime: &SymReturnData,
 ) -> bool {
     spec_id >= SpecId::SPURIOUS_DRAGON
         && !runtime.has_symbolic_len()
-        && runtime.len() > cfg.version(native::spec_id(cfg.spec.into())).max_code_size
+        && runtime.len() > cfg.version(cfg.spec.native_spec()).max_code_size
 }
 
 fn runtime_has_rejected_prefix(

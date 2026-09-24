@@ -15,7 +15,7 @@ use evm2::{
     env::BlockEnvExt,
     evm::{AccountChangeRef, AccountInfo as NativeAccount, StateChangeSink, StorageChange},
 };
-use revm::{database::DatabaseRef, primitives::hardfork::SpecId};
+use revm::database::DatabaseRef;
 use std::convert::Infallible;
 
 impl<FEN: FoundryEvmNetwork> evm2::evm::Database for &Backend<FEN> {
@@ -98,18 +98,22 @@ impl StateChangeSink for StateChangesetCollector {
 }
 
 /// Converts the supported fixed Ethereum environment to evm2.
-pub fn environment<S: Copy + Into<SpecId>, B: FoundryBlock>(
+pub fn environment<S: Copy + crate::SpecIdConversion, B: FoundryBlock>(
     cfg: &ExecutionConfig<S>,
     block: &B,
 ) -> eyre::Result<(evm2::SpecId, Version, BlockEnvExt)> {
-    let spec = match cfg.spec.into() {
-        SpecId::MERGE => evm2::SpecId::MERGE,
-        SpecId::SHANGHAI => evm2::SpecId::SHANGHAI,
-        SpecId::CANCUN => evm2::SpecId::CANCUN,
-        SpecId::PRAGUE => evm2::SpecId::PRAGUE,
-        SpecId::OSAKA => evm2::SpecId::OSAKA,
-        other => eyre::bail!("evm2 milestone 1 hardfork not yet wired: {other:?}"),
-    };
+    let spec = cfg.spec.native_spec();
+    eyre::ensure!(
+        matches!(
+            spec,
+            evm2::SpecId::MERGE
+                | evm2::SpecId::SHANGHAI
+                | evm2::SpecId::CANCUN
+                | evm2::SpecId::PRAGUE
+                | evm2::SpecId::OSAKA
+        ),
+        "evm2 milestone 1 hardfork not yet wired: {spec:?}"
+    );
     let version = cfg.version(spec);
     let block = BlockEnvExt {
         number: block.number(),
@@ -124,27 +128,4 @@ pub fn environment<S: Copy + Into<SpecId>, B: FoundryBlock>(
         ..Default::default()
     };
     Ok((spec, version, block))
-}
-
-/// Converts the remaining legacy spec association to a native evm2 specification.
-///
-/// TODO(evm2): Remove this boundary when FoundryEvmNetwork owns a native spec.
-pub const fn spec_id(spec: SpecId) -> evm2::SpecId {
-    match spec {
-        SpecId::FRONTIER => evm2::SpecId::FRONTIER,
-        SpecId::HOMESTEAD => evm2::SpecId::HOMESTEAD,
-        SpecId::TANGERINE => evm2::SpecId::TANGERINE,
-        SpecId::SPURIOUS_DRAGON => evm2::SpecId::SPURIOUS_DRAGON,
-        SpecId::BYZANTIUM => evm2::SpecId::BYZANTIUM,
-        SpecId::PETERSBURG => evm2::SpecId::PETERSBURG,
-        SpecId::ISTANBUL => evm2::SpecId::ISTANBUL,
-        SpecId::BERLIN => evm2::SpecId::BERLIN,
-        SpecId::LONDON => evm2::SpecId::LONDON,
-        SpecId::MERGE => evm2::SpecId::MERGE,
-        SpecId::SHANGHAI => evm2::SpecId::SHANGHAI,
-        SpecId::CANCUN => evm2::SpecId::CANCUN,
-        SpecId::PRAGUE => evm2::SpecId::PRAGUE,
-        SpecId::OSAKA => evm2::SpecId::OSAKA,
-        SpecId::AMSTERDAM => evm2::SpecId::AMSTERDAM,
-    }
 }

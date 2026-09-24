@@ -213,5 +213,7 @@ Execution configuration now stores Foundry overrides and derives native evm2 ver
 it no longer embeds REVM CfgEnv or its gas table. Anvil keeps its complete legacy configuration
 and applies only shared replay metadata changes. Foundry's Ethereum block inputs now use
 an owned serializable type with the existing fork-cache format. Anvil converts at its
-legacy execution boundary. Network spec and transaction types remain legacy boundaries;
+legacy execution boundary. Ethereum execution now selects an evm2 specification; a
+temporary conversion feeds REVM fork journals and unmigrated symbolic callers.
+Transaction types remain a legacy boundary;
 unsupported execution modes are still rejected explicitly.
