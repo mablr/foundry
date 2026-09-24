@@ -26,6 +26,22 @@ impl LocalState {
     pub fn commit(&mut self, pending: &PendingState) {
         self.database_mut().commit_pending(pending);
     }
+
+    /// Sets a local account's balance while retaining its other fields.
+    pub fn set_balance(&mut self, address: Address, balance: U256) {
+        let db = self.database_mut();
+        let mut info = db.account_info(&address).cloned().unwrap_or_default();
+        info.balance = balance;
+        db.insert_account_info(&address, info);
+    }
+
+    /// Sets a local account's nonce while retaining its other fields.
+    pub fn set_nonce(&mut self, address: Address, nonce: u64) {
+        let db = self.database_mut();
+        let mut info = db.account_info(&address).cloned().unwrap_or_default();
+        info.nonce = nonce;
+        db.insert_account_info(&address, info);
+    }
 }
 
 impl Database for &LocalState {

@@ -280,4 +280,129 @@ mod tests {
             U256::from(7)
         );
     }
+
+    #[test]
+    fn deployed_code_executes_from_accepted_state() {
+        let caller = Address::with_last_byte(0xa);
+        let mut state = LocalState::default();
+        state.set_balance(caller, U256::MAX);
+        state.set_nonce(caller, 1);
+        let env = EthereumEnv::new(
+            SpecId::CANCUN,
+            BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
+        );
+        let mut executor = EthereumExecutor::new(env, state);
+        let creation_code = Bytes::from_static(&[
+            0x60, 0x0a, 0x60, 0x0c, 0x60, 0x00, 0x39, 0x60, 0x0a, 0x60, 0x00, 0xf3, 0x60, 0x2a,
+            0x60, 0x00, 0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
+        ]);
+        let deploy = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                nonce: 1,
+                gas_limit: 100_000,
+                to: TxKind::Create,
+                input: creation_code,
+                ..Default::default()
+            }),
+            caller,
+        );
+
+        let deployment = executor.transact(&deploy).unwrap();
+        assert!(deployment.status);
+        let address = deployment.created_address.unwrap();
+        assert_eq!(address, caller.create(1));
+        assert_eq!(executor.state().database().account_info(&caller).unwrap().nonce, 2);
+
+        let call = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                nonce: 2,
+                gas_limit: 100_000,
+                to: TxKind::Call(address),
+                ..Default::default()
+            }),
+            caller,
+        );
+        let result = executor.call(&call).unwrap();
+        assert!(result.status);
+        assert_eq!(U256::from_be_slice(&result.output), U256::from(42));
+        assert_eq!(executor.state().database().account_info(&caller).unwrap().nonce, 2);
+    }
+
+    #[test]
+    fn nested_native_deal_respects_parent_outcome() {
+        let caller = Address::with_last_byte(0xa);
+        let contract = Address::with_last_byte(0xb);
+        let target = Address::with_last_byte(0xc);
+        let calldata = Vm::dealCall { account: target, newBalance: U256::from(7) }.abi_encode();
+        let mut code = vec![
+            0x60,
+            calldata.len() as u8,
+            0x60,
+            0,
+            0x60,
+            0,
+            0x39, // Copy cheatcode calldata.
+            0x60,
+            0,
+            0x60,
+            0,
+            0x60,
+            calldata.len() as u8,
+            0x60,
+            0,
+            0x60,
+            0,    // CALL arguments.
+            0x73, // PUSH20 cheatcode address.
+        ];
+        code.extend_from_slice(CHEATCODE_ADDRESS.as_slice());
+        code.extend_from_slice(&[0x61, 0x27, 0x10, 0xf1, 0x50, 0x60, 0, 0x60, 0, 0xfd]);
+        code[3] = code.len() as u8;
+        code.extend_from_slice(&calldata);
+        let mut success_code = code.clone();
+        success_code[code[3] as usize - 1] = 0xf3;
+
+        let mut state = LocalState::default();
+        state.database_mut().insert_account_info(
+            &contract,
+            AccountInfo::default().with_code(Bytecode::new_legacy(code.into())),
+        );
+        let env = EthereumEnv::new(
+            SpecId::CANCUN,
+            BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
+        );
+        let mut executor = EthereumExecutor::new(env, state);
+        let tx = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                gas_limit: 100_000,
+                to: TxKind::Call(contract),
+                ..Default::default()
+            }),
+            caller,
+        );
+
+        assert!(!executor.inspect_transact(&tx, &mut NativeCheatcodes).unwrap().status);
+        assert!(!executor.state().database().cache.accounts.contains_key(&target));
+
+        let mut success_executor = executor.clone();
+        success_executor.state_mut().database_mut().insert_account_info(
+            &contract,
+            AccountInfo::default().with_code(Bytecode::new_legacy(success_code.into())),
+        );
+        let success_tx = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                nonce: 1,
+                gas_limit: 100_000,
+                to: TxKind::Call(contract),
+                ..Default::default()
+            }),
+            caller,
+        );
+        assert!(
+            success_executor.inspect_transact(&success_tx, &mut NativeCheatcodes).unwrap().status
+        );
+        assert_eq!(
+            success_executor.state().database().account_info(&target).unwrap().balance,
+            U256::from(7)
+        );
+    }
 }
