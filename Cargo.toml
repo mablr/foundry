@@ -38,7 +38,7 @@ resolver = "2"
 [workspace.package]
 version = "1.8.4"
 edition = "2024"
-rust-version = "1.89"
+rust-version = "1.96"
 authors = ["Foundry Contributors"]
 license = "MIT OR Apache-2.0"
 homepage = "https://getfoundry.sh"
@@ -350,6 +350,9 @@ solar-lint = { version = "=0.2.0", default-features = false }
 svm = { package = "svm-rs", version = "0.5.28", default-features = false, features = [
     "rustls",
 ] }
+
+## evm2
+evm2 = { git = "https://github.com/alloy-rs/evm2", rev = "c177439cbde3a4afb193ac10ff570d0c5e6fa663" }
 
 ## alloy
 alloy-consensus = { version = "2.4.2", default-features = false }
