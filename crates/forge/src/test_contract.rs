@@ -1,6 +1,6 @@
 //! Linked test artifacts shared by Forge execution runners.
 
-use crate::multi_runner::{SymbolicArtifactReplayConfig, TestFunctionMatcher};
+use crate::test_matcher::{SymbolicArtifactReplayConfig, TestFunctionMatcher};
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::{Address, B256, Bytes};
 use eyre::Result;

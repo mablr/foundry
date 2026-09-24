@@ -2,11 +2,9 @@
 
 use crate::{
     TestContract, TestFilter,
-    multi_runner::{
-        LibraryDeployment, TestFunctionMatcher, is_generated_symbolic_regression_contract,
-    },
     result::{SuiteResult, TestKind, TestResult, TestStatus},
-    test_contract::PreparedTestArtifacts,
+    test_contract::{LibraryDeployment, PreparedTestArtifacts},
+    test_matcher::{TestFunctionMatcher, is_generated_symbolic_regression_contract},
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_json_abi::Function;

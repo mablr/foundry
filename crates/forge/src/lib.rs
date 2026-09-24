@@ -31,6 +31,8 @@ pub mod native_runner;
 mod test_contract;
 pub use test_contract::{DeployableContracts, TestContract};
 
+mod test_matcher;
+
 pub mod mutation;
 
 pub mod workspace;
