@@ -1963,7 +1963,7 @@ impl<'a, FEN: FoundryEvmNetwork> FunctionRunner<'a, FEN> {
             &self.cr.mcr.known_contracts,
             identified_contracts.clone(),
             &mut self.result.logs,
-            &mut self.result.traces,
+            self.result.traces.legacy_mut(),
             &mut self.result.debug_bytecodes,
             &mut self.result.line_coverage,
             &mut self.result.deprecated_cheatcodes,
@@ -4587,7 +4587,9 @@ impl<'a, FEN: FoundryEvmNetwork> FunctionRunner<'a, FEN> {
                     let mut symbolic_result = SymbolicResult::fail_counterexample_sequence(
                         &symbolic_config,
                         stats,
-                        SymbolicCallTrace::test_result_traces(!self.result.traces.is_empty()),
+                        SymbolicCallTrace::test_result_traces(
+                            !self.result.traces.legacy().is_empty(),
+                        ),
                     );
                     if let Some(artifact) = artifact.clone() {
                         symbolic_result = symbolic_result.with_artifact(artifact);
@@ -4777,7 +4779,7 @@ impl<'a, FEN: FoundryEvmNetwork> FunctionRunner<'a, FEN> {
                 &self.cr.mcr.known_contracts,
                 identified_contracts.clone(),
                 &mut self.result.logs,
-                &mut self.result.traces,
+                self.result.traces.legacy_mut(),
                 &mut self.result.debug_bytecodes,
                 &mut self.result.line_coverage,
                 &mut self.result.deprecated_cheatcodes,

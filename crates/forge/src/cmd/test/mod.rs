@@ -13,6 +13,7 @@ use crate::{
     result::{
         SYMBOLIC_COUNTEREXAMPLE_ARTIFACT_SCHEMA, SuiteResult, SymbolicCounterexampleArtifact,
         SymbolicReplayStatus, TestKind, TestKindReport, TestOutcome, TestResult, TestStatus,
+        TestTraces,
     },
     runner::{effective_test_function_kind, inline_config_for},
     symbolic_regression::{
@@ -1913,12 +1914,13 @@ impl TestArgs {
             // (for example if `setUp()` reverts), fall back to available setup/deployment traces.
             let mut traces = test_result
                 .traces
+                .legacy()
                 .iter()
                 .filter(|(kind, _)| kind.is_execution())
                 .cloned()
                 .collect::<Vec<_>>();
             if traces.is_empty() {
-                traces = test_result.traces.clone();
+                traces = test_result.traces.legacy().clone();
             }
             if let Some(decoder) = &outcome.last_run_decoder {
                 for (_, arena) in &mut traces {
@@ -2058,6 +2060,7 @@ impl TestArgs {
         let test_name = test_name.trim_end_matches("()");
         let (_, arena) = test_result
             .traces
+            .legacy_mut()
             .iter_mut()
             .find(|(kind, _)| *kind == TraceKind::Execution)
             .ok_or_else(|| {
@@ -2241,13 +2244,13 @@ impl TestArgs {
                     }
                     if config.tracing.verbosity >= 3
                         && (!self.suppress_successful_traces || result.status.is_failure())
-                        && !result.native_traces.is_empty()
+                        && result.traces.native().is_some_and(|traces| !traces.is_empty())
                     {
                         sh_println!("Traces:")?;
                         let trace_decoder = trace_decoder.get_or_init(|| {
                             NativeTraceDecoder::new().with_known_contracts(&known_contracts)
                         });
-                        for (_, arena) in &result.native_traces {
+                        for (_, arena) in result.traces.native().into_iter().flatten() {
                             let arena = trace_decoder.decode_for_display(arena);
                             let arena = if let Some(depth) = config.tracing.trace_depth {
                                 native_trace_arena_at_depth(&arena, depth)
@@ -2626,7 +2629,7 @@ impl TestArgs {
                 };
                 let renders_trace = !silent
                     && show_traces
-                    && result.traces.iter().any(|(kind, _)| should_include_trace(kind));
+                    && result.traces.legacy().iter().any(|(kind, _)| should_include_trace(kind));
                 let identify_addresses = always_identify_traces || renders_trace;
 
                 if !silent {
@@ -2660,7 +2663,7 @@ impl TestArgs {
                 // Identify addresses and decode traces.
                 let mut decoded_traces = Vec::new();
                 if identify_addresses {
-                    for (kind, arena) in &mut result.traces {
+                    for (kind, arena) in result.traces.legacy_mut() {
                         if self.debug && !result.debug_bytecodes.is_empty() {
                             let mut local_identifier = TraceIdentifiers::new()
                                 .with_local_and_bytecodes(
@@ -2700,8 +2703,11 @@ impl TestArgs {
                 if !silent
                     && test_failed
                     && trace_verbosity >= 3
-                    && let Some((_, arena)) =
-                        result.traces.iter().find(|(kind, _)| matches!(kind, TraceKind::Execution))
+                    && let Some((_, arena)) = result
+                        .traces
+                        .legacy()
+                        .iter()
+                        .find(|(kind, _)| matches!(kind, TraceKind::Execution))
                 {
                     let builder = backtrace_builder.get_or_insert_with(|| {
                         BacktraceBuilder::new(
@@ -2718,14 +2724,16 @@ impl TestArgs {
                 }
 
                 if let Some(gas_report) = &mut gas_report {
-                    gas_report.analyze(result.traces.iter().map(|(_, a)| &a.arena), &decoder).await;
+                    gas_report
+                        .analyze(result.traces.legacy().iter().map(|(_, a)| &a.arena), &decoder)
+                        .await;
 
                     for trace in &result.gas_report_traces {
                         decoder.clear_addresses();
 
                         // Re-execute setup and deployment traces to collect identities created in
                         // setUp and constructor.
-                        for (kind, arena) in &result.traces {
+                        for (kind, arena) in result.traces.legacy() {
                             if !matches!(kind, TraceKind::Execution) {
                                 decoder.identify_scoped(arena, &mut identifier);
                             }
@@ -2741,7 +2749,7 @@ impl TestArgs {
                 if shell::is_json()
                     && let Some(trace_depth) = tracing.trace_depth
                 {
-                    for (_, arena) in &mut result.traces {
+                    for (_, arena) in result.traces.legacy_mut() {
                         *arena = trace_arena_at_depth(arena, trace_depth);
                     }
                 }
@@ -2963,24 +2971,30 @@ fn prepare_results_for_json(
         } else {
             test_result.logs = Vec::new();
         }
-        for (_, arena) in &mut test_result.traces {
-            // Discard presentation-only decoding populated by the streaming renderer.
-            for node in arena.nodes_mut() {
-                node.trace.decoded = None;
-                for log in &mut node.logs {
-                    log.decoded = None;
-                }
-                for step in &mut node.trace.steps {
-                    step.decoded = None;
+        match &mut test_result.traces {
+            TestTraces::Legacy(traces) => {
+                for (_, arena) in traces {
+                    // Discard presentation-only decoding populated by the streaming renderer.
+                    for node in arena.nodes_mut() {
+                        node.trace.decoded = None;
+                        for log in &mut node.logs {
+                            log.decoded = None;
+                        }
+                        for step in &mut node.trace.steps {
+                            step.decoded = None;
+                        }
+                    }
+                    if let Some(trace_depth) = trace_depth {
+                        *arena = trace_arena_at_depth(arena, trace_depth);
+                    }
                 }
             }
-            if let Some(trace_depth) = trace_depth {
-                *arena = trace_arena_at_depth(arena, trace_depth);
-            }
-        }
-        for (_, arena) in &mut test_result.native_traces {
-            if let Some(trace_depth) = trace_depth {
-                *arena = native_trace_arena_at_depth(arena, trace_depth);
+            TestTraces::Native(traces) => {
+                for (_, arena) in traces {
+                    if let Some(trace_depth) = trace_depth {
+                        *arena = native_trace_arena_at_depth(arena, trace_depth);
+                    }
+                }
             }
         }
     }

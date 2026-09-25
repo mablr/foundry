@@ -24,17 +24,14 @@ use foundry_evm::{
         strategies::EvmFuzzState,
     },
     traces::{
-        CallTraceArena, CallTraceDecoder, TraceKind, Traces,
+        CallTraceArena, CallTraceDecoder, SparsedTraceArena, TraceKind, Traces,
         native::{CallTraceArena as NativeCallTraceArena, redacted_for_display},
     },
 };
 use foundry_evm_symbolic::{
     PortfolioDiagnostics, SymbolicStats, SymbolicStopReason, SymbolicStorageAssignment,
 };
-use serde::{
-    Deserialize, Serialize, Serializer,
-    ser::{Error as _, SerializeMap},
-};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{
     collections::{BTreeMap, HashMap as Map},
     fmt::{self, Write},
@@ -263,41 +260,9 @@ pub struct SuiteResult {
     #[serde(with = "foundry_common::serde_helpers::duration")]
     pub duration: Duration,
     /// Individual test results: `test fn signature -> TestResult`.
-    #[serde(serialize_with = "serialize_test_results")]
     pub test_results: BTreeMap<String, TestResult>,
     /// Generated warnings.
     pub warnings: Vec<String>,
-}
-
-fn serialize_test_results<S>(
-    results: &BTreeMap<String, TestResult>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let mut map = serializer.serialize_map(Some(results.len()))?;
-    for (name, result) in results {
-        if result.native_traces.is_empty() {
-            map.serialize_entry(name, result)?;
-        } else {
-            let mut value = serde_json::to_value(result).map_err(S::Error::custom)?;
-            let traces = result
-                .native_traces
-                .iter()
-                .map(|(kind, arena)| {
-                    let mut arena = redacted_for_display(arena);
-                    for node in arena.nodes_mut() {
-                        node.trace.bytecode = None;
-                    }
-                    (*kind, arena)
-                })
-                .collect::<Vec<_>>();
-            value["traces"] = serde_json::to_value(traces).map_err(S::Error::custom)?;
-            map.serialize_entry(name, &value)?;
-        }
-    }
-    map.end()
 }
 
 impl SuiteResult {
@@ -1271,6 +1236,75 @@ impl SymbolicCounterexampleCall {
     }
 }
 
+/// Traces produced by the engine that executed a test.
+#[derive(Clone, Debug)]
+pub enum TestTraces {
+    Legacy(Traces),
+    Native(Vec<(TraceKind, NativeCallTraceArena)>),
+}
+
+impl Default for TestTraces {
+    fn default() -> Self {
+        Self::Legacy(Vec::new())
+    }
+}
+
+impl Extend<(TraceKind, SparsedTraceArena)> for TestTraces {
+    fn extend<T: IntoIterator<Item = (TraceKind, SparsedTraceArena)>>(&mut self, iter: T) {
+        self.legacy_mut().extend(iter);
+    }
+}
+
+impl TestTraces {
+    pub fn legacy(&self) -> &Traces {
+        let Self::Legacy(traces) = self else { panic!("expected legacy test traces") };
+        traces
+    }
+
+    pub fn legacy_mut(&mut self) -> &mut Traces {
+        let Self::Legacy(traces) = self else { panic!("expected legacy test traces") };
+        traces
+    }
+
+    pub fn native(&self) -> Option<&[(TraceKind, NativeCallTraceArena)]> {
+        match self {
+            Self::Native(traces) => Some(traces),
+            Self::Legacy(_) => None,
+        }
+    }
+}
+
+impl Serialize for TestTraces {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Legacy(traces) => traces.serialize(serializer),
+            Self::Native(traces) => traces
+                .iter()
+                .map(|(kind, arena)| {
+                    let mut arena = redacted_for_display(arena);
+                    for node in arena.nodes_mut() {
+                        node.trace.bytecode = None;
+                    }
+                    (*kind, arena)
+                })
+                .collect::<Vec<_>>()
+                .serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for TestTraces {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Traces::deserialize(deserializer).map(Self::Legacy)
+    }
+}
+
 /// The result of an executed test.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct TestResult {
@@ -1352,12 +1386,8 @@ pub struct TestResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub symbolic: Option<SymbolicResult>,
 
-    /// Traces
-    pub traces: Traces,
-
-    /// Traces recorded by the evm2 executor.
-    #[serde(skip)]
-    pub native_traces: Vec<(TraceKind, NativeCallTraceArena)>,
+    /// Traces recorded by the execution engine.
+    pub traces: TestTraces,
 
     /// Runtime bytecodes for contracts seen in debug traces.
     #[serde(skip)]
@@ -1639,12 +1669,17 @@ pub(crate) fn invariant_kind(runs: usize, calls: usize, reverts: usize) -> TestK
 }
 
 impl TestResult {
+    /// Creates a result for an evm2 execution without recorded traces yet.
+    pub fn native() -> Self {
+        Self { traces: TestTraces::Native(Vec::new()), ..Default::default() }
+    }
+
     /// Creates a new test result starting from test setup results.
     pub fn new(setup: &TestSetup) -> Self {
         Self {
             labels: setup.labels.clone(),
             logs: setup.logs.clone(),
-            traces: setup.traces.clone(),
+            traces: TestTraces::Legacy(setup.traces.clone()),
             debug_bytecodes: setup.debug_bytecodes.clone(),
             line_coverage: setup.coverage.clone(),
             fork_block_number: setup.fork_block_number,
@@ -1663,7 +1698,7 @@ impl TestResult {
             status: if setup.skipped { TestStatus::Skipped } else { TestStatus::Failure },
             reason: setup.reason,
             logs: setup.logs,
-            traces: setup.traces,
+            traces: TestTraces::Legacy(setup.traces),
             debug_bytecodes: setup.debug_bytecodes,
             line_coverage: setup.coverage,
             labels: setup.labels,
@@ -2363,8 +2398,10 @@ mod tests {
         trace.address = CHEATCODE_ADDRESS;
         trace.data = Bytes::from_static(&[1, 2, 3, 4, 5]);
         trace.output = Bytes::from_static(&[6, 7]);
-        let result =
-            TestResult { native_traces: vec![(TraceKind::Execution, arena)], ..Default::default() };
+        let result = TestResult {
+            traces: TestTraces::Native(vec![(TraceKind::Execution, arena)]),
+            ..Default::default()
+        };
         let suite = SuiteResult::new(
             Duration::ZERO,
             BTreeMap::from([("test()".to_string(), result)]),

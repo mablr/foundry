@@ -4,7 +4,7 @@ use crate::{
     TestContract, TestFilter,
     result::{
         InvariantFailure, InvariantOutcome, SuiteResult, TestKind, TestResult, TestStatus,
-        invariant_kind,
+        TestTraces, invariant_kind,
     },
     test_contract::{LibraryDeployment, PreparedTestArtifacts, analyze_compiled_sources},
     test_matcher::{
@@ -734,7 +734,7 @@ impl NativeMultiContractRunner {
                 NativeContractSetup::Failed { stage, result, logs, traces, coverage } => {
                     let mut failure = TestResult::fail(self.failure_reason(&result));
                     failure.logs = logs;
-                    failure.native_traces = traces;
+                    failure.traces = TestTraces::Native(traces);
                     failure.line_coverage = coverage;
                     suites.insert(
                         id.identifier(),
@@ -768,7 +768,7 @@ impl NativeMultiContractRunner {
                         let mut test = TestResult {
                             status: TestStatus::Skipped,
                             reason: Some("not runnable in replay mode".to_string()),
-                            ..Default::default()
+                            ..TestResult::native()
                         };
                         if matches!(kind, TestFunctionKind::FuzzTest { .. }) {
                             test.kind = TestKind::Fuzz {
@@ -819,7 +819,7 @@ impl NativeMultiContractRunner {
                     ) {
                         Ok(test) => test,
                         Err(error) => {
-                            let mut test = TestResult::default();
+                            let mut test = TestResult::native();
                             test.invariant_setup_fail(error);
                             test
                         }
@@ -852,7 +852,7 @@ impl NativeMultiContractRunner {
                         reason,
                         kind: TestKind::Unit { gas: result.tx_gas_used().saturating_sub(stipend) },
                         logs,
-                        native_traces: traces,
+                        traces: TestTraces::Native(traces),
                         line_coverage: runner.merge_setup_coverage(coverage),
                         ..Default::default()
                     },
@@ -881,13 +881,13 @@ impl NativeMultiContractRunner {
         let (result, logs, traces, coverage) =
             runner.run_input(replay.failure.calldata.clone(), value)?;
         if result.output.as_ref() == MAGIC_ASSUME {
-            let mut test = TestResult::default();
+            let mut test = TestResult::native();
             test.fuzz_result(FuzzTestResult {
                 skipped: true,
                 reason: Some("persisted fuzz failure rejected by `vm.assume`".to_string()),
                 ..Default::default()
             });
-            test.native_traces = traces;
+            test.traces = TestTraces::Native(traces);
             test.line_coverage = runner.merge_setup_coverage(coverage);
             return Ok(test);
         }
@@ -914,7 +914,7 @@ impl NativeMultiContractRunner {
             counterexample.raw_args = Some(format_tokens_raw(&args).format(", ").to_string());
             CounterExample::Single(counterexample)
         });
-        let mut test = TestResult::default();
+        let mut test = TestResult::native();
         test.fuzz_result(FuzzTestResult {
             first_case: if passed {
                 FuzzCase { gas: gas_used, stipend }
@@ -928,7 +928,7 @@ impl NativeMultiContractRunner {
             logs,
             ..Default::default()
         });
-        test.native_traces = traces;
+        test.traces = TestTraces::Native(traces);
         test.line_coverage = runner.merge_setup_coverage(coverage);
         Ok(test)
     }
@@ -1031,9 +1031,9 @@ impl NativeMultiContractRunner {
                 campaign.logs = logs;
             }
         }
-        let mut test = TestResult::default();
+        let mut test = TestResult::native();
         test.fuzz_result(campaign);
-        test.native_traces = native_traces;
+        test.traces = TestTraces::Native(native_traces);
         test.line_coverage = coverage;
         Ok(test)
     }
@@ -1046,24 +1046,24 @@ impl NativeMultiContractRunner {
         env: &EthereumEnv,
     ) -> Result<TestResult> {
         let Some(first) = function.inputs.first() else {
-            return Ok(TestResult::fail("Table test should have at least one parameter".into()));
+            return Ok(native_failure("Table test should have at least one parameter".into()));
         };
         let Some(first_fixtures) = fixtures.param_fixtures(first.name()) else {
-            return Ok(TestResult::fail("Table test should have fixtures defined".into()));
+            return Ok(native_failure("Table test should have fixtures defined".into()));
         };
         if first_fixtures.is_empty() {
-            return Ok(TestResult::fail("Table test should have at least one fixture".into()));
+            return Ok(native_failure("Table test should have at least one fixture".into()));
         }
         let mut rows = vec![first_fixtures];
         for param in &function.inputs[1..] {
             let Some(values) = fixtures.param_fixtures(param.name()) else {
-                return Ok(TestResult::fail(format!(
+                return Ok(native_failure(format!(
                     "No fixture defined for param {}",
                     param.name()
                 )));
             };
             if values.len() != first_fixtures.len() {
-                return Ok(TestResult::fail(format!(
+                return Ok(native_failure(format!(
                     "{} fixtures defined for {} (expected {})",
                     values.len(),
                     param.name(),
@@ -1103,9 +1103,9 @@ impl NativeMultiContractRunner {
                 break;
             }
         }
-        let mut test = TestResult::default();
+        let mut test = TestResult::native();
         test.table_result(campaign);
-        test.native_traces = native_traces;
+        test.traces = TestTraces::Native(native_traces);
         test.line_coverage = coverage;
         Ok(test)
     }
@@ -1252,12 +1252,12 @@ impl NativeMultiContractRunner {
             }
             None => {}
         }
-        let mut test = TestResult::default();
+        let mut test = TestResult::native();
         test.invariant_result(
             invariant_kind(runs as usize, calls as usize, reverts as usize),
             InvariantOutcome { success, failures, handler_failures, ..Default::default() },
         );
-        test.native_traces = native_traces;
+        test.traces = TestTraces::Native(native_traces);
         test.line_coverage = coverage;
         Ok(test)
     }
@@ -1276,6 +1276,10 @@ impl NativeMultiContractRunner {
             self.prepared.revert_decoder.decode(&result.output, None)
         }
     }
+}
+
+fn native_failure(reason: String) -> TestResult {
+    TestResult { status: TestStatus::Failure, reason: Some(reason), ..TestResult::native() }
 }
 
 #[cfg(test)]
