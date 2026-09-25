@@ -302,12 +302,22 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
     }
 
     fn execute_with_value(&mut self, input: Bytes, value: U256) -> Result<TxResult> {
+        self.execute_call(CALLER, self.address, input, value)
+    }
+
+    fn execute_call(
+        &mut self,
+        caller: Address,
+        target: Address,
+        input: Bytes,
+        value: U256,
+    ) -> Result<TxResult> {
         let nonce =
-            self.executor.state().database().account_info(&CALLER).map_or(0, |info| info.nonce);
+            self.executor.state().database().account_info(&caller).map_or(0, |info| info.nonce);
         let tx = Self::transaction(
-            CALLER,
+            caller,
             nonce,
-            TxKind::Call(self.address),
+            TxKind::Call(target),
             input,
             self.gas_limit,
             self.gas_price,
@@ -823,7 +833,7 @@ impl NativeMultiContractRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evm2::{SpecId, env::BlockEnvExt};
+    use evm2::{SpecId, bytecode::Bytecode, env::BlockEnvExt, evm::AccountInfo};
     use std::collections::BTreeSet;
 
     #[test]
@@ -868,5 +878,56 @@ mod tests {
         let (result, _, _) = runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();
         assert!(result.status);
         assert_eq!(U256::from_be_slice(&result.output), U256::from(42));
+    }
+
+    #[test]
+    fn stateful_calls_share_one_run_and_reset_for_the_next() {
+        let target = Address::with_last_byte(0x42);
+        let mut state = LocalState::default();
+        state.database_mut().insert_account_info(
+            &target,
+            AccountInfo::default().with_code(Bytecode::new_legacy(Bytes::from_static(&[
+                0x60, 0x00, 0x54, 0x60, 0x01, 0x01, 0x60, 0x00, 0x55, 0x60, 0x00, 0x54, 0x60, 0x00,
+                0x52, 0x60, 0x20, 0x60, 0x00, 0xf3,
+            ]))),
+        );
+        let contract = TestContract {
+            abi: JsonAbi::default(),
+            bytecode: Bytes::from_static(&[0x60, 0x00, 0x60, 0x00, 0xf3]),
+            library_addresses: BTreeSet::new(),
+        };
+        let env = EthereumEnv::new(
+            SpecId::CANCUN,
+            BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
+        );
+        let runner = NativeContractRunner::prepare(
+            &contract,
+            env,
+            state,
+            NativeTestSetup {
+                sender: Address::with_last_byte(0xa),
+                initial_balance: U256::ZERO,
+                gas_limit: 100_000,
+                gas_price: 0,
+                libraries: NativeLibraries { code: &[], deployment: LibraryDeployment::Nonce },
+                tracing: None,
+                isolation: false,
+            },
+        )
+        .unwrap();
+        let NativeContractSetup::Ready(runner) = runner else {
+            panic!("native test contract deployment failed");
+        };
+
+        let mut run = runner.clone();
+        for expected in [1, 2] {
+            let result = run.execute_call(CALLER, target, Bytes::new(), U256::ZERO).unwrap();
+            assert!(result.status);
+            assert_eq!(U256::from_be_slice(&result.output), U256::from(expected));
+        }
+        let mut next_run = runner;
+        let result = next_run.execute_call(CALLER, target, Bytes::new(), U256::ZERO).unwrap();
+        assert!(result.status);
+        assert_eq!(U256::from_be_slice(&result.output), U256::ONE);
     }
 }
