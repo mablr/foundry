@@ -135,6 +135,58 @@ SKIPPING ON CHAIN SIMULATION.
     assert!(sequence.transactions[0].transaction.gas().is_none());
 });
 
+forgetest_async!(native_script_broadcasts_and_saves_receipt, |prj, cmd| {
+    let (api, handle) = spawn(NodeConfig::test()).await;
+    let sender = handle.dev_wallets().next().unwrap().address();
+    let target = address!("000000000000000000000000000000000000beef");
+    api.anvil_set_code(target, hex!("600160005500").into()).await.unwrap();
+    let script = prj.add_script(
+        "NativeBroadcast.s.sol",
+        r#"
+interface Vm {
+    function startBroadcast() external;
+    function stopBroadcast() external;
+}
+
+contract NativeBroadcast {
+    Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+
+    function run() external {
+        vm.startBroadcast();
+        (bool ok,) = address(0xbeef).call("");
+        require(ok, "broadcast call failed");
+        vm.stopBroadcast();
+    }
+}
+"#,
+    );
+    let rpc = handle.http_endpoint();
+    cmd.forge_fuse()
+        .args([
+            "script",
+            script.to_str().unwrap(),
+            "--fork-url",
+            rpc.as_str(),
+            "--sender",
+            &sender.to_string(),
+            "--broadcast",
+            "--unlocked",
+        ])
+        .assert_success();
+
+    assert_eq!(handle.http_provider().get_storage_at(target, U256::ZERO).await.unwrap(), U256::ONE);
+    let path = foundry_common::fs::json_files(&prj.root().join("broadcast"))
+        .find(|path| {
+            path.ends_with("run-latest.json") && !path.to_string_lossy().contains("dry-run")
+        })
+        .unwrap();
+    let sequence = foundry_common::fs::read_json_file::<ScriptSequence<Ethereum>>(&path).unwrap();
+    assert_eq!(sequence.transactions.len(), 1);
+    assert!(sequence.transactions[0].hash.is_some());
+    assert_eq!(sequence.receipts.len(), 1);
+    assert!(sequence.pending.is_empty());
+});
+
 fn latest_dry_run_sequence(root: &Path) -> ScriptSequence<Ethereum> {
     let path = foundry_common::fs::json_files(&root.join("broadcast"))
         .find(|path| path.ends_with("dry-run/run-latest.json"))

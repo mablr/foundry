@@ -54,10 +54,11 @@ use serde::Serialize;
 use std::collections::VecDeque;
 use yansi::Paint;
 
+mod broadcast;
+
 /// Executes the Ethereum `forge script` command through the native pipeline.
 pub(crate) async fn run(args: ScriptArgs, config: Config, evm_opts: EvmOpts) -> Result<()> {
     eyre::ensure!(!args.resume, "native script resume is not implemented");
-    eyre::ensure!(!args.broadcast, "native script broadcast is not implemented");
     eyre::ensure!(!args.debug, "native script debugger is not implemented");
     let context = NativeScriptContext::prepare(args, config, evm_opts).await?;
     let execution = context.execute().await?;
@@ -68,14 +69,20 @@ pub(crate) async fn run(args: ScriptArgs, config: Config, evm_opts: EvmOpts) -> 
     }
     if execution.has_transactions() && context.evm_opts.fork_url.is_some() {
         let mut sequence = context.prepare_sequence(&execution).await?;
-        sequence.save(false, true)?;
-        if !shell::is_json() {
-            if context.args.skip_simulation {
-                sh_println!("\nSKIPPING ON CHAIN SIMULATION.")?;
-            } else {
-                sh_println!("\nSIMULATION COMPLETE.")?;
+        if context.args.broadcast {
+            context.broadcast(sequence).await?;
+        } else {
+            sequence.save(false, true)?;
+            if !shell::is_json() {
+                if context.args.skip_simulation {
+                    sh_println!("\nSKIPPING ON CHAIN SIMULATION.")?;
+                } else {
+                    sh_println!("\nSIMULATION COMPLETE.")?;
+                }
             }
         }
+    } else if context.args.broadcast && !shell::is_json() {
+        sh_warn!("No transactions to broadcast.")?;
     }
     Ok(())
 }

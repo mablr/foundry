@@ -422,6 +422,13 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
         interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
         message: &mut Message<FoundryEvmTypes>,
     ) -> Option<MessageResult<FoundryEvmTypes>> {
+        if message.depth == 0 {
+            // The local root call is not broadcast, so its sender nonce stays at the chain value.
+            let sender = interp.tx_env().origin;
+            if let Ok(mut account) = interp.host().state_mut().account(&sender, false) {
+                account.set_nonce(account.nonce().saturating_sub(1));
+            }
+        }
         self.capture_root_state(interp, message.depth);
         if let Some(coverage) = &mut self.coverage {
             let _ = coverage.call(interp, message);
