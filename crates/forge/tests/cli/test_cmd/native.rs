@@ -531,6 +531,7 @@ contract NativeFactoryTest {
 });
 
 forgetest_init!(evm2_runs_compiled_setup_and_unit_test, |prj, cmd| {
+    prj.update_config(|config| config.fuzz.runs = 8);
     prj.update_config(|config| config.isolate = false);
     prj.add_test(
         "Native.t.sol",
@@ -586,11 +587,111 @@ Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 0 skipped (1 total tests)
 "#]]);
 
     cmd.forge_fuse();
-    cmd.args(["test", "--match-test", "testFuzz"]).assert_failure().stderr_eq(str![[
-        r#"Error: native execution does not yet support fuzz tests
+    cmd.args(["test", "--match-test", "testFuzz"]).assert_success().stdout_eq(str![[r#"
+No files changed, compilation skipped
 
-"#
-    ]]);
+Ran 1 test for test/Native.t.sol:NativeTest
+[PASS] testFuzz(uint256) (runs: 8, [AVG_GAS])
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]]);
+});
+
+forgetest_init!(evm2_fuzz_campaign_handles_assumptions_and_failures, |prj, cmd| {
+    prj.update_config(|config| {
+        config.isolate = false;
+        config.fuzz.runs = 8;
+        config.fuzz.seed = Some(alloy_primitives::U256::ONE);
+    });
+    prj.add_test(
+        "NativeFuzz.t.sol",
+        r#"
+interface Vm {
+    function assume(bool condition) external;
+}
+
+contract NativeFuzzTest {
+    Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+
+    function testFuzzAssume(bool valid) public {
+        vm.assume(valid);
+    }
+
+    function testFuzzFails(bool valid) public pure {
+        require(!valid, "boom");
+    }
+
+    function testFuzzRejects(bool) public {
+        vm.assume(false);
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-test", "testFuzzAssume"]).assert_success().stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeFuzz.t.sol:NativeFuzzTest
+[PASS] testFuzzAssume(bool) (runs: 8, [AVG_GAS])
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]]);
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-test", "testFuzzFails"])
+        .assert_failure()
+        .stdout_eq(str![[r#"
+No files changed, compilation skipped
+
+Ran 1 test for test/NativeFuzz.t.sol:NativeFuzzTest
+[FAIL: boom; counterexample: 		sender=0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38 addr=0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496 calldata=0xa043f3ae0000000000000000000000000000000000000000000000000000000000000001 args=[true]] testFuzzFails(bool) (runs: 1, [AVG_GAS])
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 0 skipped (1 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/NativeFuzz.t.sol:NativeFuzzTest
+[FAIL: boom; counterexample: 		sender=0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38 addr=0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496 calldata=0xa043f3ae0000000000000000000000000000000000000000000000000000000000000001 args=[true]] testFuzzFails(bool) (runs: 1, [AVG_GAS])
+
+Encountered a total of 1 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 1 failed test
+Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing test in the debugger
+
+[SEED] (use `--fuzz-seed` to reproduce)
+
+"#]]);
+
+    prj.update_config(|config| config.fuzz.max_test_rejects = 2);
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-test", "testFuzzRejects"]).assert_failure().stdout_eq(str![[r#"
+No files changed, compilation skipped
+
+Ran 1 test for test/NativeFuzz.t.sol:NativeFuzzTest
+[FAIL: maximum fuzz test rejections exceeded] testFuzzRejects(bool) (runs: 0, [AVG_GAS])
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 0 skipped (1 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/NativeFuzz.t.sol:NativeFuzzTest
+[FAIL: maximum fuzz test rejections exceeded] testFuzzRejects(bool) (runs: 0, [AVG_GAS])
+
+Encountered a total of 1 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 1 failed test
+Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing test in the debugger
+
+[SEED] (use `--fuzz-seed` to reproduce)
+
+"#]]);
 });
 
 forgetest_init!(evm2_reports_console_and_opcode_logs, |prj, cmd| {

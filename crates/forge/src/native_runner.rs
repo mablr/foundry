@@ -10,7 +10,7 @@ use crate::{
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_dyn_abi::JsonAbiExt;
-use alloy_json_abi::Function;
+use alloy_json_abi::{Function, StateMutability};
 use alloy_primitives::{Address, Bytes, Log, TxKind, U256};
 use evm2::{
     TxResult,
@@ -32,12 +32,19 @@ use foundry_evm::{
         },
         native::{EthereumEnv, LocalState},
     },
-    fuzz::{CounterExample, FuzzCase, FuzzTestResult},
+    fuzz::{
+        BaseCounterExample, CounterExample, FuzzCase, FuzzFixtures, FuzzTestResult,
+        strategies::{fuzz_calldata, fuzz_msg_value},
+    },
     native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
     traces::native::{CallTraceArena as NativeCallTraceArena, TracingInspectorConfig},
 };
 use itertools::Itertools;
+use proptest::{
+    strategy::{Strategy, ValueTree},
+    test_runner::{RngAlgorithm, TestRng, TestRunner},
+};
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 /// Linked local tests and native Ethereum execution options.
@@ -462,6 +469,13 @@ impl NativeMultiContractRunner {
                     tests.insert(function.signature(), test);
                     continue;
                 }
+                if matches!(kind, TestFunctionKind::FuzzTest { should_fail: false }) {
+                    tests.insert(
+                        function.signature(),
+                        self.run_fuzz_campaign(&runner, function, &env)?,
+                    );
+                    continue;
+                }
                 ensure!(
                     matches!(kind, TestFunctionKind::UnitTest { should_fail: false }),
                     "native execution does not yet support {} tests",
@@ -561,6 +575,107 @@ impl NativeMultiContractRunner {
             ..Default::default()
         });
         test.native_traces = traces;
+        Ok(test)
+    }
+
+    fn run_fuzz_campaign<D: Database + Clone + 'static>(
+        &self,
+        runner: &NativeContractRunner<D>,
+        function: &Function,
+        env: &EthereumEnv,
+    ) -> Result<TestResult> {
+        let config = &self.config.fuzz;
+        ensure!(config.fail_on_revert, "native fuzzing requires fail_on_revert");
+        ensure!(
+            config.corpus.corpus_dir.is_none(),
+            "native corpus-guided fuzzing is not implemented"
+        );
+        ensure!(config.run.is_none(), "native fuzz run selection is not implemented");
+        let test_runner_config = proptest::test_runner::Config {
+            cases: config.runs,
+            max_global_rejects: config.max_test_rejects,
+            max_shrink_iters: 0,
+            failure_persistence: None,
+            ..Default::default()
+        };
+        let mut generator = if let Some(seed) = config.seed {
+            let rng = TestRng::from_seed(RngAlgorithm::ChaCha, &seed.to_be_bytes::<32>());
+            TestRunner::new_with_rng(test_runner_config, rng)
+        } else {
+            TestRunner::new(test_runner_config)
+        };
+        let strategy = (
+            fuzz_calldata(function.clone(), &FuzzFixtures::default()),
+            fuzz_msg_value(if matches!(function.state_mutability, StateMutability::Payable) {
+                config.corpus.payable_value_weight
+            } else {
+                0
+            }),
+        );
+        let balance = runner
+            .executor
+            .state()
+            .database()
+            .account_info(&CALLER)
+            .map_or(U256::ZERO, |info| info.balance);
+        let mut campaign = FuzzTestResult { success: true, ..Default::default() };
+        let mut native_traces = Vec::new();
+        let mut rejects = 0;
+        let started = Instant::now();
+        while campaign.gas_by_case.len() < config.runs as usize {
+            if config.timeout.is_some_and(|seconds| started.elapsed().as_secs() >= seconds as u64) {
+                break;
+            }
+            let (input, requested_value) = strategy
+                .new_tree(&mut generator)
+                .map_err(|reason| eyre::eyre!("failed to generate fuzz input: {reason}"))?
+                .current();
+            let value = requested_value.unwrap_or_default().min(balance);
+            let (result, logs, traces) = runner.run_input(input.clone(), value)?;
+            if result.output.as_ref() == MAGIC_ASSUME {
+                rejects += 1;
+                if rejects > config.max_test_rejects {
+                    campaign.success = false;
+                    campaign.reason = Some("maximum fuzz test rejections exceeded".to_string());
+                    break;
+                }
+                continue;
+            }
+            if !result.status {
+                let args = function.abi_decode_input(&input[4..]).unwrap_or_default();
+                let mut counterexample = BaseCounterExample::from_fuzz_call(input, args, None);
+                counterexample.sender = Some(CALLER);
+                counterexample.addr = Some(runner.address());
+                counterexample.value = (!value.is_zero()).then_some(value);
+                campaign.success = false;
+                campaign.reason = Some(self.failure_reason(&result));
+                campaign.counterexample = Some(CounterExample::Single(counterexample));
+                campaign.logs = logs;
+                native_traces = traces;
+                break;
+            }
+            let stipend = intrinsic_gas(
+                &env.version,
+                CALLER,
+                TxKind::Call(runner.address()),
+                &input,
+                0,
+                0,
+                value,
+            );
+            let case = FuzzCase { gas: result.tx_gas_used(), stipend };
+            if campaign.gas_by_case.is_empty() {
+                campaign.first_case = case.clone();
+                native_traces = traces;
+            }
+            campaign.gas_by_case.push((case.gas, case.stipend));
+            if config.show_logs {
+                campaign.logs = logs;
+            }
+        }
+        let mut test = TestResult::default();
+        test.fuzz_result(campaign);
+        test.native_traces = native_traces;
         Ok(test)
     }
 
