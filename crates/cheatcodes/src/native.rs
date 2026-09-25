@@ -1,7 +1,7 @@
 //! Ethereum cheatcodes executed through evm2 inspection hooks.
 
 use crate::Vm;
-use alloy_primitives::{Bytes, U256};
+use alloy_primitives::{Address, Bytes, U256};
 use alloy_sol_types::SolInterface;
 use evm2::{
     BaseEvmTypes, Inspector,
@@ -10,13 +10,24 @@ use evm2::{
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
 use foundry_evm_core::{
-    constants::{CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH},
+    constants::{CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, HARDHAT_CONSOLE_ADDRESS},
     native::LocalState,
 };
+use std::collections::BTreeMap;
 
 /// Cheatcode dispatch for native Ethereum execution.
 #[derive(Clone, Debug, Default)]
-pub struct NativeCheatcodes;
+pub struct NativeCheatcodes {
+    pranks: BTreeMap<u16, NativePrank>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct NativePrank {
+    caller: Address,
+    new_caller: Address,
+    single_call: bool,
+    used: bool,
+}
 
 impl NativeCheatcodes {
     /// Installs code at the cheatcode address for Solidity `EXTCODESIZE` checks.
@@ -30,6 +41,29 @@ impl NativeCheatcodes {
             },
         );
     }
+
+    fn start_prank(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        message: &Message<BaseEvmTypes>,
+        new_caller: Address,
+        single_call: bool,
+    ) -> (InstrStop, Bytes) {
+        if interp.host().state_mut().account(&new_caller, false).is_err() {
+            return (InstrStop::Revert, Bytes::new());
+        }
+        let depth = message.depth.saturating_sub(1);
+        if let Some((_, prank)) = self.pranks.range(..=depth).next_back()
+            && (!prank.used || (single_call && !prank.single_call))
+        {
+            return (InstrStop::Revert, Bytes::new());
+        }
+        self.pranks.insert(
+            depth,
+            NativePrank { caller: message.caller, new_caller, single_call, used: false },
+        );
+        (InstrStop::Return, Bytes::new())
+    }
 }
 
 impl Inspector<BaseEvmTypes> for NativeCheatcodes {
@@ -39,6 +73,21 @@ impl Inspector<BaseEvmTypes> for NativeCheatcodes {
         message: &mut Message<BaseEvmTypes>,
     ) -> Option<MessageResult<BaseEvmTypes>> {
         if message.call_target != CHEATCODE_ADDRESS {
+            let depth = message.depth.saturating_sub(1);
+            if let Some((prank_depth, prank)) = self.pranks.range_mut(..=depth).next_back()
+                && depth == *prank_depth
+                && message.caller == prank.caller
+            {
+                if interp.host().state_mut().account(&prank.new_caller, false).is_err() {
+                    return Some(MessageResultExt {
+                        stop: InstrStop::Revert,
+                        gas: GasTracker::new(message.gas_limit),
+                        ..Default::default()
+                    });
+                }
+                message.caller = prank.new_caller;
+                prank.used = true;
+            }
             return None;
         }
 
@@ -57,6 +106,16 @@ impl Inspector<BaseEvmTypes> for NativeCheatcodes {
                 let mut block = *host.block();
                 block.timestamp = call.newTimestamp;
                 host.set_block(block);
+                (InstrStop::Return, Bytes::new())
+            }
+            Ok(Vm::VmCalls::prank_0(call)) => {
+                self.start_prank(interp, message, call.msgSender, true)
+            }
+            Ok(Vm::VmCalls::startPrank_0(call)) => {
+                self.start_prank(interp, message, call.msgSender, false)
+            }
+            Ok(Vm::VmCalls::stopPrank(_)) => {
+                self.pranks.remove(&message.depth.saturating_sub(1));
                 (InstrStop::Return, Bytes::new())
             }
             Ok(Vm::VmCalls::load(call)) => {
@@ -98,5 +157,22 @@ impl Inspector<BaseEvmTypes> for NativeCheatcodes {
             output,
             ..Default::default()
         })
+    }
+
+    fn call_end(
+        &mut self,
+        _interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        message: &Message<BaseEvmTypes>,
+        _result: &mut MessageResult<BaseEvmTypes>,
+    ) {
+        if message.call_target == CHEATCODE_ADDRESS
+            || message.call_target == HARDHAT_CONSOLE_ADDRESS
+        {
+            return;
+        }
+        let depth = message.depth.saturating_sub(1);
+        if self.pranks.get(&depth).is_some_and(|prank| prank.single_call && prank.used) {
+            self.pranks.remove(&depth);
+        }
     }
 }

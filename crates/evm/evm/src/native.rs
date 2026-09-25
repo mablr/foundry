@@ -301,8 +301,11 @@ mod tests {
             SpecId::CANCUN,
             BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
         );
-        let mut executor =
-            EthereumExecutor::with_inspector(env, LocalState::default(), NativeCheatcodes);
+        let mut executor = EthereumExecutor::with_inspector(
+            env,
+            LocalState::default(),
+            NativeCheatcodes::default(),
+        );
         let tx = Recovered::new_unchecked(
             TxEnvelope::Legacy(TxLegacy {
                 gas_limit: 100_000,
@@ -413,7 +416,8 @@ mod tests {
             SpecId::CANCUN,
             BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
         );
-        let mut executor = EthereumExecutor::with_inspector(env, state, NativeCheatcodes);
+        let mut executor =
+            EthereumExecutor::with_inspector(env, state, NativeCheatcodes::default());
         let tx = Recovered::new_unchecked(
             TxEnvelope::Legacy(TxLegacy {
                 gas_limit: 100_000,

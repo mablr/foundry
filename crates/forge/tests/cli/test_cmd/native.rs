@@ -329,3 +329,69 @@ Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
 
 "#]]);
 });
+
+forgetest_init!(evm2_prank_tracks_call_lifetime, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativePrank.t.sol",
+        r#"
+interface Vm {
+    function prank(address msgSender) external;
+    function startPrank(address msgSender) external;
+    function stopPrank() external;
+}
+
+contract NativePrankTest {
+    Vm constant vm = Vm(address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+    address constant alice = address(0xA11CE);
+
+    function sender() external view returns (address) {
+        return msg.sender;
+    }
+
+    function nestedSender() external view returns (address, address) {
+        return (msg.sender, this.sender());
+    }
+
+    function testPrankThroughNestedCall() public {
+        vm.prank(alice);
+        (address outer, address inner) = this.nestedSender();
+        require(outer == alice, "outer call was not pranked");
+        require(inner == address(this), "nested caller was changed");
+        require(this.sender() == address(this), "prank survived outer return");
+    }
+
+    function testSinglePrank() public {
+        vm.prank(alice);
+        require(this.sender() == alice, "first call was not pranked");
+        require(this.sender() == address(this), "prank leaked to second call");
+    }
+
+    function testStartAndStopPrank() public {
+        vm.startPrank(alice);
+        require(this.sender() == alice, "first call was not pranked");
+        require(this.sender() == alice, "prank did not persist");
+        vm.stopPrank();
+        require(this.sender() == address(this), "prank survived stop");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.arg("test").assert_success().stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 3 tests for test/NativePrank.t.sol:NativePrankTest
+[PASS] testPrankThroughNestedCall() ([GAS])
+[PASS] testSinglePrank() ([GAS])
+[PASS] testStartAndStopPrank() ([GAS])
+Suite result: ok. 3 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 3 tests passed, 0 failed, 0 skipped (3 total tests)
+
+"#]]);
+});

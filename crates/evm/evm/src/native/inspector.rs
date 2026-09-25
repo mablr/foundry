@@ -63,6 +63,15 @@ impl Inspector<BaseEvmTypes> for EthereumInspectorStack {
         }
         self.cheatcodes.call(interp, message)
     }
+
+    fn call_end(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
+        message: &Message<BaseEvmTypes>,
+        result: &mut MessageResult<BaseEvmTypes>,
+    ) {
+        self.cheatcodes.call_end(interp, message, result);
+    }
 }
 
 #[cfg(test)]
