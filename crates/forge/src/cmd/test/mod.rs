@@ -2167,7 +2167,6 @@ impl TestArgs {
                 && !self.flamegraph
                 && !self.flamechart
                 && self.evm_profile.is_none()
-                && !config.isolate
                 && self.showmap_out.is_none()
                 && self.opcodes.is_empty()
                 && config.tracing.trace_depth.is_none()
@@ -2176,7 +2175,7 @@ impl TestArgs {
                 && self.mutate.is_none()
                 && !self.fuzz_only
                 && !self.fuzz_failure_replay,
-            "native coverage, isolation, trace filtering, replay, and campaign modes are not implemented"
+            "native coverage, trace filtering, replay, and campaign modes are not implemented"
         );
         let sender = evm_opts.sender;
         let create2_deployer_available =

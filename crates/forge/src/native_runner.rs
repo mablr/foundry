@@ -13,7 +13,7 @@ use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
 use alloy_json_abi::{Function, JsonAbi, StateMutability};
 use alloy_primitives::{Address, Bytes, Log, TxKind, U256, map::HashMap};
 use evm2::{
-    TxResult,
+    EvmFeatures, TxResult,
     ethereum::{TxEnvelope, intrinsic_gas},
     evm::{Database, EmptyDB},
 };
@@ -92,6 +92,7 @@ pub(crate) struct NativeTestSetup<'a> {
     gas_price: u128,
     libraries: NativeLibraries<'a>,
     tracing: Option<TracingInspectorConfig>,
+    isolation: bool,
 }
 
 impl<D: Database + Clone + 'static> NativeContractRunner<D> {
@@ -102,8 +103,15 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         mut state: LocalState<D>,
         setup: NativeTestSetup<'_>,
     ) -> Result<NativeContractSetup<D>> {
-        let NativeTestSetup { sender, initial_balance, gas_limit, gas_price, libraries, tracing } =
-            setup;
+        let NativeTestSetup {
+            sender,
+            initial_balance,
+            gas_limit,
+            gas_price,
+            libraries,
+            tracing,
+            isolation,
+        } = setup;
         env.block.gas_limit = U256::from(gas_limit);
         state.set_balance(sender, U256::MAX)?;
         state.set_nonce(sender, 1)?;
@@ -114,6 +122,9 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         let mut executor = EthereumExecutor::new_foundry(env, state);
         if let Some(tracing) = tracing {
             executor.inspector_mut().enable_tracing(tracing);
+        }
+        if isolation {
+            executor.inspector_mut().enable_isolation();
         }
         if let LibraryDeployment::Create2 { deployer, .. } = libraries.deployment
             && !libraries.code.is_empty()
@@ -420,6 +431,10 @@ impl NativeMultiContractRunner {
         env: EthereumEnv,
         state: LocalState<D>,
     ) -> Result<BTreeMap<String, SuiteResult>> {
+        ensure!(
+            !self.config.isolate || !env.version.feature(EvmFeatures::EIP8037),
+            "native call isolation does not yet support EIP-8037 state gas"
+        );
         let gas_price = u128::try_from(env.block.basefee)?;
         let matcher = TestFunctionMatcher::new(&self.config, &self.inline_config, None);
         let mut suites = BTreeMap::new();
@@ -449,6 +464,7 @@ impl NativeMultiContractRunner {
                             ..Default::default()
                         },
                     ),
+                    isolation: self.config.isolate,
                 },
             )?;
             let runner = match runner {
@@ -766,6 +782,7 @@ mod tests {
                 gas_price: 0,
                 libraries: NativeLibraries { code: &[], deployment: LibraryDeployment::Nonce },
                 tracing: None,
+                isolation: false,
             },
         )
         .unwrap();

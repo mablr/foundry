@@ -978,6 +978,61 @@ Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
 "#]]);
 });
 
+forgetest_init!(evm2_isolated_call_merges_state_and_block, |prj, cmd| {
+    prj.update_config(|config| config.isolate = true);
+    prj.add_test(
+        "NativeIsolation.t.sol",
+        r#"
+interface Vm {
+    function warp(uint256 newTimestamp) external;
+}
+
+contract NativeIsolationChild {
+    Vm constant vm = Vm(address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+    uint256 public value;
+
+    function set() external {
+        value = 1;
+        vm.warp(456);
+    }
+
+    function origin() external view returns (address) {
+        return tx.origin;
+    }
+}
+
+contract NativeIsolationTest {
+    NativeIsolationChild child;
+
+    function setUp() public {
+        child = new NativeIsolationChild();
+    }
+
+    function testIsolatedCall() public {
+        child.set();
+        require(child.value() == 1, "child state was lost");
+        require(block.timestamp == 456, "child block change was lost");
+        require(child.origin() == tx.origin, "child transaction changed origin");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-test", "testIsolatedCall"]).assert_success().stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeIsolation.t.sol:NativeIsolationTest
+[PASS] testIsolatedCall() ([GAS])
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]]);
+});
+
 forgetest_init!(evm2_prank_tracks_call_lifetime, |prj, cmd| {
     prj.update_config(|config| config.isolate = false);
     prj.add_test(
@@ -1088,6 +1143,24 @@ Suite result: ok. 6 passed; 0 failed; 0 skipped; [ELAPSED]
 Ran 1 test suite [ELAPSED]: 6 tests passed, 0 failed, 0 skipped (6 total tests)
 
 "#]]);
+
+    prj.update_config(|config| config.isolate = true);
+    cmd.forge_fuse();
+    cmd.arg("test").assert_success().stdout_eq(str![[r#"
+No files changed, compilation skipped
+
+Ran 6 tests for test/NativePrank.t.sol:NativePrankTest
+[PASS] testPrankOriginAfterRevert() ([GAS])
+[PASS] testPrankOriginThroughNestedCall() ([GAS])
+[PASS] testPrankThroughNestedCall() ([GAS])
+[PASS] testSinglePrank() ([GAS])
+[PASS] testStartAndStopPrank() ([GAS])
+[PASS] testStartPrankOrigin() ([GAS])
+Suite result: ok. 6 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 6 tests passed, 0 failed, 0 skipped (6 total tests)
+
+"#]]);
 });
 
 forgetest_init!(evm2_snapshot_restores_live_and_accepted_state, |prj, cmd| {
@@ -1175,6 +1248,22 @@ contract NativeSnapshotTest {
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
 Compiler run successful!
+
+Ran 4 tests for test/NativeSnapshot.t.sol:NativeSnapshotTest
+[PASS] testBothActiveFramesRevertAfterRestore() ([GAS])
+[PASS] testNestedRestoreThenRevert() ([GAS])
+[PASS] testRestoresBlockContext() ([GAS])
+[PASS] testRestoresSetupSnapshot() ([GAS])
+Suite result: ok. 4 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 4 tests passed, 0 failed, 0 skipped (4 total tests)
+
+"#]]);
+
+    prj.update_config(|config| config.isolate = true);
+    cmd.forge_fuse();
+    cmd.arg("test").assert_success().stdout_eq(str![[r#"
+No files changed, compilation skipped
 
 Ran 4 tests for test/NativeSnapshot.t.sol:NativeSnapshotTest
 [PASS] testBothActiveFramesRevertAfterRestore() ([GAS])

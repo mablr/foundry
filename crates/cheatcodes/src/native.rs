@@ -27,6 +27,7 @@ pub struct NativeCheatcodes<D: Database + Clone = EmptyDB> {
     snapshots: BTreeMap<U256, Arc<NativeSnapshot<D>>>,
     next_snapshot_id: U256,
     backend_reset: Option<LocalState<D>>,
+    restored_state: Option<State<'static>>,
 }
 
 #[derive(Debug)]
@@ -69,6 +70,7 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
             snapshots: BTreeMap::new(),
             next_snapshot_id: U256::ONE,
             backend_reset: None,
+            restored_state: None,
         }
     }
 
@@ -140,10 +142,18 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
         let logs = host.state().logs().to_vec();
         *host.state_mut() = snapshot.state.clone_with(Db::new(snapshot.backend.clone()));
         host.state_mut().logs_mut().clone_from(&logs);
+        self.restored_state = Some(host.state().clone_with(Db::new(snapshot.backend.clone())));
         host.set_block(snapshot.block);
         self.backend = snapshot.backend.clone();
         self.backend_reset = Some(snapshot.backend.clone());
         true.abi_encode().into()
+    }
+
+    /// Returns state restored while an isolated child transaction was executing.
+    pub fn take_restored_state(&mut self) -> Option<(State<'static>, LocalState<D>)> {
+        let state = self.restored_state.take()?;
+        let backend = self.backend_reset.take()?;
+        Some((state, backend))
     }
 
     fn expect_revert(
@@ -215,6 +225,7 @@ impl<D: Database + Clone + 'static> NativeInspector<D> for NativeCheatcodes<D> {
     fn set_backend(&mut self, backend: LocalState<D>) {
         self.backend = backend;
         self.backend_reset = None;
+        self.restored_state = None;
     }
 
     fn take_backend_reset(&mut self) -> Option<LocalState<D>> {

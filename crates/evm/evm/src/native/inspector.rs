@@ -1,25 +1,36 @@
 //! Inspectors for native Ethereum execution.
 
-use alloy_primitives::{Address, Log, U256};
+use alloy_consensus::{TxLegacy, transaction::Recovered};
+use alloy_primitives::{Address, Log, TxKind, U256};
 use alloy_sol_types::{SolEvent, SolInterface, SolValue};
 use evm2::{
-    EvmTypesHost, Inspector,
-    evm::{Database, EmptyDB},
-    interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
+    EvmFeatures, EvmTypesHost, Inspector,
+    ethereum::{TxEnvelope, intrinsic_gas},
+    evm::{Database, Db, EmptyDB, State},
+    interpreter::{
+        GasTracker, InstrStop, Interpreter, Message, MessageKind, MessageResult, MessageResultExt,
+    },
 };
 use foundry_cheatcodes::native::NativeCheatcodes;
 use foundry_common::{ErrorExt, fmt::ConsoleFmt};
 use foundry_evm_core::{
     abi::console,
     constants::HARDHAT_CONSOLE_ADDRESS,
-    native::{FoundryEvmTypes, LocalState, NativeInspector},
+    native::{EthereumEnv, FoundryEvmTypes, LocalState, NativeInspector},
 };
 use foundry_evm_traces::native::{CallTraceArena, TracingInspector, TracingInspectorConfig};
+
+use super::EthereumFactory;
 
 /// Native Ethereum inspectors and their per-test observations.
 #[derive(Clone, Debug)]
 pub struct EthereumInspectorStack<D: Database + Clone = EmptyDB> {
     cheatcodes: NativeCheatcodes<D>,
+    backend: LocalState<D>,
+    backend_reset: Option<LocalState<D>>,
+    isolate: bool,
+    in_isolated_transaction: bool,
+    root_state: Option<State<'static>>,
     logs: Vec<Log>,
     tracing: Option<TracingInspector>,
     traces: Vec<CallTraceArena>,
@@ -27,9 +38,14 @@ pub struct EthereumInspectorStack<D: Database + Clone = EmptyDB> {
 
 impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
     /// Creates an inspector stack over the executor's accepted state.
-    pub const fn new(backend: LocalState<D>) -> Self {
+    pub fn new(backend: LocalState<D>) -> Self {
         Self {
-            cheatcodes: NativeCheatcodes::new(backend),
+            cheatcodes: NativeCheatcodes::new(backend.clone()),
+            backend,
+            backend_reset: None,
+            isolate: false,
+            in_isolated_transaction: false,
+            root_state: None,
             logs: Vec::new(),
             tracing: None,
             traces: Vec::new(),
@@ -50,6 +66,128 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
     pub fn enable_tracing(&mut self, config: TracingInspectorConfig) {
         self.tracing = Some(TracingInspector::new(config));
         self.traces.clear();
+    }
+
+    /// Runs depth-one CALLs as separate transactions while retaining the surrounding frame.
+    pub const fn enable_isolation(&mut self) {
+        self.isolate = true;
+    }
+
+    fn capture_root_state(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        depth: u16,
+    ) {
+        if self.isolate && !self.in_isolated_transaction && depth == 0 {
+            self.root_state = Some(interp.host().state().clone_with(Db::new(self.backend.clone())));
+        }
+    }
+
+    fn finish_root_state(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        depth: u16,
+        stop: InstrStop,
+    ) {
+        if self.isolate
+            && !self.in_isolated_transaction
+            && depth == 0
+            && let Some(root_state) = self.root_state.take()
+            && !stop.is_success()
+        {
+            *interp.host().state_mut() = root_state.clone_with(Db::new(self.backend.clone()));
+            self.backend_reset = Some(self.backend.clone());
+        }
+    }
+
+    fn isolate_call(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &Message<FoundryEvmTypes>,
+    ) -> MessageResult<FoundryEvmTypes> {
+        let spec = interp.spec();
+        let mut version = *interp.version();
+        // A contract is the sender of the synthetic transaction.
+        version.features.remove(EvmFeatures::EIP3607);
+        let mut block = *interp.host().block();
+        let basefee = block.basefee;
+        block.basefee = U256::ZERO;
+        let origin = interp.host().ext().origin_override.unwrap_or(interp.tx_env().origin);
+        let pending = interp.host().state().prepare_isolated_state();
+        let nonce = match interp.host().state_mut().account(&message.caller, false) {
+            Ok(account) => account.nonce(),
+            Err(_) => {
+                return MessageResultExt {
+                    stop: InstrStop::Revert,
+                    gas: GasTracker::new(message.gas_limit),
+                    ..Default::default()
+                };
+            }
+        };
+        let mut backend = self.backend.clone();
+        let stipend = intrinsic_gas(
+            &version,
+            message.caller,
+            TxKind::Call(message.destination),
+            &message.input,
+            0,
+            0,
+            message.value,
+        );
+        let tx = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                nonce,
+                gas_limit: message.gas_limit.saturating_add(stipend),
+                to: TxKind::Call(message.destination),
+                input: message.input.clone(),
+                value: message.value,
+                ..Default::default()
+            }),
+            message.caller,
+        );
+        self.in_isolated_transaction = true;
+        let (outcome, mut child_block) = {
+            let mut evm =
+                EthereumFactory.create(EthereumEnv { spec, version, block }, Db::new(&mut backend));
+            evm.state_mut().set_pending_state(pending);
+            evm.ext_mut().origin_override = Some(origin);
+            evm.set_inspector(&mut *self);
+            let outcome = evm.transact(&tx).map(|executed| executed.detach());
+            (outcome, *evm.block())
+        };
+        self.in_isolated_transaction = false;
+        let Ok(outcome) = outcome else {
+            return MessageResultExt {
+                stop: InstrStop::Revert,
+                gas: GasTracker::new(message.gas_limit),
+                ..Default::default()
+            };
+        };
+        child_block.basefee = basefee;
+        interp.host().set_block(child_block);
+        if let Some((restored, backend)) = self.cheatcodes.take_restored_state() {
+            *interp.host().state_mut() = restored.clone_with(Db::new(backend.clone()));
+            self.backend = backend.clone();
+            self.backend_reset = Some(backend);
+        }
+        interp.host().state_mut().merge_isolated_state(outcome.pending_state);
+        if outcome.result.status {
+            interp.host().state_mut().logs_mut().extend(outcome.result.logs);
+        }
+        let mut gas = GasTracker::new_used_gas(
+            message.gas_limit,
+            outcome.result.total_gas_spent.saturating_sub(stipend),
+            message.reservoir,
+        );
+        if outcome.result.status {
+            gas.set_refunded(outcome.result.refunded as i64);
+        }
+        MessageResultExt {
+            stop: outcome.result.stop,
+            gas,
+            output: outcome.result.output,
+            ..Default::default()
+        }
     }
 
     /// Drains transaction traces in execution order.
@@ -89,8 +227,13 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
         interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
         message: &mut Message<FoundryEvmTypes>,
     ) -> Option<MessageResult<FoundryEvmTypes>> {
-        if let Some(tracing) = &mut self.tracing {
-            let _ = tracing.call(interp, message);
+        self.capture_root_state(interp, message.depth);
+        if let Some(tracing) = &mut self.tracing
+            && !(self.in_isolated_transaction && message.depth == 0)
+        {
+            let mut trace_message = message.clone();
+            trace_message.depth += u16::from(self.in_isolated_transaction);
+            let _ = tracing.call(interp, &mut trace_message);
         }
         if message.call_target == HARDHAT_CONSOLE_ADDRESS {
             let (stop, output) = match console::hh::ConsoleCalls::abi_decode(&message.input) {
@@ -113,7 +256,17 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
                 ..Default::default()
             });
         }
-        self.cheatcodes.call(interp, message)
+        if let Some(result) = self.cheatcodes.call(interp, message) {
+            return Some(result);
+        }
+        if self.isolate
+            && !self.in_isolated_transaction
+            && message.depth == 1
+            && message.kind == MessageKind::Call
+        {
+            return Some(self.isolate_call(interp, message));
+        }
+        None
     }
 
     fn call_end(
@@ -123,7 +276,10 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
         result: &mut MessageResult<FoundryEvmTypes>,
     ) {
         self.cheatcodes.call_end(interp, message, result);
-        if let Some(tracing) = &mut self.tracing {
+        self.finish_root_state(interp, message.depth, result.stop);
+        if let Some(tracing) = &mut self.tracing
+            && !(self.in_isolated_transaction && message.depth == 0)
+        {
             tracing.call_end(interp, message, result);
         }
     }
@@ -133,8 +289,11 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
         interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
         message: &mut Message<FoundryEvmTypes>,
     ) -> Option<MessageResult<FoundryEvmTypes>> {
+        self.capture_root_state(interp, message.depth);
         if let Some(tracing) = &mut self.tracing {
-            let _ = tracing.create(interp, message);
+            let mut trace_message = message.clone();
+            trace_message.depth += u16::from(self.in_isolated_transaction);
+            let _ = tracing.create(interp, &mut trace_message);
         }
         None
     }
@@ -146,6 +305,7 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
         result: &mut MessageResult<FoundryEvmTypes>,
     ) {
         self.cheatcodes.create_end(interp, message, result);
+        self.finish_root_state(interp, message.depth, result.stop);
         if let Some(tracing) = &mut self.tracing {
             tracing.create_end(interp, message, result);
         }
@@ -168,11 +328,13 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
 
 impl<D: Database + Clone + 'static> NativeInspector<D> for EthereumInspectorStack<D> {
     fn set_backend(&mut self, backend: LocalState<D>) {
-        self.cheatcodes.set_backend(backend);
+        self.cheatcodes.set_backend(backend.clone());
+        self.backend = backend;
+        self.backend_reset = None;
     }
 
     fn take_backend_reset(&mut self) -> Option<LocalState<D>> {
-        self.cheatcodes.take_backend_reset()
+        self.backend_reset.take().or_else(|| self.cheatcodes.take_backend_reset())
     }
 
     fn finish_transaction(&mut self, gas_used: u64) {
@@ -189,12 +351,9 @@ impl<D: Database + Clone + 'static> NativeInspector<D> for EthereumInspectorStac
 mod tests {
     use super::*;
     use crate::native::EthereumExecutor;
-    use alloy_consensus::{TxLegacy, transaction::Recovered};
-    use alloy_primitives::{Bytes, TxKind, keccak256};
-    use evm2::{
-        SpecId, bytecode::Bytecode, env::BlockEnvExt, ethereum::TxEnvelope, evm::AccountInfo,
-    };
-    use foundry_evm_core::{decode::decode_console_log, native::EthereumEnv};
+    use alloy_primitives::{Bytes, keccak256};
+    use evm2::{SpecId, bytecode::Bytecode, env::BlockEnvExt, evm::AccountInfo};
+    use foundry_evm_core::decode::decode_console_log;
 
     #[test]
     fn collects_console_calls_and_opcode_logs_in_order() {
@@ -278,6 +437,7 @@ mod tests {
         );
 
         assert!(executor.transact(&tx).unwrap().status);
+        executor.inspector_mut().enable_isolation();
         let second = Recovered::new_unchecked(
             TxEnvelope::Legacy(TxLegacy {
                 nonce: 1,
@@ -295,8 +455,67 @@ mod tests {
             assert_eq!(trace.nodes()[0].trace.address, parent);
             assert_eq!(trace.nodes()[1].trace.address, child);
             assert!(!trace.nodes()[0].trace.steps.is_empty());
-            assert!(!trace.nodes()[1].trace.steps.is_empty());
+            assert!(
+                !trace.nodes()[1].trace.steps.is_empty(),
+                "{:?}",
+                trace
+                    .nodes()
+                    .iter()
+                    .map(|node| (node.trace.address, node.trace.steps.len()))
+                    .collect::<Vec<_>>()
+            );
         }
         assert!(executor.inspector_mut().take_traces().is_empty());
+    }
+
+    #[test]
+    fn isolated_child_write_is_undone_when_parent_reverts() {
+        let sender = Address::with_last_byte(1);
+        let parent = Address::with_last_byte(0x41);
+        let child = Address::with_last_byte(0x42);
+        let mut state = LocalState::default();
+        state.set_balance(sender, U256::MAX).unwrap();
+        state.database_mut().insert_account_info(
+            &parent,
+            AccountInfo::default().with_code(Bytecode::new_legacy(Bytes::from_static(&[
+                0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x00, 0x60, 0x42, 0x61, 0xff,
+                0xff, 0xf1, 0x5f, 0x5f, 0xfd,
+            ]))),
+        );
+        state.database_mut().insert_account_info(
+            &child,
+            AccountInfo::default().with_code(Bytecode::new_legacy(Bytes::from_static(&[
+                0x60, 0x01, 0x5f, 0x55, 0x00,
+            ]))),
+        );
+        let env = EthereumEnv::new(
+            SpecId::CANCUN,
+            BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
+        );
+        let mut executor = EthereumExecutor::new_foundry(env, state);
+        executor.inspector_mut().enable_isolation();
+        let tx = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                gas_limit: 200_000,
+                to: TxKind::Call(parent),
+                ..Default::default()
+            }),
+            sender,
+        );
+
+        assert!(!executor.transact(&tx).unwrap().status);
+        assert_eq!(
+            executor
+                .state()
+                .database()
+                .cache
+                .storage
+                .get(&child)
+                .and_then(|storage| storage.slots.get(&U256::ZERO))
+                .copied()
+                .unwrap_or_default(),
+            U256::ZERO
+        );
+        assert_eq!(executor.state().database().cache.accounts[&parent].as_ref().unwrap().nonce, 0);
     }
 }
