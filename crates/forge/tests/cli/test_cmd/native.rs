@@ -5,6 +5,54 @@ use anvil::{NodeConfig, spawn};
 use foundry_evm::fuzz::BaseCounterExample;
 use foundry_test_utils::{forgetest_async, forgetest_init, str};
 
+forgetest_init!(evm2_etch_journals_code_changes, |prj, cmd| {
+    prj.add_test(
+        "NativeEtch.t.sol",
+        r#"
+interface Vm {
+    function etch(address target, bytes calldata code) external;
+}
+
+contract EtchTarget {
+    function value() external pure returns (uint256) { return 1; }
+}
+
+contract NativeEtchTest {
+    Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    EtchTarget target;
+
+    function setUp() public { target = new EtchTarget(); }
+
+    function testEtch() public {
+        vm.etch(address(target), hex"602a60005260206000f3");
+        require(target.value() == 42);
+    }
+
+    function testEtchRollsBackWithChild() public {
+        bytes32 original = keccak256(address(target).code);
+        try this.etchThenRevert() {} catch {}
+        require(keccak256(address(target).code) == original);
+        require(target.value() == 1);
+    }
+
+    function testEtchRejectsPrecompile() public {
+        (bool ok,) = address(vm).call(abi.encodeCall(Vm.etch, (address(1), hex"00")));
+        require(!ok);
+    }
+
+    function etchThenRevert() external {
+        require(msg.sender == address(this));
+        vm.etch(address(target), hex"602a60005260206000f3");
+        revert();
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-contract", "NativeEtchTest"]).assert_success();
+});
+
 forgetest_init!(evm2_reports_native_coverage, |prj, cmd| {
     prj.add_source(
         "NativeCounter.sol",

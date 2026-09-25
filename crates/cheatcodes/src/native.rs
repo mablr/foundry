@@ -2,7 +2,7 @@
 
 use crate::{BroadcastableTransaction, BroadcastableTransactions, CheatsConfig, Error, Vm};
 use alloy_network::{Ethereum, TransactionBuilder};
-use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+use alloy_primitives::{Address, B256, Bytes, TxKind, U256, keccak256};
 use alloy_rpc_types::TransactionRequest;
 use alloy_sol_types::{SolError, SolInterface, SolValue};
 use evm2::{
@@ -19,6 +19,7 @@ use foundry_evm_core::{
     constants::{
         CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME,
     },
+    eip2935::{HISTORY_STORAGE_ADDRESS, HISTORY_STORAGE_CODE},
     native::{FoundryEvmTypes, LocalState, NativeInspector},
 };
 use std::{collections::BTreeMap, sync::Arc};
@@ -570,6 +571,48 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
                         (InstrStop::Return, Bytes::new())
                     }
                     Err(_) => (InstrStop::Revert, Bytes::new()),
+                }
+            }
+            Ok(Vm::VmCalls::etch(call)) => {
+                if interp.host().precompiles().contains(&call.target) {
+                    (
+                        InstrStop::Revert,
+                        Error::encode(format!(
+                            "cannot use precompile {} as an argument",
+                            call.target
+                        )),
+                    )
+                } else {
+                    match Bytecode::new_raw_checked(call.newRuntimeBytecode) {
+                        Ok(code) => {
+                            let state = interp.host().state_mut();
+                            match state.account(&call.target, false) {
+                                Ok(mut account) => {
+                                    // Replacing the history contract also needs a journaled storage
+                                    // wipe.
+                                    if call.target == HISTORY_STORAGE_ADDRESS
+                                        && account.code_hash() == keccak256(&HISTORY_STORAGE_CODE)
+                                        && code.hash_slow() != keccak256(&HISTORY_STORAGE_CODE)
+                                    {
+                                        (
+                                            InstrStop::Revert,
+                                            Error::encode(
+                                                "vm.etch cannot replace the EIP-2935 history storage contract yet",
+                                            ),
+                                        )
+                                    } else {
+                                        account.set_code_slow(code);
+                                        (InstrStop::Return, Bytes::new())
+                                    }
+                                }
+                                Err(_) => (InstrStop::Revert, Bytes::new()),
+                            }
+                        }
+                        Err(error) => (
+                            InstrStop::Revert,
+                            Error::encode(format!("failed to create bytecode: {error}")),
+                        ),
+                    }
                 }
             }
             Ok(Vm::VmCalls::getCode(call)) => match self.artifact_code(&call.artifactPath, false) {
