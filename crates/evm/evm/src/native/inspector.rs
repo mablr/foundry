@@ -420,6 +420,15 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
         if let Some(coverage) = &mut self.coverage {
             let _ = coverage.call(interp, message);
         }
+        let deploy_request = (message.call_target == CHEATCODE_ADDRESS)
+            .then(|| NativeDeployCodeRequest::decode(&message.input))
+            .flatten();
+        let cheatcode_result =
+            if message.call_target == HARDHAT_CONSOLE_ADDRESS || deploy_request.is_some() {
+                None
+            } else {
+                self.cheatcodes.call(interp, message)
+            };
         if let Some(tracing) = &mut self.tracing
             && !(self.in_isolated_transaction && message.depth == 0)
         {
@@ -449,12 +458,10 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
                 ..Default::default()
             });
         }
-        if message.call_target == CHEATCODE_ADDRESS
-            && let Some(request) = NativeDeployCodeRequest::decode(&message.input)
-        {
+        if let Some(request) = deploy_request {
             return Some(self.deploy_code(interp, message, request));
         }
-        if let Some(result) = self.cheatcodes.call(interp, message) {
+        if let Some(result) = cheatcode_result {
             return Some(result);
         }
         if self.isolate
