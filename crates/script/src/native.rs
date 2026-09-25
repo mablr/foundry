@@ -2,17 +2,21 @@
 
 use crate::{
     ScriptArgs, ScriptInputs,
-    build::{BuildData, LinkedBuildData},
+    build::{BuildData, LinkedBuildData, ScriptPredeployLibraries},
     execute::ExecutionData,
     resolve_script_fork, resolve_script_sender_nonce,
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
-use alloy_network::Ethereum;
+use alloy_network::{Ethereum, TransactionBuilder};
 use alloy_primitives::{Address, Bytes, Log, TxKind, U256, keccak256};
+use alloy_rpc_types::TransactionRequest;
 use evm2::{TxResult, ethereum::TxEnvelope, evm::Database};
 use eyre::Result;
-use foundry_cheatcodes::{BroadcastableTransactions, CheatsConfig, Wallets};
+use foundry_cheatcodes::{
+    BroadcastableTransaction, BroadcastableTransactions, CheatsConfig, Wallets,
+};
 use foundry_cli::{opts::TempoOpts, utils::needs_setup};
+use foundry_common::{LIBRARY_DEPLOYER, TransactionMaybeSigned};
 use foundry_config::Config;
 use foundry_evm::{
     core::{
@@ -76,10 +80,6 @@ impl NativeScriptContext {
 
     /// Runs the prepared Ethereum script on the selected local state or exact RPC fork.
     pub async fn execute(&self) -> Result<NativeScriptExecution> {
-        eyre::ensure!(
-            self.plan.build.predeploy_libraries.libraries_count() == 0,
-            "native script library deployment is not implemented"
-        );
         if let Some(resolved) = &self.resolved_fork {
             let fork = EthereumFork::open(&self.config, &self.evm_opts, resolved).await?;
             self.execute_on(fork.env, fork.state)
@@ -99,12 +99,6 @@ impl NativeScriptContext {
         if self.evm_opts.sender == Config::DEFAULT_SENDER {
             state.set_balance(self.evm_opts.sender, U256::MAX)?;
         }
-        let restore_sender_nonce = self.evm_opts.sender == CALLER;
-        let deployer_nonce = if restore_sender_nonce { u64::MAX / 2 } else { 0 };
-        if restore_sender_nonce {
-            state.set_nonce(CALLER, deployer_nonce)?;
-        }
-        state.set_balance(CALLER.create(deployer_nonce), self.evm_opts.initial_balance)?;
 
         let mut executor = EthereumExecutor::new_foundry(env, state);
         let inspector = executor.inspector_mut();
@@ -129,13 +123,31 @@ impl NativeScriptContext {
             self.evm_opts.gas_limit(),
             u128::from(gas_price),
         );
+        let (libraries, library_transactions) = self.deploy_libraries(&mut runner)?;
+        let restore_sender_nonce = self.evm_opts.sender == CALLER;
+        let mut accepted = runner.executor().state().clone();
+        let sender_nonce = Database::get_account(&mut accepted, &CALLER)?.map_or(0, |a| a.nonce);
+        let deployer_nonce = if restore_sender_nonce { u64::MAX / 2 } else { sender_nonce };
+        if restore_sender_nonce {
+            runner.executor_mut().state_mut().set_nonce(CALLER, deployer_nonce)?;
+        }
+        runner
+            .executor_mut()
+            .state_mut()
+            .set_balance(CALLER.create(deployer_nonce), self.evm_opts.initial_balance)?;
         let deployment = runner.deploy(self.plan.execution.bytecode.clone())?;
         if restore_sender_nonce {
-            runner.executor_mut().state_mut().set_nonce(CALLER, self.sender_nonce)?;
+            runner.executor_mut().state_mut().set_nonce(CALLER, sender_nonce)?;
         }
         let Some(address) = deployment.result.created_address.filter(|_| deployment.result.status)
         else {
-            return Ok(NativeScriptExecution { deployment, setup: None, script: None });
+            return Ok(NativeScriptExecution {
+                libraries,
+                library_transactions,
+                deployment,
+                setup: None,
+                script: None,
+            });
         };
         let setup = if needs_setup(&self.plan.execution.abi) {
             let input = Bytes::copy_from_slice(&keccak256("setUp()")[..4]);
@@ -148,12 +160,68 @@ impl NativeScriptContext {
         } else {
             None
         };
-        Ok(NativeScriptExecution { deployment, setup, script })
+        Ok(NativeScriptExecution { libraries, library_transactions, deployment, setup, script })
+    }
+
+    fn deploy_libraries<D: Database + Clone + 'static>(
+        &self,
+        runner: &mut NativeScriptRunner<D>,
+    ) -> Result<(Vec<NativeScriptRun>, BroadcastableTransactions<Ethereum>)> {
+        let (onchain, local) = match &self.plan.build.predeploy_libraries {
+            ScriptPredeployLibraries::Default { onchain, local } => (onchain, local),
+            ScriptPredeployLibraries::Create2 { onchain, local, .. }
+                if onchain.is_empty() && local.is_empty() =>
+            {
+                return Ok((Vec::new(), BroadcastableTransactions::default()));
+            }
+            ScriptPredeployLibraries::Create2 { .. } => {
+                eyre::bail!("native CREATE2 library deployment is not implemented")
+            }
+        };
+        let mut runs = Vec::with_capacity(local.len() + onchain.len());
+        if !local.is_empty() {
+            let mut accepted = runner.executor().state().clone();
+            let original =
+                Database::get_account(&mut accepted, &LIBRARY_DEPLOYER)?.unwrap_or_default();
+            runner.executor_mut().state_mut().set_balance(LIBRARY_DEPLOYER, U256::MAX)?;
+            runner.executor_mut().state_mut().set_nonce(LIBRARY_DEPLOYER, 0)?;
+            for library in local {
+                let run = runner.deploy_from(LIBRARY_DEPLOYER, library.bytecode.clone())?;
+                eyre::ensure!(
+                    run.result.status && run.result.created_address == Some(library.address),
+                    "local library deployed at an unexpected address"
+                );
+                runs.push(run);
+            }
+            runner.executor_mut().state_mut().set_balance(LIBRARY_DEPLOYER, original.balance)?;
+            runner.executor_mut().state_mut().set_nonce(LIBRARY_DEPLOYER, original.nonce)?;
+        }
+
+        let mut transactions = BroadcastableTransactions::default();
+        for library in onchain {
+            let run = runner.deploy_from(self.evm_opts.sender, library.bytecode.clone())?;
+            eyre::ensure!(
+                run.result.status && run.result.created_address == Some(library.address),
+                "on-chain library deployed at an unexpected address"
+            );
+            let transaction = TransactionRequest::default()
+                .with_from(self.evm_opts.sender)
+                .with_input(library.bytecode.clone())
+                .with_nonce(self.sender_nonce + transactions.len() as u64);
+            transactions.push_back(BroadcastableTransaction {
+                rpc: self.evm_opts.fork_url.clone(),
+                transaction: TransactionMaybeSigned::new(transaction),
+            });
+            runs.push(run);
+        }
+        Ok((runs, transactions))
     }
 }
 
 /// Native constructor, setup, and script-call observations.
 pub struct NativeScriptExecution {
+    pub libraries: Vec<NativeScriptRun>,
+    pub library_transactions: BroadcastableTransactions<Ethereum>,
     pub deployment: NativeScriptRun,
     pub setup: Option<NativeScriptRun>,
     pub script: Option<NativeScriptRun>,
@@ -227,7 +295,12 @@ impl<D: Database + Clone + 'static> NativeScriptRunner<D> {
 
     /// Deploys the local script contract and accepts its constructor state.
     pub fn deploy(&mut self, code: Bytes) -> Result<NativeScriptRun> {
-        let tx = self.transaction(self.deployer, TxKind::Create, code)?;
+        self.deploy_from(self.deployer, code)
+    }
+
+    /// Deploys a linked library from its assigned deployer.
+    pub fn deploy_from(&mut self, sender: Address, code: Bytes) -> Result<NativeScriptRun> {
+        let tx = self.transaction(sender, TxKind::Create, code)?;
         let result = self.executor.transact(&tx)?;
         Ok(Self::collect(result, self.executor.inspector_mut()))
     }
@@ -317,6 +390,50 @@ mod tests {
         assert!(execution.deployment.result.status, "{:#?}", execution.deployment.result);
         assert_eq!(execution.deployment.result.created_address, Some(CALLER.create(u64::MAX / 2)));
         assert!(execution.setup.as_ref().unwrap().result.status);
+        let script = execution.script.unwrap();
+        assert!(script.result.status);
+        assert_eq!(U256::from_be_slice(&script.result.output), U256::from(5));
+    }
+
+    #[tokio::test]
+    async fn linked_library_deploys_before_native_script() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("src/Linked.s.sol");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(
+            &source,
+            "pragma solidity ^0.8.20; library Lib { function bump(uint256 value) public pure returns (uint256) { return value + 1; } } contract LinkedScript { uint256 value; function run() external returns (uint256) { value = 4; return Lib.bump(value); } }",
+        )
+        .unwrap();
+        let mut config = Config::with_root(root.path());
+        config.cache_path = root.path().join("cache");
+        let args = ScriptArgs {
+            path: source.to_string_lossy().into_owned(),
+            target_contract: Some("LinkedScript".into()),
+            sig: "run()".into(),
+            ..Default::default()
+        };
+        let opts = EvmOpts {
+            sender: CALLER,
+            create2_deployer: Address::ZERO,
+            env: foundry_evm::opts::Env {
+                gas_limit: foundry_config::GasLimit(30_000_000),
+                ..Default::default()
+            },
+            memory_limit: 1_000_000,
+            ..Default::default()
+        };
+        let context = NativeScriptContext::prepare(args, config, opts).await.unwrap();
+        assert_eq!(context.plan.build.predeploy_libraries.libraries_count(), 1);
+        let execution = context.execute().await.unwrap();
+        assert_eq!(execution.libraries.len(), 1);
+        assert_eq!(execution.library_transactions.len(), 1);
+        assert!(execution.libraries[0].result.status);
+        let library_tx = &execution.library_transactions.front().unwrap().transaction;
+        assert_eq!(library_tx.from(), Some(CALLER));
+        assert_eq!(library_tx.nonce(), Some(1));
+        assert_eq!(library_tx.to(), None);
+        assert!(execution.deployment.result.status);
         let script = execution.script.unwrap();
         assert!(script.result.status);
         assert_eq!(U256::from_be_slice(&script.result.output), U256::from(5));
