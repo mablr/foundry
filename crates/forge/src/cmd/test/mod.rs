@@ -2280,7 +2280,9 @@ impl TestArgs {
                             NativeTraceDecoder::new().with_known_contracts(&known_contracts)
                         });
                         for (_, arena) in traces.iter().filter(|(kind, _)| include_trace(kind)) {
-                            let arena = trace_decoder.decode_for_display(arena);
+                            let arena = GasReport::default()
+                                .normalized_native_trace(arena, &report_version);
+                            let arena = trace_decoder.decode_for_display(&arena);
                             let arena = if let Some(depth) = config.tracing.trace_depth {
                                 native_trace_arena_at_depth(&arena, depth)
                             } else {

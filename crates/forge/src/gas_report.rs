@@ -7,7 +7,7 @@ use crate::{
         native::{CallKind as NativeCallKind, CallTraceArena as NativeCallTraceArena},
     },
 };
-use alloy_primitives::{Address, Selector, TxKind, map::HashSet};
+use alloy_primitives::{Address, Bytes, Selector, TxKind, U256, map::HashSet};
 use comfy_table::{
     Cell, CellAlignment, Color, Table,
     presets::{ASCII_FULL, ASCII_MARKDOWN},
@@ -46,6 +46,24 @@ struct ReportedCall<'a> {
     data_len: usize,
     gas_used: u64,
     signature: Option<String>,
+}
+
+fn native_intrinsic_gas(
+    kind: NativeCallKind,
+    caller: Address,
+    address: Address,
+    data: &Bytes,
+    value: U256,
+    version: &Version,
+) -> Option<u64> {
+    let to = if kind.is_any_create() {
+        TxKind::Create
+    } else if kind == NativeCallKind::Call {
+        TxKind::Call(address)
+    } else {
+        return None;
+    };
+    Some(intrinsic_gas(version, caller, to, data, 0, 0, value))
 }
 
 impl GasReport {
@@ -112,23 +130,7 @@ impl GasReport {
         version: &Version,
     ) {
         for arena in arenas {
-            let direct_create_gas = arena
-                .nodes()
-                .iter()
-                .filter(|node| node.trace.depth == 1 && node.trace.kind.is_any_create())
-                .map(|node| {
-                    let trace = &node.trace;
-                    intrinsic_gas(
-                        version,
-                        trace.caller,
-                        TxKind::Create,
-                        &trace.data,
-                        0,
-                        0,
-                        trace.value,
-                    )
-                })
-                .sum::<u64>();
+            let arena = self.normalized_native_trace(arena, version);
             for node in arena.nodes() {
                 let trace = &node.trace;
                 if self.is_internal_address(trace.address) {
@@ -161,38 +163,72 @@ impl GasReport {
                         }
                     });
                 let name = id.identifier();
-                let intrinsic = (is_call || is_create).then(|| {
-                    intrinsic_gas(
-                        version,
-                        trace.caller,
-                        if is_create { TxKind::Create } else { TxKind::Call(trace.address) },
-                        &trace.data,
-                        0,
-                        0,
-                        trace.value,
-                    )
-                });
-                // Root CREATE gas includes the transaction intrinsic charge, whereas nested CREATE
-                // frames omit it. Forge's report counts the latter in the parent and child frames.
-                let gas_used = match trace.depth {
-                    0 => trace
-                        .gas_used
-                        .saturating_sub(if is_create { intrinsic.unwrap_or_default() } else { 0 })
-                        .saturating_add(direct_create_gas),
-                    1 => trace.gas_used.saturating_add(intrinsic.unwrap_or_default()),
-                    _ => trace.gas_used,
-                };
                 self.record_call(ReportedCall {
                     contract: &name,
                     is_create,
                     is_call,
                     depth: trace.depth,
                     data_len: trace.data.len(),
-                    gas_used,
+                    gas_used: trace.gas_used,
                     signature,
                 });
             }
         }
+    }
+
+    /// Returns the gas view used by Forge's report and printed trace.
+    pub(crate) fn normalized_native_trace(
+        &self,
+        arena: &NativeCallTraceArena,
+        version: &Version,
+    ) -> NativeCallTraceArena {
+        let mut arena = arena.clone();
+        let child_intrinsic = arena
+            .nodes()
+            .iter()
+            .filter(|node| {
+                node.trace.depth == 1
+                    && (node.trace.kind.is_any_create()
+                        || node.trace.kind == NativeCallKind::Call
+                            && !self.is_internal_address(node.trace.address))
+            })
+            .filter_map(|node| {
+                let trace = &node.trace;
+                native_intrinsic_gas(
+                    trace.kind,
+                    trace.caller,
+                    trace.address,
+                    &trace.data,
+                    trace.value,
+                    version,
+                )
+            })
+            .sum::<u64>();
+        for node in arena.nodes_mut() {
+            let trace = &mut node.trace;
+            let intrinsic = native_intrinsic_gas(
+                trace.kind,
+                trace.caller,
+                trace.address,
+                &trace.data,
+                trace.value,
+                version,
+            )
+            .unwrap_or_default();
+            match trace.depth {
+                // The native root includes its transaction intrinsic charge; REVM's trace instead
+                // counts the intrinsic charges of directly isolated child transactions.
+                0 => {
+                    trace.gas_used =
+                        trace.gas_used.saturating_sub(intrinsic).saturating_add(child_intrinsic);
+                }
+                1 if !self.is_internal_address(trace.address) => {
+                    trace.gas_used = trace.gas_used.saturating_add(intrinsic);
+                }
+                _ => {}
+            }
+        }
+        arena
     }
 
     async fn analyze_node(&mut self, node: &CallTraceNode, decoder: &CallTraceDecoder) {
