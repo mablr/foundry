@@ -1251,7 +1251,15 @@ impl Default for TestTraces {
 
 impl Extend<(TraceKind, SparsedTraceArena)> for TestTraces {
     fn extend<T: IntoIterator<Item = (TraceKind, SparsedTraceArena)>>(&mut self, iter: T) {
-        self.legacy_mut().extend(iter);
+        match self {
+            Self::Legacy(traces) => traces.extend(iter),
+            Self::Native(_) => {
+                assert!(
+                    iter.into_iter().next().is_none(),
+                    "cannot append legacy traces to evm2 results"
+                );
+            }
+        }
     }
 }
 

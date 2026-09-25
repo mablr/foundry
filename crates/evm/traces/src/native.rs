@@ -11,7 +11,7 @@ use foundry_evm_core::{abi::Vm, constants::CHEATCODE_ADDRESS};
 use std::collections::HashMap;
 
 pub use evm2_inspectors::tracing::{
-    CallTraceArena, TraceWriter, TracingInspector, TracingInspectorConfig,
+    CallTraceArena, TraceWriter, TracingInspector, TracingInspectorConfig, types::CallKind,
 };
 
 /// Returns a trace arena containing only nodes visible at `depth`.
@@ -170,21 +170,47 @@ impl NativeTraceDecoder {
             }
             return;
         }
-        let Some(selector) = trace.data.get(..4).and_then(|data| Selector::try_from(data).ok())
-        else {
+        let selector = trace.data.get(..4).and_then(|data| Selector::try_from(data).ok());
+        let cheatcode = trace.address == CHEATCODE_ADDRESS;
+        let function = selector.and_then(|selector| {
+            if cheatcode {
+                self.cheatcodes.get(&selector)
+            } else {
+                contract
+                    .and_then(|contract| {
+                        contract.abi.functions().find(|function| function.selector() == selector)
+                    })
+                    .or_else(|| {
+                        contract
+                            .is_none_or(|contract| contract.abi.fallback.is_none())
+                            .then(|| self.functions.get(&selector).and_then(Option::as_ref))
+                            .flatten()
+                    })
+            }
+        });
+        let Some(function) = function else {
+            let Some(contract) = contract else { return };
+            let signature = if trace.data.is_empty() && contract.abi.receive.is_some() {
+                "receive()"
+            } else if contract.abi.fallback.is_some() {
+                "fallback()"
+            } else {
+                return;
+            };
+            trace.decoded = Some(Box::new(DecodedCallTrace {
+                label: Some(contract.name.clone()),
+                call_data: Some(DecodedCallData {
+                    signature: signature.to_string(),
+                    args: if trace.data.is_empty() {
+                        Vec::new()
+                    } else {
+                        vec![trace.data.to_string()]
+                    },
+                }),
+                return_data: None,
+            }));
             return;
         };
-        let cheatcode = trace.address == CHEATCODE_ADDRESS;
-        let function = if cheatcode {
-            self.cheatcodes.get(&selector)
-        } else {
-            contract
-                .and_then(|contract| {
-                    contract.abi.functions().find(|function| function.selector() == selector)
-                })
-                .or_else(|| self.functions.get(&selector).and_then(Option::as_ref))
-        };
-        let Some(function) = function else { return };
         let args = if cheatcode {
             Vec::new()
         } else {
@@ -291,5 +317,26 @@ mod tests {
         assert_eq!(trace.decoded.as_ref().unwrap().label.as_deref(), Some("VM"));
         assert_eq!(trace.decoded.as_ref().unwrap().call_data.as_ref().unwrap().args.len(), 0);
         assert_eq!(arena.nodes()[0].trace.output.len(), 32);
+    }
+
+    #[test]
+    fn native_decoder_names_fallback_with_calldata() {
+        let contract = ContractData {
+            name: "Fallback".to_string(),
+            abi: serde_json::from_str(r#"[{"type":"fallback","stateMutability":"nonpayable"}]"#)
+                .unwrap(),
+            bytecode: None,
+            deployed_bytecode: None,
+            storage_layout: None,
+        };
+        let mut arena = CallTraceArena::default();
+        let trace = &mut arena.nodes_mut()[0].trace;
+        trace.data = Bytes::from_static(b"hello");
+
+        NativeTraceDecoder::new().decode_call(trace, Some(&contract));
+
+        let call = trace.decoded.as_ref().unwrap().call_data.as_ref().unwrap();
+        assert_eq!(call.signature, "fallback()");
+        assert_eq!(call.args, ["0x68656c6c6f"]);
     }
 }

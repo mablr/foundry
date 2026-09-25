@@ -70,7 +70,7 @@ use foundry_debugger::{Debugger, DebuggerLayout};
 use foundry_evm::{
     core::{
         evm::{BlockEnvFor, EthEvmNetwork, FoundryEvmNetwork, SpecFor, TempoEvmNetwork, TxEnvFor},
-        native::EthereumFork,
+        native::{EthereumEnv, EthereumFork},
     },
     executors::{ExecutorBuilder, ShowmapDomain},
     fork::ResolvedFork,
@@ -2168,7 +2168,6 @@ impl TestArgs {
     ) -> Result<(Libraries, TestOutcome)> {
         ensure!(
             !self.debug
-                && !self.gas_report
                 && !self.flamegraph
                 && !self.flamechart
                 && self.evm_profile.is_none()
@@ -2194,6 +2193,11 @@ impl TestArgs {
                 None
             }
         };
+        let report_version = if let Some(fork) = &fork {
+            fork.env.version
+        } else {
+            EthereumEnv::local_from_config(&config, &evm_opts)?.version
+        };
         let runner = NativeMultiContractRunner::new(
             config.clone(),
             execution.inline_config,
@@ -2212,8 +2216,28 @@ impl TestArgs {
             runner.test_collect(filter)?
         };
         let known_contracts = runner.prepared.known_contracts;
+        let gas_report = self.gas_report.then(|| {
+            let mut report = GasReport::new(
+                config.gas_reports.clone(),
+                config.gas_reports_ignore.clone(),
+                config.gas_reports_include_tests,
+                [],
+            );
+            for traces in results
+                .values()
+                .flat_map(|suite| suite.test_results.values())
+                .filter_map(|result| result.traces.native())
+            {
+                report.analyze_native(
+                    traces.iter().map(|(_, arena)| arena),
+                    &known_contracts,
+                    &report_version,
+                );
+            }
+            report.finalize()
+        });
 
-        if shell::is_json() || self.junit {
+        if (shell::is_json() && gas_report.is_none()) || self.junit {
             let rendered = if shell::is_json() {
                 prepare_results_for_json(
                     &mut results,
@@ -2225,7 +2249,7 @@ impl TestArgs {
                 junit_xml_report(&results, 0).to_string()?
             };
             sh_println!("{rendered}")?;
-        } else {
+        } else if !shell::is_json() {
             let trace_decoder = OnceLock::new();
             for (contract_name, suite) in &results {
                 if suite.test_results.is_empty() {
@@ -2237,20 +2261,25 @@ impl TestArgs {
                 sh_println!("Ran {len} {tests} for {contract_name}")?;
                 for (name, result) in &suite.test_results {
                     sh_println!("{}", result.short_result_with_suite(name, contract_name))?;
-                    if config.tracing.verbosity >= 2
-                        && (!self.suppress_successful_traces || result.status.is_failure())
-                    {
+                    let show_traces =
+                        !self.suppress_successful_traces || result.status.is_failure();
+                    if config.tracing.verbosity >= 2 && show_traces {
                         print_test_logs(result)?;
                     }
-                    if config.tracing.verbosity >= 3
-                        && (!self.suppress_successful_traces || result.status.is_failure())
-                        && result.traces.native().is_some_and(|traces| !traces.is_empty())
-                    {
+                    let traces = result.traces.native().unwrap_or_default();
+                    let include_trace = |kind: &TraceKind| {
+                        should_include_test_trace(
+                            config.tracing.verbosity,
+                            result.status.is_failure(),
+                            kind,
+                        )
+                    };
+                    if show_traces && traces.iter().any(|(kind, _)| include_trace(kind)) {
                         sh_println!("Traces:")?;
                         let trace_decoder = trace_decoder.get_or_init(|| {
                             NativeTraceDecoder::new().with_known_contracts(&known_contracts)
                         });
-                        for (_, arena) in result.traces.native().into_iter().flatten() {
+                        for (_, arena) in traces.iter().filter(|(kind, _)| include_trace(kind)) {
                             let arena = trace_decoder.decode_for_display(arena);
                             let arena = if let Some(depth) = config.tracing.trace_depth {
                                 native_trace_arena_at_depth(&arena, depth)
@@ -2268,8 +2297,12 @@ impl TestArgs {
             }
         }
 
-        let outcome =
+        let mut outcome =
             TestOutcome::new(Some(known_contracts), results, self.allow_failure, config.fuzz.seed);
+        if let Some(gas_report) = gas_report {
+            sh_println!("{gas_report}")?;
+            outcome.gas_report = Some(gas_report);
+        }
         if !shell::is_json() && !self.junit {
             self.print_summary(&outcome, timer.elapsed())?;
         }
@@ -2618,14 +2651,8 @@ impl TestArgs {
                 // - 3: only display traces for failed tests.
                 // - 4: also display the setup trace for failed tests.
                 // - 5..: display all traces for all tests, including storage changes.
-                let should_include_trace = |kind: &TraceKind| match kind {
-                    TraceKind::Execution => {
-                        (trace_verbosity == 3 && test_failed) || trace_verbosity >= 4
-                    }
-                    TraceKind::Setup => {
-                        (trace_verbosity == 4 && test_failed) || trace_verbosity >= 5
-                    }
-                    TraceKind::Deployment => false,
+                let should_include_trace = |kind: &TraceKind| {
+                    should_include_test_trace(trace_verbosity, test_failed, kind)
                 };
                 let renders_trace = !silent
                     && show_traces
@@ -2958,6 +2985,14 @@ fn print_test_logs(result: &TestResult) -> Result<()> {
         sh_println!()?;
     }
     Ok(())
+}
+
+const fn should_include_test_trace(verbosity: u8, failed: bool, kind: &TraceKind) -> bool {
+    match kind {
+        TraceKind::Execution => (verbosity == 3 && failed) || verbosity >= 4,
+        TraceKind::Setup => (verbosity == 4 && failed) || verbosity >= 5,
+        TraceKind::Deployment => false,
+    }
 }
 
 fn prepare_results_for_json(

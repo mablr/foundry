@@ -2,14 +2,18 @@
 
 use crate::{
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS},
-    traces::{CallTraceArena, CallTraceDecoder, CallTraceNode, DecodedCallData},
+    traces::{
+        CallTraceArena, CallTraceDecoder, CallTraceNode,
+        native::{CallKind as NativeCallKind, CallTraceArena as NativeCallTraceArena},
+    },
 };
-use alloy_primitives::{Address, map::HashSet};
+use alloy_primitives::{Address, Selector, TxKind, map::HashSet};
 use comfy_table::{
     Cell, CellAlignment, Color, Table,
     presets::{ASCII_FULL, ASCII_MARKDOWN},
 };
-use foundry_common::{TestFunctionExt, calc, get_contract_name, shell};
+use evm2::{Version, ethereum::intrinsic_gas};
+use foundry_common::{ContractsByArtifact, TestFunctionExt, calc, get_contract_name, shell};
 use foundry_evm::traces::CallKind;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -32,6 +36,16 @@ pub struct GasReport {
     /// All contracts that were analyzed grouped by their identifier
     /// ``test/Counter.t.sol:CounterTest
     pub contracts: BTreeMap<String, ContractInfo>,
+}
+
+struct ReportedCall<'a> {
+    contract: &'a str,
+    is_create: bool,
+    is_call: bool,
+    depth: usize,
+    data_len: usize,
+    gas_used: u64,
+    signature: Option<String>,
 }
 
 impl GasReport {
@@ -90,36 +104,143 @@ impl GasReport {
         }
     }
 
+    /// Analyzes traces recorded by evm2 using compiled bytecode to identify contracts.
+    pub fn analyze_native<'a>(
+        &mut self,
+        arenas: impl IntoIterator<Item = &'a NativeCallTraceArena>,
+        contracts: &ContractsByArtifact,
+        version: &Version,
+    ) {
+        for arena in arenas {
+            let direct_create_gas = arena
+                .nodes()
+                .iter()
+                .filter(|node| node.trace.depth == 1 && node.trace.kind.is_any_create())
+                .map(|node| {
+                    let trace = &node.trace;
+                    intrinsic_gas(
+                        version,
+                        trace.caller,
+                        TxKind::Create,
+                        &trace.data,
+                        0,
+                        0,
+                        trace.value,
+                    )
+                })
+                .sum::<u64>();
+            for node in arena.nodes() {
+                let trace = &node.trace;
+                if self.is_internal_address(trace.address) {
+                    continue;
+                }
+                let is_create = trace.kind.is_any_create();
+                let contract = if is_create {
+                    contracts.find_by_creation_code(&trace.data)
+                } else {
+                    trace.bytecode.as_deref().and_then(|code| contracts.find_by_deployed_code(code))
+                };
+                let Some((id, contract)) = contract else { continue };
+                let is_call = trace.kind == NativeCallKind::Call;
+                let signature = (!is_create)
+                    .then(|| trace.data.get(..4).and_then(|data| Selector::try_from(data).ok()))
+                    .flatten()
+                    .and_then(|selector| {
+                        contract.abi.functions().find(|function| function.selector() == selector)
+                    })
+                    .map(|function| function.signature())
+                    .or_else(|| {
+                        if is_create {
+                            None
+                        } else if trace.data.is_empty() && contract.abi.receive.is_some() {
+                            Some("receive()".to_string())
+                        } else if contract.abi.fallback.is_some() {
+                            Some("fallback()".to_string())
+                        } else {
+                            None
+                        }
+                    });
+                let name = id.identifier();
+                let intrinsic = (is_call || is_create).then(|| {
+                    intrinsic_gas(
+                        version,
+                        trace.caller,
+                        if is_create { TxKind::Create } else { TxKind::Call(trace.address) },
+                        &trace.data,
+                        0,
+                        0,
+                        trace.value,
+                    )
+                });
+                // Root CREATE gas includes the transaction intrinsic charge, whereas nested CREATE
+                // frames omit it. Forge's report counts the latter in the parent and child frames.
+                let gas_used = match trace.depth {
+                    0 => trace
+                        .gas_used
+                        .saturating_sub(if is_create { intrinsic.unwrap_or_default() } else { 0 })
+                        .saturating_add(direct_create_gas),
+                    1 => trace.gas_used.saturating_add(intrinsic.unwrap_or_default()),
+                    _ => trace.gas_used,
+                };
+                self.record_call(ReportedCall {
+                    contract: &name,
+                    is_create,
+                    is_call,
+                    depth: trace.depth,
+                    data_len: trace.data.len(),
+                    gas_used,
+                    signature,
+                });
+            }
+        }
+    }
+
     async fn analyze_node(&mut self, node: &CallTraceNode, decoder: &CallTraceDecoder) {
         let trace = &node.trace;
         if self.is_internal_address(trace.address) {
             return;
         }
         let Some(name) = decoder.contracts.get(&trace.address) else { return };
-        let contract_name = get_contract_name(name);
+        let is_create_call = trace.kind.is_any_create();
+        let signature = if is_create_call {
+            None
+        } else {
+            decoder.decode_function(trace).await.call_data.map(|call| call.signature)
+        };
+        self.record_call(ReportedCall {
+            contract: name,
+            is_create: is_create_call,
+            is_call: trace.kind == CallKind::Call,
+            depth: trace.depth,
+            data_len: trace.data.len(),
+            gas_used: trace.gas_used,
+            signature,
+        });
+    }
+
+    fn record_call(&mut self, call: ReportedCall<'_>) {
+        let ReportedCall { contract, is_create, is_call, depth, data_len, gas_used, signature } =
+            call;
+        let contract_name = get_contract_name(contract);
         if !self.should_report(contract_name) {
             return;
         }
-
-        let contract_info = self.contracts.entry(name.clone()).or_default();
-        let is_create_call = trace.kind.is_any_create();
-        if is_create_call {
+        let contract_info = self.contracts.entry(contract.to_string()).or_default();
+        if is_create {
             trace!(contract_name, "adding create size info");
-            contract_info.size = trace.data.len();
+            contract_info.size = data_len;
         }
 
         // Only include top-level calls which account for calldata and base (21.000) cost.
         // Only include Calls and Creates as only these calls are isolated in inspector.
-        if trace.depth > 1 && (trace.kind == CallKind::Call || is_create_call) {
+        if depth > 1 && (is_call || is_create) {
             return;
         }
 
-        if is_create_call {
+        if is_create {
             trace!(contract_name, "adding create gas info");
-            contract_info.gas = trace.gas_used;
-        } else if let Some(DecodedCallData { signature, .. }) =
-            decoder.decode_function(trace).await.call_data
-        {
+            contract_info.gas = gas_used;
+        } else if let Some(signature) = signature {
             let name = signature.split('(').next().unwrap();
             // Ignore any test/setup functions.
             if self.include_tests || !name.test_function_kind().is_known() {
@@ -131,7 +252,7 @@ impl GasReport {
                     .entry(signature)
                     .or_default()
                     .frames
-                    .push(trace.gas_used);
+                    .push(gas_used);
             }
         }
     }
