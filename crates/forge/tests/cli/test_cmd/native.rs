@@ -6,7 +6,6 @@ use foundry_evm::fuzz::BaseCounterExample;
 use foundry_test_utils::{forgetest_async, forgetest_init, str};
 
 forgetest_init!(evm2_reports_native_coverage, |prj, cmd| {
-    prj.update_config(|config| config.dynamic_test_linking = false);
     prj.add_source(
         "NativeCounter.sol",
         r#"
@@ -64,6 +63,113 @@ Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
 ╰-----------------------+---------------+---------------+------------+---------------╯
 
 "#]]);
+});
+
+forgetest_init!(evm2_deploy_code_rolls_back_nested_create, |prj, cmd| {
+    prj.add_source(
+        "NativeDeployTarget.sol",
+        r#"
+contract NativeDeployTarget {
+    address public deployer;
+
+    constructor() {
+        deployer = msg.sender;
+    }
+
+    function marker() external pure returns (uint256) {
+        return 7;
+    }
+}
+
+contract NativeDeployValueTarget {
+    uint256 public arg;
+
+    constructor(uint256 value) payable {
+        arg = value;
+    }
+}
+"#,
+    );
+    prj.add_test(
+        "NativeDeployCode.t.sol",
+        r#"
+import "../src/NativeDeployTarget.sol";
+
+interface Vm {
+    function deployCode(string calldata artifactPath, bytes32 salt) external returns (address);
+    function deployCode(string calldata artifactPath, bytes calldata constructorArgs, uint256 value)
+        external returns (address);
+    function deal(address account, uint256 balance) external;
+    function prank(address sender) external;
+}
+
+contract NativeDeployHandler {
+    Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    bytes32 constant SALT = keccak256("native deploy");
+    address constant DEPLOYER = address(0xBEEF);
+
+    function deployThenRevert() external {
+        vm.prank(DEPLOYER);
+        address deployed = vm.deployCode("src/NativeDeployTarget.sol:NativeDeployTarget", SALT);
+        require(deployed.code.length > 0, "missing code");
+        revert("rollback");
+    }
+
+    function deploy() external returns (address) {
+        vm.prank(DEPLOYER);
+        return vm.deployCode("src/NativeDeployTarget.sol:NativeDeployTarget", SALT);
+    }
+
+    function deployWithValue() external returns (address) {
+        vm.deal(address(this), 10);
+        return vm.deployCode(
+            "src/NativeDeployTarget.sol:NativeDeployValueTarget", abi.encode(uint256(42)), 5
+        );
+    }
+}
+
+contract NativeDeployCodeTest {
+    NativeDeployHandler handler;
+
+    function setUp() public {
+        handler = new NativeDeployHandler();
+    }
+
+    function testRollbackAndRedeploy() public {
+        (bool ok, bytes memory output) =
+            address(handler).call(abi.encodeCall(NativeDeployHandler.deployThenRevert, ()));
+        require(!ok && keccak256(output) == keccak256(abi.encodeWithSignature("Error(string)", "rollback")));
+        address deployed = handler.deploy();
+        require(NativeDeployTarget(deployed).marker() == 7);
+        require(NativeDeployTarget(deployed).deployer() == address(0xBEEF));
+    }
+
+    function testConstructorArgsAndValue() public {
+        address deployed = handler.deployWithValue();
+        require(NativeDeployValueTarget(deployed).arg() == 42);
+        require(deployed.balance == 5);
+        require(address(handler).balance == 5);
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-contract", "NativeDeployCodeTest"]).assert_success().stdout_eq(
+        str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 2 tests for test/NativeDeployCode.t.sol:NativeDeployCodeTest
+[PASS] testConstructorArgsAndValue() ([GAS])
+[PASS] testRollbackAndRedeploy() ([GAS])
+Suite result: ok. 2 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
+
+"#]],
+    );
 });
 
 forgetest_init!(evm2_invariant_detects_handler_assertions, |prj, cmd| {

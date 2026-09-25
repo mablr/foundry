@@ -1,26 +1,28 @@
 //! Inspectors for native Ethereum execution.
 
 use alloy_consensus::{TxLegacy, transaction::Recovered};
-use alloy_primitives::{Address, Log, TxKind, U256};
+use alloy_primitives::{Address, B256, Bytes, Log, TxKind, U256};
 use alloy_sol_types::{SolEvent, SolInterface, SolValue};
 use evm2::{
     EvmFeatures, EvmTypesHost, Inspector,
+    bytecode::Bytecode,
     ethereum::{TxEnvelope, intrinsic_gas},
     evm::{Database, Db, EmptyDB, State},
     interpreter::{
-        GasTracker, Host, InstrStop, Interpreter, Message, MessageKind, MessageResult,
-        MessageResultExt,
+        GasTracker, Host, InstrStop, Interpreter, Message, MessageExt, MessageKind, MessageResult,
+        MessageResultExt, derive_create_destination,
     },
 };
-use foundry_cheatcodes::native::NativeCheatcodes;
-use foundry_common::{ErrorExt, fmt::ConsoleFmt};
+use foundry_cheatcodes::{Error, Vm, native::NativeCheatcodes};
+use foundry_common::{ContractsByArtifact, ErrorExt, fmt::ConsoleFmt};
 use foundry_evm_core::{
     abi::console,
-    constants::HARDHAT_CONSOLE_ADDRESS,
+    constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS},
     native::{EthereumEnv, FoundryEvmTypes, LocalState, NativeInspector},
 };
 use foundry_evm_coverage::{HitMaps, NativeLineCoverageCollector};
 use foundry_evm_traces::native::{CallTraceArena, TracingInspector, TracingInspectorConfig};
+use std::path::Path;
 
 use super::EthereumFactory;
 
@@ -37,6 +39,43 @@ pub struct EthereumInspectorStack<D: Database + Clone = EmptyDB> {
     tracing: Option<TracingInspector>,
     traces: Vec<CallTraceArena>,
     coverage: Option<NativeLineCoverageCollector>,
+    artifacts: ContractsByArtifact,
+}
+
+struct NativeDeployCodeRequest {
+    path: String,
+    args: Bytes,
+    value: U256,
+    salt: Option<B256>,
+}
+
+impl NativeDeployCodeRequest {
+    fn from_call(call: Vm::VmCalls) -> Option<Self> {
+        let (path, args, value, salt) = match call {
+            Vm::VmCalls::deployCode_0(call) => (call.artifactPath, Bytes::new(), U256::ZERO, None),
+            Vm::VmCalls::deployCode_1(call) => {
+                (call.artifactPath, call.constructorArgs, U256::ZERO, None)
+            }
+            Vm::VmCalls::deployCode_2(call) => (call.artifactPath, Bytes::new(), call.value, None),
+            Vm::VmCalls::deployCode_3(call) => {
+                (call.artifactPath, call.constructorArgs, call.value, None)
+            }
+            Vm::VmCalls::deployCode_4(call) => {
+                (call.artifactPath, Bytes::new(), U256::ZERO, Some(call.salt))
+            }
+            Vm::VmCalls::deployCode_5(call) => {
+                (call.artifactPath, call.constructorArgs, U256::ZERO, Some(call.salt))
+            }
+            Vm::VmCalls::deployCode_6(call) => {
+                (call.artifactPath, Bytes::new(), call.value, Some(call.salt))
+            }
+            Vm::VmCalls::deployCode_7(call) => {
+                (call.artifactPath, call.constructorArgs, call.value, Some(call.salt))
+            }
+            _ => return None,
+        };
+        Some(Self { path, args, value, salt })
+    }
 }
 
 impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
@@ -53,6 +92,7 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
             tracing: None,
             traces: Vec::new(),
             coverage: None,
+            artifacts: ContractsByArtifact::default(),
         }
     }
 
@@ -80,6 +120,130 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
     /// Drains collected bytecode hits, if coverage is enabled.
     pub fn take_coverage(&mut self) -> Option<HitMaps> {
         self.coverage.as_mut().map(NativeLineCoverageCollector::take_maps)
+    }
+
+    /// Installs linked artifact creation code for native `vm.deployCode` calls.
+    pub fn set_artifacts(&mut self, artifacts: ContractsByArtifact) {
+        self.artifacts = artifacts;
+    }
+
+    fn artifact_code(&self, path: &str) -> Result<Bytes, Bytes> {
+        // TODO: Move Foundry's full artifact-path resolution into engine-independent code.
+        let Some((source, name)) = path.rsplit_once(':') else {
+            return Err(Error::encode("invalid artifact path"));
+        };
+        let mut matches = self.artifacts.iter().filter(|(id, _)| {
+            id.source.ends_with(Path::new(source)) && id.name.split('.').next() == Some(name)
+        });
+        let Some((_, contract)) = matches.next() else {
+            return Err(Error::encode(format!("artifact not found: {path}")));
+        };
+        if matches.next().is_some() {
+            return Err(Error::encode(format!("multiple matching artifacts: {path}")));
+        }
+        contract
+            .bytecode()
+            .cloned()
+            .ok_or_else(|| Error::encode("no bytecode for contract; is it abstract or unlinked?"))
+    }
+
+    fn deploy_code(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &Message<FoundryEvmTypes>,
+        request: NativeDeployCodeRequest,
+    ) -> MessageResult<FoundryEvmTypes> {
+        let gas = GasTracker::new(message.gas_limit);
+        if interp.is_static() {
+            return MessageResultExt { stop: InstrStop::Revert, gas, ..Default::default() };
+        }
+        let code = match self.artifact_code(&request.path) {
+            Ok(code) => code,
+            Err(output) => {
+                return MessageResultExt {
+                    stop: InstrStop::Revert,
+                    gas,
+                    output,
+                    ..Default::default()
+                };
+            }
+        };
+        let mut input = code.to_vec();
+        input.extend_from_slice(&request.args);
+        let input = Bytes::from(input);
+        let kind = if request.salt.is_some() { MessageKind::Create2 } else { MessageKind::Create };
+        let salt = request.salt.unwrap_or_default();
+        let depth = message.depth.saturating_sub(1);
+        let caller = match self.cheatcodes.synthetic_create_caller(interp, message.caller, depth) {
+            Ok(caller) => caller,
+            Err(stop) => return MessageResultExt { stop, gas, ..Default::default() },
+        };
+        let nonce =
+            interp.host().state_mut().account(&caller, false).map(|account| account.nonce());
+        let nonce = match nonce {
+            Ok(nonce) => nonce,
+            Err(_) => {
+                self.cheatcodes.finish_synthetic_create_prank(interp, depth);
+                return MessageResultExt { stop: InstrStop::Revert, gas, ..Default::default() };
+            }
+        };
+        let destination = derive_create_destination(kind, &caller, &salt, &input, nonce);
+        let mut create = MessageExt {
+            kind,
+            depth: message.depth,
+            gas_limit: message.gas_limit,
+            reservoir: message.reservoir,
+            destination,
+            call_target: destination,
+            caller,
+            code: Bytecode::new_legacy(input.clone()),
+            input,
+            value: request.value,
+            code_address: caller,
+            disable_precompiles: false,
+            caller_is_static: false,
+            salt,
+            ext: Default::default(),
+            _non_exhaustive: (),
+        };
+        let env = EthereumEnv {
+            spec: interp.spec(),
+            version: *interp.version(),
+            block: *interp.host().block(),
+        };
+        let origin = interp.host().ext().origin_override.unwrap_or(interp.tx_env().origin);
+        let tx_env = interp.tx_env().clone();
+        let mut backend = self.backend.clone();
+        let accepted = self.backend.clone();
+        let state = interp.host().state().clone_with(Db::new(backend.clone()));
+        let (result, mut state, block) = {
+            let mut evm = EthereumFactory.create(env, Db::new(&mut backend));
+            *evm.state_mut() = state;
+            evm.ext_mut().origin_override = Some(origin);
+            evm.set_inspector(&mut *self);
+            let result = Host::execute_message(&mut evm, &tx_env, &mut create);
+            let state = evm.state().clone_with(Db::new(accepted));
+            (result, state, *evm.block())
+        };
+        self.cheatcodes.finish_synthetic_create_prank(interp, depth);
+        if let Some((_, backend)) = self.cheatcodes.take_restored_state() {
+            state = state.clone_with(Db::new(backend.clone()));
+            self.backend = backend.clone();
+            self.backend_reset = Some(backend);
+        } else if let Some(backend) = &self.backend_reset {
+            state = state.clone_with(Db::new(backend.clone()));
+        }
+        *interp.host().state_mut() = state;
+        interp.host().set_block(block);
+        let (stop, output) = if result.stop.is_success() {
+            match result.created_address {
+                Some(address) => (InstrStop::Return, Bytes::from(address.abi_encode())),
+                None => (InstrStop::Revert, Error::encode("contract creation failed")),
+            }
+        } else {
+            (InstrStop::Revert, result.output)
+        };
+        MessageResultExt { stop, gas, output, ..Default::default() }
     }
 
     /// Runs depth-one CALLs as separate transactions while retaining the surrounding frame.
@@ -310,6 +474,12 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
                 ..Default::default()
             });
         }
+        if message.call_target == CHEATCODE_ADDRESS
+            && let Ok(call) = Vm::VmCalls::abi_decode(&message.input)
+            && let Some(request) = NativeDeployCodeRequest::from_call(call)
+        {
+            return Some(self.deploy_code(interp, message, request));
+        }
         if let Some(result) = self.cheatcodes.call(interp, message) {
             return Some(result);
         }
@@ -408,8 +578,8 @@ impl<D: Database + Clone + 'static> NativeInspector<D> for EthereumInspectorStac
 mod tests {
     use super::*;
     use crate::native::EthereumExecutor;
-    use alloy_primitives::{Bytes, keccak256};
-    use evm2::{SpecId, bytecode::Bytecode, env::BlockEnvExt, evm::AccountInfo};
+    use alloy_primitives::keccak256;
+    use evm2::{SpecId, env::BlockEnvExt, evm::AccountInfo};
     use foundry_evm_core::decode::decode_console_log;
 
     #[test]

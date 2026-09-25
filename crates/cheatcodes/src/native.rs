@@ -116,6 +116,47 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
         (InstrStop::Return, Bytes::new())
     }
 
+    /// Applies a prank to a synthetic creation initiated by a cheatcode call.
+    pub fn synthetic_create_caller(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        caller: Address,
+        depth: u16,
+    ) -> Result<Address, InstrStop> {
+        let Some((prank_depth, prank)) = self.pranks.range_mut(..=depth).next_back() else {
+            return Ok(caller);
+        };
+        if depth != *prank_depth || caller != prank.caller {
+            return Ok(caller);
+        }
+        interp
+            .host()
+            .state_mut()
+            .account(&prank.new_caller, false)
+            .map_err(|_| InstrStop::Revert)?;
+        if let Some(new_origin) = prank.new_origin {
+            let context = interp.host().ext_mut();
+            self.active_origins.insert(depth, context.origin_override);
+            context.origin_override = Some(new_origin);
+        }
+        prank.used = true;
+        Ok(prank.new_caller)
+    }
+
+    /// Clears a one-shot prank after a synthetic creation completes.
+    pub fn finish_synthetic_create_prank(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        depth: u16,
+    ) {
+        if let Some(previous_origin) = self.active_origins.remove(&depth) {
+            interp.host().ext_mut().origin_override = previous_origin;
+        }
+        if self.pranks.get(&depth).is_some_and(|prank| prank.single_call && prank.used) {
+            self.pranks.remove(&depth);
+        }
+    }
+
     fn snapshot(&mut self, interp: &mut Interpreter<'_, '_, FoundryEvmTypes>) -> Bytes {
         let host = interp.host();
         let snapshot = NativeSnapshot {

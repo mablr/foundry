@@ -118,6 +118,7 @@ pub(crate) struct NativeTestSetup<'a> {
     tracing: Option<TracingInspectorConfig>,
     coverage: bool,
     isolation: bool,
+    artifacts: Option<&'a ContractsByArtifact>,
 }
 
 impl<D: Database + Clone + 'static> NativeContractRunner<D> {
@@ -137,6 +138,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             tracing,
             coverage,
             isolation,
+            artifacts,
         } = setup;
         env.block.gas_limit = U256::from(gas_limit);
         state.set_balance(sender, U256::MAX)?;
@@ -146,6 +148,9 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         let expected_address = sender.create(1);
         state.set_balance(expected_address, initial_balance)?;
         let mut executor = EthereumExecutor::new_foundry(env, state);
+        if let Some(artifacts) = artifacts {
+            executor.inspector_mut().set_artifacts(artifacts.clone());
+        }
         if let Some(tracing) = tracing {
             executor.inspector_mut().enable_tracing(tracing);
         }
@@ -674,6 +679,7 @@ impl NativeMultiContractRunner {
                     ),
                     coverage: self.coverage,
                     isolation: self.config.isolate,
+                    artifacts: Some(&self.prepared.known_contracts),
                 },
             )?;
             let runner = match runner {
@@ -1263,6 +1269,7 @@ mod tests {
                 tracing: None,
                 coverage: false,
                 isolation: false,
+                artifacts: None,
             },
         )
         .unwrap();
@@ -1309,6 +1316,7 @@ mod tests {
                 tracing: None,
                 coverage: false,
                 isolation: false,
+                artifacts: None,
             },
         )
         .unwrap();
