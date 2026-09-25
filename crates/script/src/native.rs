@@ -1,7 +1,7 @@
 //! Ethereum script execution on evm2.
 
 use crate::{
-    ScriptArgs, ScriptInputs,
+    NestedValue, ScriptArgs, ScriptInputs,
     build::{BuildData, LinkedBuildData, ScriptPredeployLibraries},
     execute::ExecutionData,
     resolve_script_fork, resolve_script_sender_nonce,
@@ -10,7 +10,9 @@ use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_dyn_abi::FunctionExt;
 use alloy_json_abi::InternalType;
 use alloy_network::{Ethereum, TransactionBuilder};
-use alloy_primitives::{Address, Bytes, KECCAK256_EMPTY, Log, TxKind, U256, keccak256};
+use alloy_primitives::{
+    Address, Bytes, KECCAK256_EMPTY, Log, TxKind, U256, keccak256, map::HashMap,
+};
 use alloy_rpc_types::TransactionRequest;
 use evm2::{TxResult, ethereum::TxEnvelope, evm::Database};
 use eyre::Result;
@@ -18,7 +20,11 @@ use foundry_cheatcodes::{
     BroadcastableTransaction, BroadcastableTransactions, CheatsConfig, Wallets,
 };
 use foundry_cli::{opts::TempoOpts, utils::needs_setup};
-use foundry_common::{LIBRARY_DEPLOYER, TransactionMaybeSigned, fmt::format_token, shell};
+use foundry_common::{
+    LIBRARY_DEPLOYER, TransactionMaybeSigned,
+    fmt::{format_token, format_token_raw},
+    shell,
+};
 use foundry_config::Config;
 use foundry_evm::{
     core::{
@@ -32,10 +38,17 @@ use foundry_evm::{
     decode::{RevertDecoder, decode_console_logs},
     native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
-    traces::native::{CallTraceArena, NativeTraceDecoder, TraceWriter, TracingInspectorConfig},
+    traces::{
+        TraceKind,
+        native::{
+            CallTraceArena, NativeTraceDecoder, TraceWriter, TracingInspectorConfig,
+            trace_arena_at_depth,
+        },
+    },
 };
 use foundry_evm_networks::NetworkVariant;
 use foundry_wallets::wallet_browser::signer::BrowserSigner;
+use serde::Serialize;
 use yansi::Paint;
 
 /// Executes the Ethereum `forge script` command through the native pipeline.
@@ -43,10 +56,13 @@ pub(crate) async fn run(args: ScriptArgs, config: Config, evm_opts: EvmOpts) -> 
     eyre::ensure!(!args.resume, "native script resume is not implemented");
     eyre::ensure!(!args.broadcast, "native script broadcast is not implemented");
     eyre::ensure!(!args.debug, "native script debugger is not implemented");
-    eyre::ensure!(!shell::is_json(), "native script JSON output is not implemented");
     let context = NativeScriptContext::prepare(args, config, evm_opts).await?;
     let execution = context.execute().await?;
-    context.show_output(&execution)?;
+    if shell::is_json() {
+        context.show_json(&execution)?;
+    } else {
+        context.show_output(&execution)?;
+    }
     if execution.has_transactions() && context.evm_opts.fork_url.is_some() {
         eyre::bail!("native on-chain simulation is not implemented");
     }
@@ -394,6 +410,105 @@ impl NativeScriptContext {
         }
         Ok(())
     }
+
+    fn show_json(&self, execution: &NativeScriptExecution) -> Result<()> {
+        let run =
+            execution.script.as_ref().or(execution.setup.as_ref()).unwrap_or(&execution.deployment);
+        let success = execution.deployment.result.status
+            && execution.setup.as_ref().is_none_or(|setup| setup.result.status)
+            && execution.script.as_ref().is_none_or(|script| script.result.status);
+        let decoder =
+            NativeTraceDecoder::new().with_known_contracts(&self.plan.build.known_contracts);
+        let stages = execution
+            .libraries
+            .iter()
+            .chain(std::iter::once(&execution.deployment))
+            .map(|stage| (TraceKind::Deployment, stage))
+            .chain(execution.setup.iter().map(|stage| (TraceKind::Setup, stage)))
+            .chain(execution.script.iter().map(|stage| (TraceKind::Execution, stage)));
+        let traces = stages
+            .flat_map(|(kind, stage)| {
+                let decoder = &decoder;
+                stage.traces.iter().map(move |arena| {
+                    let arena = decoder.decode_for_display(arena);
+                    let arena = if let Some(depth) = self.config.tracing.trace_depth {
+                        trace_arena_at_depth(&arena, depth)
+                    } else {
+                        arena
+                    };
+                    (kind, arena)
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut returns = HashMap::default();
+        if success
+            && let Ok(decoded) = self.plan.execution.func.abi_decode_output(&run.result.output)
+        {
+            for (index, (token, output)) in
+                decoded.iter().zip(&self.plan.execution.func.outputs).enumerate()
+            {
+                let internal_type = output
+                    .internal_type
+                    .clone()
+                    .unwrap_or(InternalType::Other { contract: None, ty: "unknown".to_string() });
+                let label =
+                    if output.name.is_empty() { index.to_string() } else { output.name.clone() };
+                returns.insert(
+                    label,
+                    NestedValue {
+                        internal_type: internal_type.to_string(),
+                        value: format_token_raw(token),
+                    },
+                );
+            }
+        }
+        let logs = execution
+            .libraries
+            .iter()
+            .chain(std::iter::once(&execution.deployment))
+            .chain(execution.setup.iter())
+            .chain(execution.script.iter())
+            .flat_map(|stage| stage.logs.iter().cloned())
+            .collect::<Vec<_>>();
+        let json = NativeJsonResult {
+            logs: decode_console_logs(&logs),
+            returns,
+            success,
+            raw_logs: logs,
+            traces,
+            gas_used: run.result.tx_gas_used(),
+            labeled_addresses: HashMap::default(),
+            returned: &run.result.output,
+            address: None,
+        };
+        sh_println!("{}", serde_json::to_string(&json)?)?;
+        if !success {
+            let reason = if run.result.output.is_empty() {
+                format!("EvmError: {:?}", run.result.stop)
+            } else {
+                RevertDecoder::new()
+                    .with_abis(
+                        self.plan.build.known_contracts.values().map(|contract| &contract.abi),
+                    )
+                    .decode(&run.result.output, None)
+            };
+            eyre::bail!("script failed: {reason}");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Serialize)]
+struct NativeJsonResult<'a> {
+    logs: Vec<String>,
+    returns: HashMap<String, NestedValue>,
+    success: bool,
+    raw_logs: Vec<Log>,
+    traces: Vec<(TraceKind, CallTraceArena)>,
+    gas_used: u64,
+    labeled_addresses: HashMap<Address, String>,
+    returned: &'a Bytes,
+    address: Option<Address>,
 }
 
 /// Native constructor, setup, and script-call observations.

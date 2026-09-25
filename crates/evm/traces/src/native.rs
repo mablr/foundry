@@ -3,7 +3,9 @@
 use alloy_dyn_abi::{EventExt, JsonAbiExt};
 use alloy_json_abi::{Event, Function, JsonAbi};
 use alloy_primitives::{B256, Bytes, Selector};
-use evm2_inspectors::tracing::types::{DecodedCallData, DecodedCallLog, DecodedCallTrace};
+use evm2_inspectors::tracing::types::{
+    DecodedCallData, DecodedCallLog, DecodedCallTrace, TraceMemberOrder,
+};
 use foundry_common::{ContractsByArtifact, contracts::ContractData, fmt::format_token};
 use foundry_evm_core::{abi::Vm, constants::CHEATCODE_ADDRESS};
 use std::collections::HashMap;
@@ -11,6 +13,65 @@ use std::collections::HashMap;
 pub use evm2_inspectors::tracing::{
     CallTraceArena, TraceWriter, TracingInspector, TracingInspectorConfig,
 };
+
+/// Returns a trace arena containing only nodes visible at `depth`.
+pub fn trace_arena_at_depth(arena: &CallTraceArena, depth: usize) -> CallTraceArena {
+    let mut arena = arena.clone();
+    let nodes = arena.nodes_mut();
+    let mut reachable = vec![false; nodes.len()];
+    let mut pending = vec![0];
+    while let Some(node_idx) = pending.pop() {
+        if reachable[node_idx] {
+            continue;
+        }
+        reachable[node_idx] = true;
+        let node = &nodes[node_idx];
+        if node.trace.depth < depth {
+            pending.extend(node.ordering.iter().filter_map(|item| match item {
+                TraceMemberOrder::Call(child_idx) => Some(node.children[*child_idx]),
+                _ => None,
+            }));
+        }
+    }
+
+    let mut remapped = vec![None; nodes.len()];
+    for (next_idx, node) in nodes.iter_mut().filter(|node| reachable[node.idx]).enumerate() {
+        remapped[node.idx] = Some(next_idx);
+        if node.trace.depth >= depth {
+            node.ordering.clear();
+            node.children.clear();
+        } else {
+            let mut child_positions = vec![None; node.children.len()];
+            let mut children = Vec::with_capacity(node.children.len());
+            for (old_position, child) in node.children.iter().copied().enumerate() {
+                if reachable[child] {
+                    child_positions[old_position] = Some(children.len());
+                    children.push(child);
+                }
+            }
+            node.children = children;
+            node.ordering = std::mem::take(&mut node.ordering)
+                .into_iter()
+                .filter_map(|item| match item {
+                    TraceMemberOrder::Call(child_idx) => {
+                        Some(TraceMemberOrder::Call(child_positions[child_idx]?))
+                    }
+                    item => Some(item),
+                })
+                .collect();
+        }
+    }
+
+    nodes.retain(|node| reachable[node.idx]);
+    for node in nodes {
+        node.idx = remapped[node.idx].expect("retained trace node has a remapped index");
+        node.parent = node.parent.and_then(|parent| remapped[parent]);
+        for child in &mut node.children {
+            *child = remapped[*child].expect("retained trace child has a remapped index");
+        }
+    }
+    arena
+}
 
 /// ABI decoder for evm2 traces recorded by Foundry.
 pub struct NativeTraceDecoder {
