@@ -35,6 +35,7 @@ use foundry_evm::{
         },
         native::{EthereumEnv, LocalState},
     },
+    coverage::HitMaps,
     fuzz::{
         BaseCounterExample, CounterExample, FuzzCase, FuzzFixtures, FuzzTestResult, fixture_name,
         strategies::{EnumBounds, fuzz_calldata, fuzz_msg_value},
@@ -60,6 +61,7 @@ pub(crate) struct NativeMultiContractRunner {
     sender: Address,
     fuzz_input: Option<FuzzFailureReplayConfig>,
     enum_bounds: EnumBounds,
+    coverage: bool,
 }
 
 /// A deployed test contract with state shared by its individual test runs.
@@ -69,16 +71,20 @@ pub struct NativeContractRunner<D: Database + Clone = EmptyDB> {
     address: Address,
     gas_limit: u64,
     gas_price: u128,
+    setup_coverage: Option<HitMaps>,
 }
+
+type NativeCallOutput = (TxResult, Vec<Log>, Vec<NativeCallTraceArena>, Option<HitMaps>);
 
 /// The result of deploying and setting up one native test contract.
 pub(crate) enum NativeContractSetup<D: Database + Clone> {
     Ready(Box<NativeContractRunner<D>>),
     Failed {
         stage: &'static str,
-        result: TxResult,
+        result: Box<TxResult>,
         logs: Vec<Log>,
         traces: Vec<NativeCallTraceArena>,
+        coverage: Option<HitMaps>,
     },
 }
 
@@ -110,6 +116,7 @@ pub(crate) struct NativeTestSetup<'a> {
     gas_price: u128,
     libraries: NativeLibraries<'a>,
     tracing: Option<TracingInspectorConfig>,
+    coverage: bool,
     isolation: bool,
 }
 
@@ -128,6 +135,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             gas_price,
             libraries,
             tracing,
+            coverage,
             isolation,
         } = setup;
         env.block.gas_limit = U256::from(gas_limit);
@@ -140,6 +148,9 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         let mut executor = EthereumExecutor::new_foundry(env, state);
         if let Some(tracing) = tracing {
             executor.inspector_mut().enable_tracing(tracing);
+        }
+        if coverage {
+            executor.inspector_mut().enable_coverage();
         }
         if isolation {
             executor.inspector_mut().enable_isolation();
@@ -217,9 +228,10 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         if !result.status {
             return Ok(NativeContractSetup::Failed {
                 stage: "constructor()",
-                result,
+                result: Box::new(result),
                 logs: executor.inspector_mut().take_logs(),
                 traces: executor.inspector_mut().take_traces(),
+                coverage: executor.inspector_mut().take_coverage(),
             });
         }
         let address = result
@@ -235,7 +247,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             Self::deploy_create2_factory(&mut executor, gas_limit, gas_price)?;
         }
 
-        let mut runner = Self { executor, address, gas_limit, gas_price };
+        let mut runner = Self { executor, address, gas_limit, gas_price, setup_coverage: None };
         if let Some(setup) = contract
             .abi
             .functions
@@ -246,12 +258,14 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             if !result.status {
                 return Ok(NativeContractSetup::Failed {
                     stage: "setUp()",
-                    result,
+                    result: Box::new(result),
                     logs: runner.executor.inspector_mut().take_logs(),
                     traces: runner.executor.inspector_mut().take_traces(),
+                    coverage: runner.executor.inspector_mut().take_coverage(),
                 });
             }
         }
+        runner.setup_coverage = runner.executor.inspector_mut().take_coverage();
         Ok(NativeContractSetup::Ready(Box::new(runner)))
     }
 
@@ -261,25 +275,25 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
     }
 
     /// Executes one no-argument unit test against an isolated copy of setup state.
-    pub fn run_unit(
-        &self,
-        function: &Function,
-    ) -> Result<(TxResult, Vec<Log>, Vec<NativeCallTraceArena>)> {
+    pub fn run_unit(&self, function: &Function) -> Result<NativeCallOutput> {
         ensure!(function.inputs.is_empty(), "native unit execution requires no arguments");
         self.run_input(function.selector().into(), U256::ZERO)
     }
 
     /// Replays one concrete call against an isolated copy of setup state.
-    pub fn run_input(
-        &self,
-        input: Bytes,
-        value: U256,
-    ) -> Result<(TxResult, Vec<Log>, Vec<NativeCallTraceArena>)> {
+    pub fn run_input(&self, input: Bytes, value: U256) -> Result<NativeCallOutput> {
         let mut runner = self.clone();
         let result = runner.execute_with_value(input, value)?;
         let logs = runner.executor.inspector_mut().take_logs();
         let traces = runner.executor.inspector_mut().take_traces();
-        Ok((result, logs, traces))
+        let coverage = runner.executor.inspector_mut().take_coverage();
+        Ok((result, logs, traces, coverage))
+    }
+
+    fn merge_setup_coverage(&self, coverage: Option<HitMaps>) -> Option<HitMaps> {
+        let mut total = self.setup_coverage.clone();
+        HitMaps::merge_opt(&mut total, coverage);
+        total
     }
 
     /// Reads declared fuzz fixtures from the state after `setUp()`.
@@ -307,7 +321,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
 
     fn read_fixture(&self, function: &Function, args: &[DynSolValue]) -> Option<DynSolValue> {
         let input = function.abi_encode_input(args).ok()?;
-        let (result, _, _) = self.run_input(input.into(), U256::ZERO).ok()?;
+        let (result, _, _, _) = self.run_input(input.into(), U256::ZERO).ok()?;
         if !result.status {
             return None;
         }
@@ -323,7 +337,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         else {
             return Ok(Vec::new());
         };
-        let (result, _, _) = self.run_unit(function)?;
+        let (result, _, _, _) = self.run_unit(function)?;
         if !result.status {
             return Ok(Vec::new());
         }
@@ -598,7 +612,22 @@ impl NativeMultiContractRunner {
             create2_deployer_available,
         )?;
         let enum_bounds = EnumBounds::collect(&analyze_compiled_sources(&config, output)?);
-        Ok(Self { prepared, config, inline_config, evm_opts, sender, fuzz_input, enum_bounds })
+        Ok(Self {
+            prepared,
+            config,
+            inline_config,
+            evm_opts,
+            sender,
+            fuzz_input,
+            enum_bounds,
+            coverage: false,
+        })
+    }
+
+    /// Enables native coverage collection for a coverage command.
+    pub const fn with_coverage(mut self, coverage: bool) -> Self {
+        self.coverage = coverage;
+        self
     }
 
     /// Executes selected local unit tests through evm2 and collects their results.
@@ -643,15 +672,17 @@ impl NativeMultiContractRunner {
                             ..Default::default()
                         },
                     ),
+                    coverage: self.coverage,
                     isolation: self.config.isolate,
                 },
             )?;
             let runner = match runner {
                 NativeContractSetup::Ready(runner) => runner,
-                NativeContractSetup::Failed { stage, result, logs, traces } => {
+                NativeContractSetup::Failed { stage, result, logs, traces, coverage } => {
                     let mut failure = TestResult::fail(self.failure_reason(&result));
                     failure.logs = logs;
                     failure.native_traces = traces;
+                    failure.line_coverage = coverage;
                     suites.insert(
                         id.identifier(),
                         SuiteResult::new(
@@ -748,7 +779,7 @@ impl NativeMultiContractRunner {
                     "native execution does not yet support {} tests",
                     kind.name()
                 );
-                let (result, logs, traces) = runner.run_unit(function)?;
+                let (result, logs, traces, coverage) = runner.run_unit(function)?;
                 let passed = result.status;
                 let reason = (!passed).then(|| self.failure_reason(&result));
                 let input = Bytes::copy_from_slice(function.selector().as_slice());
@@ -769,6 +800,7 @@ impl NativeMultiContractRunner {
                         kind: TestKind::Unit { gas: result.tx_gas_used().saturating_sub(stipend) },
                         logs,
                         native_traces: traces,
+                        line_coverage: runner.merge_setup_coverage(coverage),
                         ..Default::default()
                     },
                 );
@@ -793,7 +825,8 @@ impl NativeMultiContractRunner {
             .account_info(&CALLER)
             .map_or(U256::ZERO, |info| info.balance);
         let value = replay.failure.value.unwrap_or_default().min(balance);
-        let (result, logs, traces) = runner.run_input(replay.failure.calldata.clone(), value)?;
+        let (result, logs, traces, coverage) =
+            runner.run_input(replay.failure.calldata.clone(), value)?;
         if result.output.as_ref() == MAGIC_ASSUME {
             let mut test = TestResult::default();
             test.fuzz_result(FuzzTestResult {
@@ -802,6 +835,7 @@ impl NativeMultiContractRunner {
                 ..Default::default()
             });
             test.native_traces = traces;
+            test.line_coverage = runner.merge_setup_coverage(coverage);
             return Ok(test);
         }
         let stipend = intrinsic_gas(
@@ -842,6 +876,7 @@ impl NativeMultiContractRunner {
             ..Default::default()
         });
         test.native_traces = traces;
+        test.line_coverage = runner.merge_setup_coverage(coverage);
         Ok(test)
     }
 
@@ -888,6 +923,7 @@ impl NativeMultiContractRunner {
             .map_or(U256::ZERO, |info| info.balance);
         let mut campaign = FuzzTestResult { success: true, ..Default::default() };
         let mut native_traces = Vec::new();
+        let mut coverage = runner.setup_coverage.clone();
         let mut rejects = 0;
         let started = Instant::now();
         while campaign.gas_by_case.len() < config.runs as usize {
@@ -899,7 +935,8 @@ impl NativeMultiContractRunner {
                 .map_err(|reason| eyre::eyre!("failed to generate fuzz input: {reason}"))?
                 .current();
             let value = requested_value.unwrap_or_default().min(balance);
-            let (result, logs, traces) = runner.run_input(input.clone(), value)?;
+            let (result, logs, traces, hits) = runner.run_input(input.clone(), value)?;
+            HitMaps::merge_opt(&mut coverage, hits);
             if result.output.as_ref() == MAGIC_ASSUME {
                 rejects += 1;
                 if rejects > config.max_test_rejects {
@@ -944,6 +981,7 @@ impl NativeMultiContractRunner {
         let mut test = TestResult::default();
         test.fuzz_result(campaign);
         test.native_traces = native_traces;
+        test.line_coverage = coverage;
         Ok(test)
     }
 
@@ -984,10 +1022,12 @@ impl NativeMultiContractRunner {
 
         let mut campaign = FuzzTestResult { success: true, ..Default::default() };
         let mut native_traces = Vec::new();
+        let mut coverage = runner.setup_coverage.clone();
         for index in 0..first_fixtures.len() {
             let args = rows.iter().map(|values| values[index].clone()).collect_vec();
             let input = Bytes::from(function.abi_encode_input(&args)?);
-            let (result, logs, traces) = runner.run_input(input.clone(), U256::ZERO)?;
+            let (result, logs, traces, hits) = runner.run_input(input.clone(), U256::ZERO)?;
+            HitMaps::merge_opt(&mut coverage, hits);
             let stipend = intrinsic_gas(
                 &env.version,
                 CALLER,
@@ -1013,6 +1053,7 @@ impl NativeMultiContractRunner {
         let mut test = TestResult::default();
         test.table_result(campaign);
         test.native_traces = native_traces;
+        test.line_coverage = coverage;
         Ok(test)
     }
 
@@ -1049,6 +1090,7 @@ impl NativeMultiContractRunner {
         let mut reverts = 0;
         let mut failure = None;
         let mut native_traces = Vec::new();
+        let mut coverage = runner.setup_coverage.clone();
         let started = Instant::now();
         'campaign: for _ in 0..config.runs {
             if config.timeout.is_some_and(|seconds| started.elapsed().as_secs() >= seconds as u64) {
@@ -1088,6 +1130,7 @@ impl NativeMultiContractRunner {
                 sequence.push(call);
                 run.executor.inspector_mut().take_logs();
                 run.executor.inspector_mut().take_traces();
+                HitMaps::merge_opt(&mut coverage, run.executor.inspector_mut().take_coverage());
                 if !result.status {
                     reverts += 1;
                     if config.fail_on_revert || Self::is_assert_panic(&result.output) {
@@ -1104,7 +1147,8 @@ impl NativeMultiContractRunner {
                 let check = index + 1 == depth
                     || config.check_interval > 0 && (index + 1) % config.check_interval == 0;
                 if check {
-                    let (result, _, traces) = run.run_unit(invariant)?;
+                    let (result, _, traces, hits) = run.run_unit(invariant)?;
+                    HitMaps::merge_opt(&mut coverage, hits);
                     native_traces = traces;
                     if !result.status {
                         failure = Some(NativeInvariantFailure::Predicate {
@@ -1116,7 +1160,8 @@ impl NativeMultiContractRunner {
                 }
             }
             if let Some(after_invariant) = after_invariant {
-                let (result, _, traces) = run.run_unit(after_invariant)?;
+                let (result, _, traces, hits) = run.run_unit(after_invariant)?;
+                HitMaps::merge_opt(&mut coverage, hits);
                 native_traces = traces;
                 if !result.status {
                     failure = Some(NativeInvariantFailure::Predicate {
@@ -1160,6 +1205,7 @@ impl NativeMultiContractRunner {
             InvariantOutcome { success, failures, handler_failures, ..Default::default() },
         );
         test.native_traces = native_traces;
+        test.line_coverage = coverage;
         Ok(test)
     }
 
@@ -1215,6 +1261,7 @@ mod tests {
                 gas_price: 0,
                 libraries: NativeLibraries { code: &[], deployment: LibraryDeployment::Nonce },
                 tracing: None,
+                coverage: false,
                 isolation: false,
             },
         )
@@ -1224,7 +1271,7 @@ mod tests {
         };
 
         assert_eq!(runner.address(), sender.create(1));
-        let (result, _, _) = runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();
+        let (result, _, _, _) = runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();
         assert!(result.status);
         assert_eq!(U256::from_be_slice(&result.output), U256::from(42));
     }
@@ -1260,6 +1307,7 @@ mod tests {
                 gas_price: 0,
                 libraries: NativeLibraries { code: &[], deployment: LibraryDeployment::Nonce },
                 tracing: None,
+                coverage: false,
                 isolation: false,
             },
         )

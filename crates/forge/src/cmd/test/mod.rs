@@ -2161,8 +2161,7 @@ impl TestArgs {
         resolved_fork: Option<&ResolvedFork>,
     ) -> Result<(Libraries, TestOutcome)> {
         ensure!(
-            !execution.coverage
-                && !self.debug
+            !self.debug
                 && !self.gas_report
                 && !self.flamegraph
                 && !self.flamechart
@@ -2175,7 +2174,7 @@ impl TestArgs {
                 && self.mutate.is_none()
                 && !self.fuzz_only
                 && !self.fuzz_failure_replay,
-            "native coverage, trace filtering, replay, and campaign modes are not implemented"
+            "native debugging, trace filtering, replay, and campaign modes are not implemented"
         );
         let sender = evm_opts.sender;
         let create2_deployer_available =
@@ -2198,7 +2197,8 @@ impl TestArgs {
             sender,
             create2_deployer_available,
             execution.fuzz_input,
-        )?;
+        )?
+        .with_coverage(execution.coverage);
         let libraries = runner.prepared.libraries.clone();
         let timer = Instant::now();
         let mut results = if let Some(fork) = fork {

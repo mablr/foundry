@@ -5,6 +5,67 @@ use anvil::{NodeConfig, spawn};
 use foundry_evm::fuzz::BaseCounterExample;
 use foundry_test_utils::{forgetest_async, forgetest_init, str};
 
+forgetest_init!(evm2_reports_native_coverage, |prj, cmd| {
+    prj.update_config(|config| config.dynamic_test_linking = false);
+    prj.add_source(
+        "NativeCounter.sol",
+        r#"
+contract NativeCounter {
+    uint256 public count;
+
+    function increment() public {
+        count++;
+    }
+}
+"#,
+    );
+    prj.add_test(
+        "NativeCoverage.t.sol",
+        r#"
+import "../src/NativeCounter.sol";
+
+contract NativeCoverageTest {
+    NativeCounter counter;
+
+    function setUp() public {
+        counter = new NativeCounter();
+    }
+
+    function testIncrement() public {
+        counter.increment();
+        require(counter.count() == 1);
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["coverage", "--report=summary", "--match-contract", "NativeCoverageTest"])
+        .assert_success()
+        .stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+Analysing contracts...
+Running tests...
+
+Ran 1 test for test/NativeCoverage.t.sol:NativeCoverageTest
+[PASS] testIncrement() ([GAS])
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+╭-----------------------+---------------+---------------+------------+---------------╮
+| File                  | % Lines       | % Statements  | % Branches | % Funcs       |
++====================================================================================+
+| src/NativeCounter.sol | 100.00% (2/2) | 100.00% (1/1) | N/A (0/0)  | 100.00% (1/1) |
+|-----------------------+---------------+---------------+------------+---------------|
+| Total                 | 100.00% (2/2) | 100.00% (1/1) | N/A (0/0)  | 100.00% (1/1) |
+╰-----------------------+---------------+---------------+------------+---------------╯
+
+"#]]);
+});
+
 forgetest_init!(evm2_invariant_detects_handler_assertions, |prj, cmd| {
     prj.update_config(|config| {
         config.invariant.runs = 1;

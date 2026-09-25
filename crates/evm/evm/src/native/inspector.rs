@@ -19,6 +19,7 @@ use foundry_evm_core::{
     constants::HARDHAT_CONSOLE_ADDRESS,
     native::{EthereumEnv, FoundryEvmTypes, LocalState, NativeInspector},
 };
+use foundry_evm_coverage::{HitMaps, NativeLineCoverageCollector};
 use foundry_evm_traces::native::{CallTraceArena, TracingInspector, TracingInspectorConfig};
 
 use super::EthereumFactory;
@@ -35,6 +36,7 @@ pub struct EthereumInspectorStack<D: Database + Clone = EmptyDB> {
     logs: Vec<Log>,
     tracing: Option<TracingInspector>,
     traces: Vec<CallTraceArena>,
+    coverage: Option<NativeLineCoverageCollector>,
 }
 
 impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
@@ -50,6 +52,7 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
             logs: Vec::new(),
             tracing: None,
             traces: Vec::new(),
+            coverage: None,
         }
     }
 
@@ -67,6 +70,16 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
     pub fn enable_tracing(&mut self, config: TracingInspectorConfig) {
         self.tracing = Some(TracingInspector::new(config));
         self.traces.clear();
+    }
+
+    /// Enables bytecode hit collection for subsequent executions.
+    pub fn enable_coverage(&mut self) {
+        self.coverage = Some(NativeLineCoverageCollector::default());
+    }
+
+    /// Drains collected bytecode hits, if coverage is enabled.
+    pub fn take_coverage(&mut self) -> Option<HitMaps> {
+        self.coverage.as_mut().map(NativeLineCoverageCollector::take_maps)
     }
 
     /// Runs depth-one CALLs as separate transactions while retaining the surrounding frame.
@@ -239,6 +252,9 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
     }
 
     fn step(&mut self, interp: &mut Interpreter<'_, '_, FoundryEvmTypes>) {
+        if let Some(coverage) = &mut self.coverage {
+            coverage.step(interp);
+        }
         if let Some(tracing) = &mut self.tracing {
             tracing.step(interp);
         }
@@ -263,6 +279,9 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
         message: &mut Message<FoundryEvmTypes>,
     ) -> Option<MessageResult<FoundryEvmTypes>> {
         self.capture_root_state(interp, message.depth);
+        if let Some(coverage) = &mut self.coverage {
+            let _ = coverage.call(interp, message);
+        }
         if let Some(tracing) = &mut self.tracing
             && !(self.in_isolated_transaction && message.depth == 0)
         {
@@ -339,6 +358,9 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
         message: &Message<FoundryEvmTypes>,
         result: &mut MessageResult<FoundryEvmTypes>,
     ) {
+        if let Some(coverage) = &mut self.coverage {
+            coverage.create_end(interp, message, result);
+        }
         self.cheatcodes.create_end(interp, message, result);
         self.finish_root_state(interp, message.depth, result.stop);
         if let Some(tracing) = &mut self.tracing {
