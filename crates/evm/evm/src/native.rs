@@ -106,6 +106,7 @@ impl<D: Database + Clone + 'static, I: NativeInspector<D>> EthereumExecutor<D, I
         if let Some(state) = inspector.take_backend_reset() {
             self.state = state;
         }
+        inspector.finish_transaction(outcome.result.tx_gas_used());
         self.state.commit(&outcome.pending_state);
         self.env.block = block;
         self.inspector = inspector;

@@ -30,6 +30,9 @@ pub trait NativeInspector<D: Database + Clone>: Inspector<FoundryEvmTypes> + Clo
     fn take_backend_reset(&mut self) -> Option<LocalState<D>> {
         None
     }
+
+    /// Finalizes observations for an accepted transaction.
+    fn finish_transaction(&mut self, _gas_used: u64) {}
 }
 
 impl<D: Database + Clone> NativeInspector<D> for NoopInspector {}

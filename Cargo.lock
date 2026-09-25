@@ -5089,6 +5089,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "evm2-inspectors"
+version = "0.1.0"
+source = "git+https://github.com/mablr/evm2?rev=2b51ce7d44c38b06eb125a5863655a4f470390f0#2b51ce7d44c38b06eb125a5863655a4f470390f0"
+dependencies = [
+ "alloy-consensus",
+ "alloy-eip2930",
+ "alloy-primitives",
+ "alloy-rpc-types-eth",
+ "alloy-rpc-types-trace",
+ "alloy-sol-types",
+ "anstyle",
+ "colorchoice",
+ "evm2",
+ "num-bigint 0.5.1",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "evm2-macros"
 version = "0.1.0"
 source = "git+https://github.com/mablr/evm2?rev=2b51ce7d44c38b06eb125a5863655a4f470390f0#2b51ce7d44c38b06eb125a5863655a4f470390f0"
@@ -6034,6 +6054,7 @@ dependencies = [
  "alloy-rpc-types",
  "alloy-sol-types",
  "evm2",
+ "evm2-inspectors",
  "eyre",
  "foundry-cheatcodes",
  "foundry-common",
@@ -8420,6 +8441,7 @@ checksum = "93e7820bc0a80a0238e650327316f929ba18d5be054b647490a3a6a339f3e7c0"
 dependencies = [
  "num-integer",
  "num-traits",
+ "serde",
 ]
 
 [[package]]
