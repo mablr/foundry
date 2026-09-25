@@ -342,14 +342,38 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             .collect()
     }
 
+    fn read_target_selectors(
+        &self,
+        abi: &JsonAbi,
+        name: &str,
+    ) -> Result<BTreeMap<Address, Vec<Selector>>> {
+        let mut targeted = BTreeMap::<Address, Vec<Selector>>::new();
+        for value in self.read_target_list(abi, name)? {
+            let fields = match value {
+                DynSolValue::Tuple(fields) => fields,
+                DynSolValue::CustomStruct { tuple, .. } => tuple,
+                value => eyre::bail!("invalid {name} entry: {value:?}"),
+            };
+            let [DynSolValue::Address(address), DynSolValue::Array(selectors)] = fields.as_slice()
+            else {
+                eyre::bail!("invalid {name} entry");
+            };
+            for selector in selectors {
+                let DynSolValue::FixedBytes(bytes, 4) = selector else {
+                    eyre::bail!("invalid {name} selector");
+                };
+                targeted.entry(*address).or_default().push(Selector::from_slice(&bytes[..4]));
+            }
+        }
+        Ok(targeted)
+    }
+
     fn invariant_targets(
         &self,
         abi: &JsonAbi,
         known_contracts: &ContractsByArtifact,
     ) -> Result<Vec<(Address, String, Function)>> {
         for name in [
-            "targetSelectors",
-            "excludeSelectors",
             "targetArtifacts",
             "excludeArtifacts",
             "targetArtifactSelectors",
@@ -364,6 +388,8 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         }
         let selected = self.read_target_addresses(abi, "targetContracts")?;
         let excluded = self.read_target_addresses(abi, "excludeContracts")?;
+        let targeted_selectors = self.read_target_selectors(abi, "targetSelectors")?;
+        let excluded_selectors = self.read_target_selectors(abi, "excludeSelectors")?;
         let explicit_targets = !selected.is_empty();
         let mut state = self.executor.state().clone();
         let mut addresses = if explicit_targets {
@@ -371,26 +397,73 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         } else {
             state.database().cache.accounts.keys().copied().collect::<Vec<_>>()
         };
+        addresses.extend(targeted_selectors.keys().copied());
+        addresses.extend(excluded_selectors.keys().copied());
         addresses.sort_unstable();
         addresses.dedup();
         let mut targets = Vec::new();
         for address in addresses {
-            if (address == self.address && !explicit_targets) || excluded.contains(&address) {
+            if (address == self.address
+                && !explicit_targets
+                && !targeted_selectors.contains_key(&address))
+                || excluded.contains(&address)
+            {
                 continue;
             }
-            let Some(info) = Database::get_account(&mut state, &address)? else { continue };
+            let Some(info) = Database::get_account(&mut state, &address)? else {
+                ensure!(
+                    !targeted_selectors.contains_key(&address)
+                        && !excluded_selectors.contains_key(&address),
+                    "invariant selector address does not have an associated contract: {address}"
+                );
+                continue;
+            };
             let code = Database::get_code_by_hash(&mut state, &info.code_hash)?;
             let Some((id, contract)) =
                 known_contracts.find_by_deployed_code(code.original_byte_slice())
             else {
+                ensure!(
+                    !targeted_selectors.contains_key(&address)
+                        && !excluded_selectors.contains_key(&address),
+                    "invariant selector address does not have an associated contract: {address}"
+                );
                 continue;
             };
+            for (name, selectors) in [
+                ("targetSelectors", targeted_selectors.get(&address)),
+                ("excludeSelectors", excluded_selectors.get(&address)),
+            ] {
+                if let Some(selectors) = selectors {
+                    for selector in selectors {
+                        ensure!(
+                            contract
+                                .abi
+                                .functions()
+                                .any(|function| function.selector() == *selector),
+                            "{name}: {} does not have the selector {selector}",
+                            id.name
+                        );
+                    }
+                }
+            }
             targets.extend(contract.abi.functions().filter_map(|function| {
-                (!matches!(
-                    function.state_mutability,
-                    StateMutability::Pure | StateMutability::View
+                let selector = function.selector();
+                let selected = targeted_selectors
+                    .get(&address)
+                    .is_some_and(|selectors| selectors.contains(&selector));
+                let default = !targeted_selectors.contains_key(&address)
+                    && !matches!(
+                        function.state_mutability,
+                        StateMutability::Pure | StateMutability::View
+                    );
+                let excluded = excluded_selectors
+                    .get(&address)
+                    .is_some_and(|selectors| selectors.contains(&selector));
+                ((selected || default) && !excluded).then_some((
+                    address,
+                    id.name.clone(),
+                    function.clone(),
                 ))
-                .then_some((address, id.name.clone(), function.clone()))
             }));
         }
         ensure!(!targets.is_empty(), "No functions to fuzz.");

@@ -216,6 +216,143 @@ Tip: Run `forge test --rerun` to retry only the 1 failed test
     );
 });
 
+forgetest_init!(evm2_invariant_targets_selected_handler, |prj, cmd| {
+    prj.update_config(|config| {
+        config.invariant.runs = 1;
+        config.invariant.depth = 1;
+    });
+    prj.add_test(
+        "NativeSelectorInvariant.t.sol",
+        r#"
+contract NativeSelectorHandler {
+    function safe() external {}
+
+    function breakIt() external pure {
+        assert(false);
+    }
+}
+
+contract NativeSelectorInvariantTest {
+    struct FuzzSelector {
+        address addr;
+        bytes4[] selectors;
+    }
+
+    NativeSelectorHandler handler;
+
+    function setUp() public {
+        handler = new NativeSelectorHandler();
+    }
+
+    function targetSelectors() public view returns (FuzzSelector[] memory targets) {
+        targets = new FuzzSelector[](1);
+        targets[0].addr = address(handler);
+        targets[0].selectors = new bytes4[](1);
+        targets[0].selectors[0] = NativeSelectorHandler.breakIt.selector;
+    }
+
+    function invariantAlways() public pure {}
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-contract", "NativeSelectorInvariantTest"])
+        .assert_failure()
+        .stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeSelectorInvariant.t.sol:NativeSelectorInvariantTest
+Assertion Tests: 1 assertion bug(s) found
+[FAIL: panic: assertion failed (0x01)] NativeSelectorHandler::breakIt
+	[Sequence] (original: 1, shrunk: 1)
+		sender=[..] addr=[..] calldata=0x6a1f9e19 args=[]
+ invariantAlways() (runs: 1, calls: 1, reverts: 1)
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 0 skipped (1 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/NativeSelectorInvariant.t.sol:NativeSelectorInvariantTest
+Assertion Tests: 1 assertion bug(s) found
+[FAIL: panic: assertion failed (0x01)] NativeSelectorHandler::breakIt
+	[Sequence] (original: 1, shrunk: 1)
+		sender=[..] addr=[..] calldata=0x6a1f9e19 args=[]
+ invariantAlways() (runs: 1, calls: 1, reverts: 1)
+
+Encountered a total of 1 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 1 failed test
+
+[SEED] (use `--fuzz-seed` to reproduce)
+
+"#]]);
+});
+
+forgetest_init!(evm2_invariant_excludes_handler_selector, |prj, cmd| {
+    prj.update_config(|config| {
+        config.invariant.runs = 1;
+        config.invariant.depth = 2;
+    });
+    prj.add_test(
+        "NativeExcludedSelector.t.sol",
+        r#"
+contract NativeExcludedHandler {
+    function safe() external {}
+
+    function breakIt() external pure {
+        assert(false);
+    }
+}
+
+contract NativeExcludedSelectorTest {
+    struct FuzzSelector {
+        address addr;
+        bytes4[] selectors;
+    }
+
+    NativeExcludedHandler handler;
+
+    function setUp() public {
+        handler = new NativeExcludedHandler();
+    }
+
+    function targetContracts() public view returns (address[] memory targets) {
+        targets = new address[](1);
+        targets[0] = address(handler);
+    }
+
+    function excludeSelectors() public view returns (FuzzSelector[] memory excluded) {
+        excluded = new FuzzSelector[](1);
+        excluded[0].addr = address(handler);
+        excluded[0].selectors = new bytes4[](1);
+        excluded[0].selectors[0] = NativeExcludedHandler.breakIt.selector;
+    }
+
+    function invariantAlways() public pure {}
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-contract", "NativeExcludedSelectorTest"])
+        .assert_success()
+        .stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeExcludedSelector.t.sol:NativeExcludedSelectorTest
+[PASS] invariantAlways() (runs: 1, calls: 2, reverts: 0)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]]);
+});
+
 forgetest_init!(evm2_runs_table_rows_from_setup_fixtures, |prj, cmd| {
     prj.add_test(
         "NativeTable.t.sol",
