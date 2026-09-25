@@ -5,6 +5,145 @@ use anvil::{NodeConfig, spawn};
 use foundry_evm::fuzz::BaseCounterExample;
 use foundry_test_utils::{forgetest_async, forgetest_init, str};
 
+forgetest_init!(evm2_invariant_detects_handler_assertions, |prj, cmd| {
+    prj.update_config(|config| {
+        config.invariant.runs = 1;
+        config.invariant.depth = 1;
+    });
+    prj.add_test(
+        "NativeHandlerAssertion.t.sol",
+        r#"
+contract NativeAssertingHandler {
+    uint256 public touched;
+
+    function breakIt() external {
+        touched = 1;
+        assert(false);
+    }
+}
+
+contract NativeAssertionInvariantTest {
+    NativeAssertingHandler handler;
+
+    function setUp() public {
+        handler = new NativeAssertingHandler();
+    }
+
+    function targetContracts() public view returns (address[] memory targets) {
+        targets = new address[](1);
+        targets[0] = address(handler);
+    }
+
+    function invariantAlways() public pure {}
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-contract", "NativeAssertionInvariantTest"])
+        .assert_failure()
+        .stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeHandlerAssertion.t.sol:NativeAssertionInvariantTest
+Assertion Tests: 1 assertion bug(s) found
+[FAIL: panic: assertion failed (0x01)] NativeAssertingHandler::breakIt
+	[Sequence] (original: 1, shrunk: 1)
+		sender=[..] addr=[..] calldata=0x6a1f9e19 args=[]
+ invariantAlways() (runs: 1, calls: 1, reverts: 1)
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 0 skipped (1 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/NativeHandlerAssertion.t.sol:NativeAssertionInvariantTest
+Assertion Tests: 1 assertion bug(s) found
+[FAIL: panic: assertion failed (0x01)] NativeAssertingHandler::breakIt
+	[Sequence] (original: 1, shrunk: 1)
+		sender=[..] addr=[..] calldata=0x6a1f9e19 args=[]
+ invariantAlways() (runs: 1, calls: 1, reverts: 1)
+
+Encountered a total of 1 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 1 failed test
+
+[SEED] (use `--fuzz-seed` to reproduce)
+
+"#]]);
+});
+
+forgetest_init!(evm2_invariant_checks_stateful_handler_sequence, |prj, cmd| {
+    prj.update_config(|config| {
+        config.invariant.runs = 1;
+        config.invariant.depth = 2;
+    });
+    prj.add_test(
+        "NativeInvariant.t.sol",
+        r#"
+contract NativeCounter {
+    uint256 public count;
+
+    function increment(uint256) external {
+        count++;
+    }
+}
+
+contract NativeInvariantTest {
+    NativeCounter counter;
+
+    function setUp() public {
+        counter = new NativeCounter();
+    }
+
+    function targetContracts() public view returns (address[] memory targets) {
+        targets = new address[](1);
+        targets[0] = address(counter);
+    }
+
+    function invariantCountBelowTwo() public view {
+        require(counter.count() < 2, "count reached two");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-contract", "NativeInvariantTest"]).assert_failure().stdout_eq(str![
+        [r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeInvariant.t.sol:NativeInvariantTest
+[FAIL: count reached two]
+	[Sequence] (original: 2, shrunk: 2)
+		sender=[..] addr=[..] calldata=0x[..] args=[..]
+		sender=[..] addr=[..] calldata=0x[..] args=[..]
+ invariantCountBelowTwo() (runs: 1, calls: 2, reverts: 0)
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 0 skipped (1 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/NativeInvariant.t.sol:NativeInvariantTest
+[FAIL: count reached two]
+	[Sequence] (original: 2, shrunk: 2)
+		sender=[..] addr=[..] calldata=0x[..] args=[..]
+		sender=[..] addr=[..] calldata=0x[..] args=[..]
+ invariantCountBelowTwo() (runs: 1, calls: 2, reverts: 0)
+
+Encountered a total of 1 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 1 failed test
+
+[SEED] (use `--fuzz-seed` to reproduce)
+
+"#]
+    ]);
+});
+
 forgetest_init!(evm2_runs_table_rows_from_setup_fixtures, |prj, cmd| {
     prj.add_test(
         "NativeTable.t.sol",

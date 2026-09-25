@@ -2,7 +2,10 @@
 
 use crate::{
     TestContract, TestFilter,
-    result::{SuiteResult, TestKind, TestResult, TestStatus},
+    result::{
+        InvariantFailure, InvariantOutcome, SuiteResult, TestKind, TestResult, TestStatus,
+        invariant_kind,
+    },
     test_contract::{LibraryDeployment, PreparedTestArtifacts, analyze_compiled_sources},
     test_matcher::{
         FuzzFailureReplayConfig, TestFunctionMatcher, is_generated_symbolic_regression_contract,
@@ -11,7 +14,7 @@ use crate::{
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
 use alloy_json_abi::{Function, JsonAbi, StateMutability};
-use alloy_primitives::{Address, Bytes, Log, TxKind, U256, map::HashMap};
+use alloy_primitives::{Address, Bytes, Log, Selector, TxKind, U256, map::HashMap};
 use evm2::{
     TxResult,
     ethereum::{TxEnvelope, intrinsic_gas},
@@ -19,11 +22,11 @@ use evm2::{
 };
 use eyre::{Result, ensure};
 use foundry_common::{
-    LIBRARY_DEPLOYER, TestFunctionExt, TestFunctionKind,
+    ContractsByArtifact, LIBRARY_DEPLOYER, TestFunctionExt, TestFunctionKind,
     fmt::{format_tokens, format_tokens_raw},
 };
 use foundry_compilers::ProjectCompileOutput;
-use foundry_config::{Config, InlineConfig};
+use foundry_config::{Config, InlineConfig, InvariantDepthMode};
 use foundry_evm::{
     core::{
         constants::{
@@ -45,6 +48,7 @@ use proptest::{
     strategy::{Strategy, ValueTree},
     test_runner::{RngAlgorithm, TestRng, TestRunner},
 };
+use rand::Rng;
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 /// Linked local tests and native Ethereum execution options.
@@ -75,6 +79,20 @@ pub(crate) enum NativeContractSetup<D: Database + Clone> {
         result: TxResult,
         logs: Vec<Log>,
         traces: Vec<NativeCallTraceArena>,
+    },
+}
+
+enum NativeInvariantFailure {
+    Predicate {
+        reason: String,
+        sequence: Vec<BaseCounterExample>,
+    },
+    Handler {
+        name: String,
+        target: Address,
+        selector: Selector,
+        reason: String,
+        sequence: Vec<BaseCounterExample>,
     },
 }
 
@@ -295,6 +313,88 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         }
         let mut values = function.abi_decode_output(&result.output).ok()?;
         Some(if values.len() == 1 { values.pop()? } else { DynSolValue::Tuple(values) })
+    }
+
+    fn read_target_list(&self, abi: &JsonAbi, name: &str) -> Result<Vec<DynSolValue>> {
+        let Some(function) = abi
+            .functions
+            .get(name)
+            .and_then(|functions| functions.iter().find(|function| function.inputs.is_empty()))
+        else {
+            return Ok(Vec::new());
+        };
+        let (result, _, _) = self.run_unit(function)?;
+        if !result.status {
+            return Ok(Vec::new());
+        }
+        let Some(DynSolValue::Array(values)) =
+            function.abi_decode_output(&result.output)?.into_iter().next()
+        else {
+            return Ok(Vec::new());
+        };
+        Ok(values)
+    }
+
+    fn read_target_addresses(&self, abi: &JsonAbi, name: &str) -> Result<Vec<Address>> {
+        self.read_target_list(abi, name)?
+            .into_iter()
+            .map(|value| value.as_address().ok_or_else(|| eyre::eyre!("invalid {name} address")))
+            .collect()
+    }
+
+    fn invariant_targets(
+        &self,
+        abi: &JsonAbi,
+        known_contracts: &ContractsByArtifact,
+    ) -> Result<Vec<(Address, String, Function)>> {
+        for name in [
+            "targetSelectors",
+            "excludeSelectors",
+            "targetArtifacts",
+            "excludeArtifacts",
+            "targetArtifactSelectors",
+            "targetInterfaces",
+            "targetSenders",
+            "excludeSenders",
+        ] {
+            ensure!(
+                self.read_target_list(abi, name)?.is_empty(),
+                "native invariant {name} selection is not implemented"
+            );
+        }
+        let selected = self.read_target_addresses(abi, "targetContracts")?;
+        let excluded = self.read_target_addresses(abi, "excludeContracts")?;
+        let explicit_targets = !selected.is_empty();
+        let mut state = self.executor.state().clone();
+        let mut addresses = if explicit_targets {
+            selected
+        } else {
+            state.database().cache.accounts.keys().copied().collect::<Vec<_>>()
+        };
+        addresses.sort_unstable();
+        addresses.dedup();
+        let mut targets = Vec::new();
+        for address in addresses {
+            if (address == self.address && !explicit_targets) || excluded.contains(&address) {
+                continue;
+            }
+            let Some(info) = Database::get_account(&mut state, &address)? else { continue };
+            let code = Database::get_code_by_hash(&mut state, &info.code_hash)?;
+            let Some((id, contract)) =
+                known_contracts.find_by_deployed_code(code.original_byte_slice())
+            else {
+                continue;
+            };
+            targets.extend(contract.abi.functions().filter_map(|function| {
+                (!matches!(
+                    function.state_mutability,
+                    StateMutability::Pure | StateMutability::View
+                ))
+                .then_some((address, id.name.clone(), function.clone()))
+            }));
+        }
+        ensure!(!targets.is_empty(), "No functions to fuzz.");
+        Ok(targets)
     }
 
     fn execute(&mut self, input: Bytes) -> Result<TxResult> {
@@ -546,6 +646,28 @@ impl NativeMultiContractRunner {
                         function.signature(),
                         self.run_table_test(&runner, function, fixtures, &env)?,
                     );
+                    continue;
+                }
+                if matches!(kind, TestFunctionKind::InvariantTest) {
+                    let fixtures = fixtures.get_or_insert_with(|| {
+                        runner
+                            .fuzz_fixtures(&contract.abi)
+                            .with_enum_bounds(self.enum_bounds.clone())
+                    });
+                    let test = match self.run_invariant_campaign(
+                        &runner,
+                        function,
+                        &contract.abi,
+                        fixtures,
+                    ) {
+                        Ok(test) => test,
+                        Err(error) => {
+                            let mut test = TestResult::default();
+                            test.invariant_setup_fail(error);
+                            test
+                        }
+                    };
+                    tests.insert(function.signature(), test);
                     continue;
                 }
                 ensure!(
@@ -819,6 +941,145 @@ impl NativeMultiContractRunner {
         test.table_result(campaign);
         test.native_traces = native_traces;
         Ok(test)
+    }
+
+    fn run_invariant_campaign<D: Database + Clone + 'static>(
+        &self,
+        runner: &NativeContractRunner<D>,
+        invariant: &Function,
+        abi: &JsonAbi,
+        fixtures: &FuzzFixtures,
+    ) -> Result<TestResult> {
+        ensure!(invariant.inputs.is_empty(), "invariant functions must take no parameters");
+        let targets = runner.invariant_targets(abi, &self.prepared.known_contracts)?;
+        let config = &self.config.invariant;
+        ensure!(!config.call_override, "native invariant call override is not implemented");
+        ensure!(!config.has_delay(), "native invariant transaction delays are not implemented");
+        let test_runner_config = proptest::test_runner::Config {
+            cases: config.runs,
+            failure_persistence: None,
+            ..Default::default()
+        };
+        let mut generator = if let Some(seed) = self.config.fuzz.seed {
+            let rng = TestRng::from_seed(RngAlgorithm::ChaCha, &seed.to_be_bytes::<32>());
+            TestRunner::new_with_rng(test_runner_config, rng)
+        } else {
+            TestRunner::new(test_runner_config)
+        };
+        let target_strategy = proptest::sample::select(targets);
+        let mut runs = 0;
+        let mut calls = 0;
+        let mut reverts = 0;
+        let mut failure = None;
+        let mut native_traces = Vec::new();
+        let started = Instant::now();
+        'campaign: for _ in 0..config.runs {
+            if config.timeout.is_some_and(|seconds| started.elapsed().as_secs() >= seconds as u64) {
+                break;
+            }
+            runs += 1;
+            let mut run = runner.clone();
+            run.executor.inspector_mut().take_logs();
+            run.executor.inspector_mut().take_traces();
+            let mut sequence = Vec::new();
+            let depth = match config.depth_mode {
+                InvariantDepthMode::Fixed => config.depth,
+                InvariantDepthMode::Random => {
+                    let minimum = config.min_depth.max(1);
+                    if config.depth <= minimum {
+                        config.depth.max(1)
+                    } else {
+                        generator.rng().random_range(minimum..=config.depth)
+                    }
+                }
+            };
+            for index in 0..depth {
+                let (target, contract, function) = target_strategy
+                    .new_tree(&mut generator)
+                    .map_err(|reason| eyre::eyre!("failed to select invariant target: {reason}"))?
+                    .current();
+                let input = fuzz_calldata(function.clone(), fixtures)
+                    .new_tree(&mut generator)
+                    .map_err(|reason| eyre::eyre!("failed to generate invariant call: {reason}"))?
+                    .current();
+                let result = run.execute_call(CALLER, target, input.clone(), U256::ZERO)?;
+                calls += 1;
+                let args = function.abi_decode_input(&input[4..]).unwrap_or_default();
+                let mut call = BaseCounterExample::from_fuzz_call(input, args, None);
+                call.sender = Some(CALLER);
+                call.addr = Some(target);
+                sequence.push(call);
+                run.executor.inspector_mut().take_logs();
+                run.executor.inspector_mut().take_traces();
+                if !result.status {
+                    reverts += 1;
+                    if config.fail_on_revert || Self::is_assert_panic(&result.output) {
+                        failure = Some(NativeInvariantFailure::Handler {
+                            name: format!("{contract}::{}", function.name),
+                            target,
+                            selector: function.selector(),
+                            reason: self.failure_reason(&result),
+                            sequence,
+                        });
+                        break 'campaign;
+                    }
+                }
+                let check = index + 1 == depth
+                    || config.check_interval > 0 && (index + 1) % config.check_interval == 0;
+                if check {
+                    let (result, _, traces) = run.run_unit(invariant)?;
+                    native_traces = traces;
+                    if !result.status {
+                        failure = Some(NativeInvariantFailure::Predicate {
+                            reason: self.failure_reason(&result),
+                            sequence,
+                        });
+                        break 'campaign;
+                    }
+                }
+            }
+        }
+        let success = failure.is_none();
+        let mut failures = Vec::new();
+        let mut handler_failures = Vec::new();
+        match failure {
+            Some(NativeInvariantFailure::Predicate { reason, sequence }) => {
+                failures.push(InvariantFailure::Predicate {
+                    name: invariant.name.clone(),
+                    reason,
+                    counterexample: Some(CounterExample::Sequence(sequence.len(), sequence)),
+                    artifact: None,
+                    minimization: None,
+                    persisted_path: Default::default(),
+                    is_anchor: true,
+                });
+            }
+            Some(NativeInvariantFailure::Handler { name, target, selector, reason, sequence }) => {
+                handler_failures.push(InvariantFailure::Handler {
+                    name,
+                    reverter: target,
+                    selector,
+                    reason,
+                    counterexample: Some(CounterExample::Sequence(sequence.len(), sequence)),
+                    artifact: None,
+                });
+            }
+            None => {}
+        }
+        let mut test = TestResult::default();
+        test.invariant_result(
+            invariant_kind(runs as usize, calls as usize, reverts as usize),
+            InvariantOutcome { success, failures, handler_failures, ..Default::default() },
+        );
+        test.native_traces = native_traces;
+        Ok(test)
+    }
+
+    fn is_assert_panic(output: &[u8]) -> bool {
+        output.len() == 36
+            && output[..4] == [0x4e, 0x48, 0x7b, 0x71]
+            && output[4..35].iter().all(|byte| *byte == 0)
+            && output[35] == 1
     }
 
     fn failure_reason(&self, result: &TxResult) -> String {
