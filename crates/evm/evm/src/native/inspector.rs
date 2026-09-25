@@ -91,8 +91,7 @@ mod tests {
             SpecId::CANCUN,
             BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
         );
-        let mut executor = EthereumExecutor::new(env, state);
-        let mut inspector = EthereumInspectorStack::default();
+        let mut executor = EthereumExecutor::new_foundry(env, state);
         let mut console_input = keccak256("log(string)").as_slice()[..4].to_vec();
         console_input.extend(("hello".to_string(),).abi_encode_params());
 
@@ -109,17 +108,17 @@ mod tests {
                 }),
                 sender,
             );
-            let result = executor.inspect_transact(&tx, &mut inspector).unwrap();
+            let result = executor.transact(&tx).unwrap();
             assert!(result.status);
             if nonce == 1 {
                 assert_eq!(result.logs.len(), 1, "{result:?}");
             }
         }
 
-        let logs = inspector.take_logs();
+        let logs = executor.inspector_mut().take_logs();
         assert_eq!(logs.len(), 2, "{logs:?}");
         assert_eq!(decode_console_log(&logs[0]).as_deref(), Some("hello"));
         assert_eq!(logs[1].data.data.as_ref(), &[0x2a]);
-        assert!(inspector.take_logs().is_empty());
+        assert!(executor.inspector_mut().take_logs().is_empty());
     }
 }

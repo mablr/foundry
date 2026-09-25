@@ -2,7 +2,7 @@
 
 use alloy_consensus::transaction::Recovered;
 use evm2::{
-    BaseEvmTypes, Evm, ExecutionConfig, Inspector, Precompiles, TxResult,
+    BaseEvmTypes, Evm, ExecutionConfig, Inspector, NoopInspector, Precompiles, TxResult,
     ethereum::{TxEnvelope, ethereum_tx_registry},
     evm::{Database, Db, DynDatabase, EmptyDB, registry::HandlerResult},
 };
@@ -33,17 +33,44 @@ impl EthereumFactory {
     }
 }
 
-/// Ethereum execution with copy-on-write local state.
+/// Ethereum execution with copy-on-write local state and an owned inspector.
 #[derive(Clone, Debug)]
-pub struct EthereumExecutor<D: Database + Clone = EmptyDB> {
+pub struct EthereumExecutor<D: Database + Clone = EmptyDB, I = NoopInspector> {
     env: EthereumEnv,
     state: LocalState<D>,
+    inspector: I,
 }
 
-impl<D: Database + Clone> EthereumExecutor<D> {
-    /// Creates an executor over local Ethereum state.
-    pub const fn new(env: EthereumEnv, state: LocalState<D>) -> Self {
-        Self { env, state }
+impl<D: Database + Clone> EthereumExecutor<D, NoopInspector> {
+    /// Creates an executor without Foundry inspectors.
+    pub fn new(env: EthereumEnv, state: LocalState<D>) -> Self {
+        Self { env, state, inspector: NoopInspector::default() }
+    }
+}
+
+impl<D: Database + Clone> EthereumExecutor<D, EthereumInspectorStack> {
+    /// Creates an executor with Foundry's native inspector stack installed.
+    pub fn new_foundry(env: EthereumEnv, mut state: LocalState<D>) -> Self {
+        let inspector = EthereumInspectorStack::default();
+        inspector.install(&mut state);
+        Self { env, state, inspector }
+    }
+}
+
+impl<D: Database + Clone, I: Inspector<BaseEvmTypes> + Clone> EthereumExecutor<D, I> {
+    /// Creates an executor with an inspector retained across accepted transactions.
+    pub const fn with_inspector(env: EthereumEnv, state: LocalState<D>, inspector: I) -> Self {
+        Self { env, state, inspector }
+    }
+
+    /// Returns the inspector and its accumulated observations.
+    pub const fn inspector(&self) -> &I {
+        &self.inspector
+    }
+
+    /// Returns the mutable inspector and its accumulated observations.
+    pub const fn inspector_mut(&mut self) -> &mut I {
+        &mut self.inspector
     }
 
     /// Returns the accepted state.
@@ -56,47 +83,25 @@ impl<D: Database + Clone> EthereumExecutor<D> {
         &mut self.state
     }
 
-    /// Executes a transaction without accepting its state changes.
+    /// Executes a transaction without accepting its state or inspector changes.
     pub fn call(&self, tx: &Recovered<TxEnvelope>) -> HandlerResult<TxResult> {
         let mut state = self.state.clone();
+        let mut inspector = self.inspector.clone();
         let mut evm = EthereumFactory.create(self.env, Db::new(&mut state));
-        Ok(evm.transact(tx)?.discard())
-    }
-
-    /// Executes an inspected transaction without accepting its state changes.
-    pub fn inspect_call<I: Inspector<BaseEvmTypes>>(
-        &self,
-        tx: &Recovered<TxEnvelope>,
-        inspector: &mut I,
-    ) -> HandlerResult<TxResult> {
-        let mut state = self.state.clone();
-        let mut evm = EthereumFactory.create(self.env, Db::new(&mut state));
-        evm.set_inspector(inspector);
+        evm.set_inspector(&mut inspector);
         Ok(evm.transact(tx)?.discard())
     }
 
     /// Executes and accepts a transaction's state changes.
     pub fn transact(&mut self, tx: &Recovered<TxEnvelope>) -> HandlerResult<TxResult> {
+        let mut inspector = self.inspector.clone();
         let outcome = {
             let mut evm = EthereumFactory.create(self.env, Db::new(&mut self.state));
+            evm.set_inspector(&mut inspector);
             evm.transact(tx)?.detach()
         };
         self.state.commit(&outcome.pending_state);
-        Ok(outcome.result)
-    }
-
-    /// Executes an inspected transaction and accepts its state changes.
-    pub fn inspect_transact<I: Inspector<BaseEvmTypes>>(
-        &mut self,
-        tx: &Recovered<TxEnvelope>,
-        inspector: &mut I,
-    ) -> HandlerResult<TxResult> {
-        let outcome = {
-            let mut evm = EthereumFactory.create(self.env, Db::new(&mut self.state));
-            evm.set_inspector(inspector);
-            evm.transact(tx)?.detach()
-        };
-        self.state.commit(&outcome.pending_state);
+        self.inspector = inspector;
         Ok(outcome.result)
     }
 }
@@ -213,7 +218,8 @@ mod tests {
     }
 
     #[test]
-    fn inspector_mutations_follow_call_and_transaction_boundaries() {
+    fn owned_inspector_observations_follow_execution_boundaries() {
+        #[derive(Clone)]
         struct BalanceInspector {
             target: Address,
             calls: usize,
@@ -246,7 +252,11 @@ mod tests {
             SpecId::CANCUN,
             BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
         );
-        let mut executor = EthereumExecutor::new(env, LocalState::default());
+        let mut executor = EthereumExecutor::with_inspector(
+            env,
+            LocalState::default(),
+            BalanceInspector { target, calls: 0 },
+        );
         let tx = Recovered::new_unchecked(
             TxEnvelope::Legacy(TxLegacy {
                 gas_limit: 100_000,
@@ -255,18 +265,30 @@ mod tests {
             }),
             caller,
         );
-        let mut inspector = BalanceInspector { target, calls: 0 };
-
-        assert!(executor.inspect_call(&tx, &mut inspector).unwrap().status);
-        assert_eq!(inspector.calls, 1);
+        assert!(executor.call(&tx).unwrap().status);
+        assert_eq!(executor.inspector().calls, 0);
         assert!(!executor.state().database().cache.accounts.contains_key(&target));
 
-        assert!(executor.inspect_transact(&tx, &mut inspector).unwrap().status);
-        assert_eq!(inspector.calls, 2);
+        assert!(executor.transact(&tx).unwrap().status);
+        assert_eq!(executor.inspector().calls, 1);
         assert_eq!(
             executor.state().database().cache.accounts[&target].as_ref().unwrap().balance,
             U256::from(7)
         );
+
+        let mut clone = executor.clone();
+        let next_tx = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                nonce: 1,
+                gas_limit: 100_000,
+                to: TxKind::Call(target),
+                ..Default::default()
+            }),
+            caller,
+        );
+        assert!(clone.transact(&next_tx).unwrap().status);
+        assert_eq!(clone.inspector().calls, 2);
+        assert_eq!(executor.inspector().calls, 1);
     }
 
     #[test]
@@ -277,7 +299,8 @@ mod tests {
             SpecId::CANCUN,
             BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
         );
-        let mut executor = EthereumExecutor::new(env, LocalState::default());
+        let mut executor =
+            EthereumExecutor::with_inspector(env, LocalState::default(), NativeCheatcodes);
         let tx = Recovered::new_unchecked(
             TxEnvelope::Legacy(TxLegacy {
                 gas_limit: 100_000,
@@ -289,12 +312,10 @@ mod tests {
             }),
             caller,
         );
-        let mut inspector = NativeCheatcodes;
-
-        assert!(executor.inspect_call(&tx, &mut inspector).unwrap().status);
+        assert!(executor.call(&tx).unwrap().status);
         assert!(!executor.state().database().cache.accounts.contains_key(&target));
 
-        assert!(executor.inspect_transact(&tx, &mut inspector).unwrap().status);
+        assert!(executor.transact(&tx).unwrap().status);
         assert_eq!(
             executor.state().database().cache.accounts[&target].as_ref().unwrap().balance,
             U256::from(7)
@@ -390,7 +411,7 @@ mod tests {
             SpecId::CANCUN,
             BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
         );
-        let mut executor = EthereumExecutor::new(env, state);
+        let mut executor = EthereumExecutor::with_inspector(env, state, NativeCheatcodes);
         let tx = Recovered::new_unchecked(
             TxEnvelope::Legacy(TxLegacy {
                 gas_limit: 100_000,
@@ -400,7 +421,7 @@ mod tests {
             caller,
         );
 
-        assert!(!executor.inspect_transact(&tx, &mut NativeCheatcodes).unwrap().status);
+        assert!(!executor.transact(&tx).unwrap().status);
         assert!(executor.state().database().account_info(&target).is_none());
 
         let mut success_executor = executor.clone();
@@ -417,9 +438,7 @@ mod tests {
             }),
             caller,
         );
-        assert!(
-            success_executor.inspect_transact(&success_tx, &mut NativeCheatcodes).unwrap().status
-        );
+        assert!(success_executor.transact(&success_tx).unwrap().status);
         assert_eq!(
             success_executor.state().database().account_info(&target).unwrap().balance,
             U256::from(7)

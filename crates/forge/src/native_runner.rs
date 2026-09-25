@@ -43,8 +43,7 @@ pub(crate) struct NativeMultiContractRunner {
 /// A deployed test contract with state shared by its individual test runs.
 #[derive(Clone, Debug)]
 pub struct NativeContractRunner<D: Database + Clone = EmptyDB> {
-    executor: EthereumExecutor<D>,
-    inspector: EthereumInspectorStack,
+    executor: EthereumExecutor<D, EthereumInspectorStack>,
     address: Address,
     gas_limit: u64,
     gas_price: u128,
@@ -75,15 +74,13 @@ impl<D: Database + Clone> NativeContractRunner<D> {
     ) -> Result<Self> {
         let NativeTestSetup { sender, initial_balance, gas_limit, gas_price, libraries } = setup;
         env.block.gas_limit = U256::from(gas_limit);
-        let mut inspector = EthereumInspectorStack::default();
-        inspector.install(&mut state);
         state.set_balance(sender, U256::MAX)?;
         state.set_nonce(sender, 1)?;
         state.set_balance(CALLER, U256::MAX)?;
         state.set_balance(LIBRARY_DEPLOYER, U256::MAX)?;
         let expected_address = sender.create(1);
         state.set_balance(expected_address, initial_balance)?;
-        let mut executor = EthereumExecutor::new(env, state);
+        let mut executor = EthereumExecutor::new_foundry(env, state);
         if let LibraryDeployment::Create2 { deployer, .. } = libraries.deployment
             && !libraries.code.is_empty()
         {
@@ -91,14 +88,13 @@ impl<D: Database + Clone> NativeContractRunner<D> {
                 deployer == DEFAULT_CREATE2_DEPLOYER,
                 "native custom CREATE2 deployer is not implemented"
             );
-            Self::deploy_create2_factory(&mut executor, &mut inspector, gas_limit, gas_price)?;
+            Self::deploy_create2_factory(&mut executor, gas_limit, gas_price)?;
         }
         for (index, code) in libraries.code.iter().enumerate() {
             match libraries.deployment {
                 LibraryDeployment::Nonce => {
                     let address = Self::deploy_code(
                         &mut executor,
-                        &mut inspector,
                         LIBRARY_DEPLOYER,
                         index as u64,
                         code.clone(),
@@ -123,7 +119,7 @@ impl<D: Database + Clone> NativeContractRunner<D> {
                         gas_limit,
                         gas_price,
                     );
-                    let result = executor.inspect_transact(&tx, &mut inspector)?;
+                    let result = executor.transact(&tx)?;
                     ensure!(
                         result.status,
                         "native CREATE2 library deployment failed: {:?}",
@@ -146,7 +142,6 @@ impl<D: Database + Clone> NativeContractRunner<D> {
         }
         let address = Self::deploy_code(
             &mut executor,
-            &mut inspector,
             sender,
             1,
             contract.bytecode.clone(),
@@ -160,10 +155,10 @@ impl<D: Database + Clone> NativeContractRunner<D> {
         executor.state_mut().set_balance(LIBRARY_DEPLOYER, initial_balance)?;
 
         if matches!(libraries.deployment, LibraryDeployment::Nonce) {
-            Self::deploy_create2_factory(&mut executor, &mut inspector, gas_limit, gas_price)?;
+            Self::deploy_create2_factory(&mut executor, gas_limit, gas_price)?;
         }
 
-        let mut runner = Self { executor, inspector, address, gas_limit, gas_price };
+        let mut runner = Self { executor, address, gas_limit, gas_price };
         if let Some(setup) = contract
             .abi
             .functions
@@ -192,7 +187,7 @@ impl<D: Database + Clone> NativeContractRunner<D> {
         ensure!(function.inputs.is_empty(), "native unit execution requires no arguments");
         let mut runner = self.clone();
         let result = runner.execute(function.selector().into())?;
-        Ok((result, runner.inspector.take_logs()))
+        Ok((result, runner.executor.inspector_mut().take_logs()))
     }
 
     fn execute(&mut self, input: Bytes) -> Result<TxResult> {
@@ -206,12 +201,11 @@ impl<D: Database + Clone> NativeContractRunner<D> {
             self.gas_limit,
             self.gas_price,
         );
-        Ok(self.executor.inspect_transact(&tx, &mut self.inspector)?)
+        Ok(self.executor.transact(&tx)?)
     }
 
     fn deploy_code(
-        executor: &mut EthereumExecutor<D>,
-        inspector: &mut EthereumInspectorStack,
+        executor: &mut EthereumExecutor<D, EthereumInspectorStack>,
         caller: Address,
         nonce: u64,
         code: Bytes,
@@ -219,7 +213,7 @@ impl<D: Database + Clone> NativeContractRunner<D> {
         gas_price: u128,
     ) -> Result<Address> {
         let tx = Self::transaction(caller, nonce, TxKind::Create, code, gas_limit, gas_price);
-        let result = executor.inspect_transact(&tx, inspector)?;
+        let result = executor.transact(&tx)?;
         ensure!(
             result.status,
             "native contract deployment by {caller} at nonce {nonce} failed: {:?}",
@@ -229,8 +223,7 @@ impl<D: Database + Clone> NativeContractRunner<D> {
     }
 
     fn deploy_create2_factory(
-        executor: &mut EthereumExecutor<D>,
-        inspector: &mut EthereumInspectorStack,
+        executor: &mut EthereumExecutor<D, EthereumInspectorStack>,
         gas_limit: u64,
         gas_price: u128,
     ) -> Result<()> {
@@ -247,7 +240,6 @@ impl<D: Database + Clone> NativeContractRunner<D> {
         let nonce = executor.state().database().account_info(&creator).map_or(0, |info| info.nonce);
         let address = Self::deploy_code(
             executor,
-            inspector,
             creator,
             nonce,
             DEFAULT_CREATE2_DEPLOYER_CODE.into(),
