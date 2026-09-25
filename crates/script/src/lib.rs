@@ -50,7 +50,7 @@ use foundry_evm::{
     backend::Backend,
     core::{
         Breakpoints, FoundryTransaction,
-        evm::{EthEvmNetwork, EvmEnvFor, FoundryEvmNetwork, SpecFor, TempoEvmNetwork, TxEnvFor},
+        evm::{EvmEnvFor, FoundryEvmNetwork, SpecFor, TempoEvmNetwork, TxEnvFor},
         fork::ResolvedFork,
     },
     executors::ExecutorBuilder,
@@ -515,12 +515,7 @@ impl ScriptArgs {
             .await;
         }
 
-        Box::pin(self.run_generic_script::<EthEvmNetwork>(
-            config,
-            evm_opts,
-            ExecutorBuilder::<EthEvmNetwork>::new(),
-        ))
-        .await
+        Box::pin(native::run(self, config, evm_opts)).await
     }
 
     /// Prepares the bundled state (compile, simulate, bundle) and returns it
@@ -1304,6 +1299,7 @@ mod tests {
     };
     use foundry_config::UnresolvedEnvVarError;
     use foundry_evm::{
+        core::evm::EthEvmNetwork,
         revm::context::Block as _,
         traces::{
             CallKind, CallTrace, CallTraceArena, CallTraceNode, SparsedTraceArena, TraceKind,

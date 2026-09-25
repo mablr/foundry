@@ -7,6 +7,8 @@ use crate::{
     resolve_script_fork, resolve_script_sender_nonce,
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
+use alloy_dyn_abi::FunctionExt;
+use alloy_json_abi::InternalType;
 use alloy_network::{Ethereum, TransactionBuilder};
 use alloy_primitives::{Address, Bytes, KECCAK256_EMPTY, Log, TxKind, U256, keccak256};
 use alloy_rpc_types::TransactionRequest;
@@ -16,7 +18,7 @@ use foundry_cheatcodes::{
     BroadcastableTransaction, BroadcastableTransactions, CheatsConfig, Wallets,
 };
 use foundry_cli::{opts::TempoOpts, utils::needs_setup};
-use foundry_common::{LIBRARY_DEPLOYER, TransactionMaybeSigned};
+use foundry_common::{LIBRARY_DEPLOYER, TransactionMaybeSigned, fmt::format_token, shell};
 use foundry_config::Config;
 use foundry_evm::{
     core::{
@@ -27,12 +29,29 @@ use foundry_evm::{
         fork::ResolvedFork,
         native::{EthereumEnv, EthereumFork, LocalState},
     },
+    decode::decode_console_logs,
     native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
-    traces::native::{CallTraceArena, TracingInspectorConfig},
+    traces::native::{CallTraceArena, NativeTraceDecoder, TraceWriter, TracingInspectorConfig},
 };
 use foundry_evm_networks::NetworkVariant;
 use foundry_wallets::wallet_browser::signer::BrowserSigner;
+use yansi::Paint;
+
+/// Executes the Ethereum `forge script` command through the native pipeline.
+pub(crate) async fn run(args: ScriptArgs, config: Config, evm_opts: EvmOpts) -> Result<()> {
+    eyre::ensure!(!args.resume, "native script resume is not implemented");
+    eyre::ensure!(!args.broadcast, "native script broadcast is not implemented");
+    eyre::ensure!(!args.debug, "native script debugger is not implemented");
+    eyre::ensure!(!shell::is_json(), "native script JSON output is not implemented");
+    let context = NativeScriptContext::prepare(args, config, evm_opts).await?;
+    let execution = context.execute().await?;
+    context.show_output(&execution)?;
+    if execution.has_transactions() && context.evm_opts.fork_url.is_some() {
+        eyre::bail!("native on-chain simulation is not implemented");
+    }
+    Ok(())
+}
 
 /// Ethereum script inputs prepared without a legacy executor or fork backend.
 pub struct NativeScriptContext {
@@ -112,7 +131,11 @@ impl NativeScriptContext {
             Some(self.plan.build.build_data.target.clone()),
             false,
         ));
-        inspector.enable_tracing(TracingInspectorConfig::default());
+        inspector.enable_tracing(
+            TracingInspectorConfig::default()
+                .set_bytecode(self.config.tracing.verbosity > 3)
+                .set_steps_and_state_diffs(self.config.tracing.verbosity > 4),
+        );
         if self.evm_opts.isolate {
             inspector.enable_isolation();
         }
@@ -269,6 +292,96 @@ impl NativeScriptContext {
         );
         Ok(())
     }
+
+    fn show_output(&self, execution: &NativeScriptExecution) -> Result<()> {
+        let run =
+            execution.script.as_ref().or(execution.setup.as_ref()).unwrap_or(&execution.deployment);
+        let success = execution.deployment.result.status
+            && execution.setup.as_ref().is_none_or(|setup| setup.result.status)
+            && execution.script.as_ref().is_none_or(|script| script.result.status);
+        let verbosity = self.config.tracing.verbosity;
+        if !success || verbosity > 3 {
+            sh_println!("Traces:")?;
+            let decoder =
+                NativeTraceDecoder::new().with_known_contracts(&self.plan.build.known_contracts);
+            let stages = if success {
+                execution
+                    .setup
+                    .iter()
+                    .filter(|_| verbosity >= 5)
+                    .chain(execution.script.iter())
+                    .collect::<Vec<_>>()
+            } else {
+                execution
+                    .libraries
+                    .iter()
+                    .chain(std::iter::once(&execution.deployment))
+                    .chain(execution.setup.iter())
+                    .chain(execution.script.iter())
+                    .collect::<Vec<_>>()
+            };
+            for stage in stages {
+                for arena in &stage.traces {
+                    let mut output = Vec::new();
+                    TraceWriter::new(&mut output)
+                        .with_storage_changes(verbosity > 4)
+                        .write_arena(&decoder.decode_for_display(arena))?;
+                    sh_println!("{}", String::from_utf8(output)?)?;
+                }
+            }
+            sh_println!()?;
+        }
+        if success {
+            sh_println!("{}", "Script ran successfully.".green())?;
+        }
+        if self.evm_opts.fork_url.is_none() {
+            sh_println!("Gas used: {}", run.result.tx_gas_used())?;
+        }
+        if success && !run.result.output.is_empty() {
+            sh_println!("\n== Return ==")?;
+            if let Ok(decoded) = self.plan.execution.func.abi_decode_output(&run.result.output) {
+                for (index, (token, output)) in
+                    decoded.iter().zip(&self.plan.execution.func.outputs).enumerate()
+                {
+                    let internal_type =
+                        output.internal_type.clone().unwrap_or(InternalType::Other {
+                            contract: None,
+                            ty: "unknown".to_string(),
+                        });
+                    let label = if output.name.is_empty() {
+                        index.to_string()
+                    } else {
+                        output.name.clone()
+                    };
+                    sh_println!("{}: {} {}", label.trim_end(), internal_type, format_token(token))?;
+                }
+            } else {
+                sh_println!("{:x?}", run.result.output)?;
+            }
+        }
+        let logs = execution
+            .libraries
+            .iter()
+            .chain(std::iter::once(&execution.deployment))
+            .chain(execution.setup.iter())
+            .chain(execution.script.iter())
+            .flat_map(|stage| stage.logs.iter().cloned())
+            .collect::<Vec<_>>();
+        let logs = decode_console_logs(&logs);
+        if !logs.is_empty() {
+            sh_println!("\n== Logs ==")?;
+            for log in logs {
+                sh_println!("  {log}")?;
+            }
+        }
+        if !success {
+            eyre::bail!("script failed: {:?}", run.result.stop);
+        }
+        if execution.has_transactions() && self.evm_opts.fork_url.is_none() {
+            sh_println!("\nIf you wish to simulate on-chain transactions pass a RPC URL.")?;
+        }
+        Ok(())
+    }
 }
 
 /// Native constructor, setup, and script-call observations.
@@ -278,6 +391,19 @@ pub struct NativeScriptExecution {
     pub deployment: NativeScriptRun,
     pub setup: Option<NativeScriptRun>,
     pub script: Option<NativeScriptRun>,
+}
+
+impl NativeScriptExecution {
+    fn has_transactions(&self) -> bool {
+        !self.library_transactions.is_empty()
+            || self
+                .libraries
+                .iter()
+                .chain(std::iter::once(&self.deployment))
+                .chain(self.setup.iter())
+                .chain(self.script.iter())
+                .any(|stage| !stage.transactions.is_empty())
+    }
 }
 
 /// Compiled, linked, and ABI-encoded inputs for native Ethereum script execution.
