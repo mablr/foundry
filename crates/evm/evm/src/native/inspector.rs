@@ -457,6 +457,9 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
         message: &mut Message<FoundryEvmTypes>,
     ) -> Option<MessageResult<FoundryEvmTypes>> {
         self.capture_root_state(interp, message.depth);
+        if let Some(result) = self.cheatcodes.create(interp, message) {
+            return Some(result);
+        }
         if let Some(tracing) = &mut self.tracing {
             let mut trace_message = message.clone();
             trace_message.depth += u16::from(self.in_isolated_transaction);

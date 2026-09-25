@@ -7,7 +7,10 @@ use evm2::{
     Inspector,
     bytecode::Bytecode,
     evm::{AccountInfo, Database, Db, EmptyDB, State},
-    interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
+    interpreter::{
+        GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt,
+        derive_create_destination,
+    },
 };
 use foundry_evm_core::{
     constants::{
@@ -24,6 +27,7 @@ pub struct NativeCheatcodes<D: Database + Clone = EmptyDB> {
     config: Arc<CheatsConfig>,
     pranks: BTreeMap<u16, NativePrank>,
     active_origins: BTreeMap<u16, Option<Address>>,
+    synthetic_origins: BTreeMap<u16, Option<Address>>,
     expected_revert: Option<NativeExpectedRevert>,
     snapshots: BTreeMap<U256, Arc<NativeSnapshot<D>>>,
     next_snapshot_id: U256,
@@ -106,6 +110,7 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
             config: Arc::new(CheatsConfig::default()),
             pranks: BTreeMap::new(),
             active_origins: BTreeMap::new(),
+            synthetic_origins: BTreeMap::new(),
             expected_revert: None,
             snapshots: BTreeMap::new(),
             next_snapshot_id: U256::ONE,
@@ -186,7 +191,7 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
             .map_err(|_| InstrStop::Revert)?;
         if let Some(new_origin) = prank.new_origin {
             let context = interp.host().ext_mut();
-            self.active_origins.insert(depth, context.origin_override);
+            self.synthetic_origins.insert(depth, context.origin_override);
             context.origin_override = Some(new_origin);
         }
         prank.used = true;
@@ -199,7 +204,7 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
         interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
         depth: u16,
     ) {
-        if let Some(previous_origin) = self.active_origins.remove(&depth) {
+        if let Some(previous_origin) = self.synthetic_origins.remove(&depth) {
             interp.host().ext_mut().origin_override = previous_origin;
         }
         if self.pranks.get(&depth).is_some_and(|prank| prank.single_call && prank.used) {
@@ -496,12 +501,59 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
         self.finish_expected_revert(message, result);
     }
 
+    fn create(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &mut Message<FoundryEvmTypes>,
+    ) -> Option<MessageResult<FoundryEvmTypes>> {
+        let depth = message.depth.saturating_sub(1);
+        if let Some((prank_depth, prank)) = self.pranks.range_mut(..=depth).next_back()
+            && depth == *prank_depth
+            && message.caller == prank.caller
+        {
+            let nonce = match interp.host().state_mut().account(&prank.new_caller, false) {
+                Ok(account) => account.nonce(),
+                Err(_) => {
+                    return Some(MessageResultExt {
+                        stop: InstrStop::Revert,
+                        gas: GasTracker::new(message.gas_limit),
+                        ..Default::default()
+                    });
+                }
+            };
+            message.caller = prank.new_caller;
+            message.code_address = prank.new_caller;
+            message.destination = derive_create_destination(
+                message.kind,
+                &prank.new_caller,
+                &message.salt,
+                &message.input,
+                nonce,
+            );
+            message.call_target = message.destination;
+            if let Some(new_origin) = prank.new_origin {
+                let context = interp.host().ext_mut();
+                self.active_origins.insert(depth, context.origin_override);
+                context.origin_override = Some(new_origin);
+            }
+            prank.used = true;
+        }
+        None
+    }
+
     fn create_end(
         &mut self,
-        _interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
         message: &Message<FoundryEvmTypes>,
         result: &mut MessageResult<FoundryEvmTypes>,
     ) {
+        let depth = message.depth.saturating_sub(1);
+        if let Some(previous_origin) = self.active_origins.remove(&depth) {
+            interp.host().ext_mut().origin_override = previous_origin;
+        }
+        if self.pranks.get(&depth).is_some_and(|prank| prank.single_call && prank.used) {
+            self.pranks.remove(&depth);
+        }
         self.finish_expected_revert(message, result);
     }
 }

@@ -71,9 +71,11 @@ forgetest_init!(evm2_deploy_code_rolls_back_nested_create, |prj, cmd| {
         r#"
 contract NativeDeployTarget {
     address public deployer;
+    address public origin;
 
     constructor() {
         deployer = msg.sender;
+        origin = tx.origin;
     }
 
     function marker() external pure returns (uint256) {
@@ -104,12 +106,14 @@ interface Vm {
     function getCode(string calldata artifactPath) external view returns (bytes memory);
     function getDeployedCode(string calldata artifactPath) external view returns (bytes memory);
     function prank(address sender) external;
+    function prank(address sender, address origin) external;
 }
 
 contract NativeDeployHandler {
     Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
     bytes32 constant SALT = keccak256("native deploy");
     address constant DEPLOYER = address(0xBEEF);
+    address constant ORIGIN = address(0xCAFE);
 
     function deployThenRevert() external {
         vm.prank(DEPLOYER);
@@ -119,7 +123,7 @@ contract NativeDeployHandler {
     }
 
     function deploy() external returns (address) {
-        vm.prank(DEPLOYER);
+        vm.prank(DEPLOYER, ORIGIN);
         return vm.deployCode("src/NativeDeployTarget.sol:NativeDeployTarget", SALT);
     }
 
@@ -136,6 +140,15 @@ contract NativeDeployHandler {
 
     function deployFromJson() external returns (address) {
         return vm.deployCode("out/NativeDeployTarget.sol/NativeDeployTarget.json");
+    }
+
+    function deployNormallyWithPrank() external returns (address) {
+        vm.prank(DEPLOYER, ORIGIN);
+        return address(new NativeDeployTarget());
+    }
+
+    function deployNormally() external returns (address) {
+        return address(new NativeDeployTarget());
     }
 }
 
@@ -154,6 +167,7 @@ contract NativeDeployCodeTest {
         address deployed = handler.deploy();
         require(NativeDeployTarget(deployed).marker() == 7);
         require(NativeDeployTarget(deployed).deployer() == address(0xBEEF));
+        require(NativeDeployTarget(deployed).origin() == address(0xCAFE));
     }
 
     function testConstructorArgsAndValue() public {
@@ -175,6 +189,15 @@ contract NativeDeployCodeTest {
                 == keccak256(type(NativeDeployTarget).runtimeCode)
         );
     }
+
+    function testNormalCreatePrank() public {
+        NativeDeployTarget pranked = NativeDeployTarget(handler.deployNormallyWithPrank());
+        require(pranked.deployer() == address(0xBEEF));
+        require(pranked.origin() == address(0xCAFE));
+        NativeDeployTarget normal = NativeDeployTarget(handler.deployNormally());
+        require(normal.deployer() == address(handler));
+        require(normal.origin() == tx.origin);
+    }
 }
 "#,
     );
@@ -186,14 +209,15 @@ contract NativeDeployCodeTest {
 [SOLC_VERSION] [ELAPSED]
 Compiler run successful!
 
-Ran 4 tests for test/NativeDeployCode.t.sol:NativeDeployCodeTest
+Ran 5 tests for test/NativeDeployCode.t.sol:NativeDeployCodeTest
 [PASS] testArtifactBytecode() ([GAS])
 [PASS] testArtifactPathForms() ([GAS])
 [PASS] testConstructorArgsAndValue() ([GAS])
+[PASS] testNormalCreatePrank() ([GAS])
 [PASS] testRollbackAndRedeploy() ([GAS])
-Suite result: ok. 4 passed; 0 failed; 0 skipped; [ELAPSED]
+Suite result: ok. 5 passed; 0 failed; 0 skipped; [ELAPSED]
 
-Ran 1 test suite [ELAPSED]: 4 tests passed, 0 failed, 0 skipped (4 total tests)
+Ran 1 test suite [ELAPSED]: 5 tests passed, 0 failed, 0 skipped (5 total tests)
 
 "#]],
     );
