@@ -9,9 +9,9 @@ use crate::{
     },
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
-use alloy_dyn_abi::JsonAbiExt;
-use alloy_json_abi::{Function, StateMutability};
-use alloy_primitives::{Address, Bytes, Log, TxKind, U256};
+use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
+use alloy_json_abi::{Function, JsonAbi, StateMutability};
+use alloy_primitives::{Address, Bytes, Log, TxKind, U256, map::HashMap};
 use evm2::{
     TxResult,
     ethereum::{TxEnvelope, intrinsic_gas},
@@ -19,7 +19,7 @@ use evm2::{
 };
 use eyre::{Result, ensure};
 use foundry_common::{
-    LIBRARY_DEPLOYER, TestFunctionKind,
+    LIBRARY_DEPLOYER, TestFunctionExt, TestFunctionKind,
     fmt::{format_tokens, format_tokens_raw},
 };
 use foundry_compilers::ProjectCompileOutput;
@@ -33,7 +33,7 @@ use foundry_evm::{
         native::{EthereumEnv, LocalState},
     },
     fuzz::{
-        BaseCounterExample, CounterExample, FuzzCase, FuzzFixtures, FuzzTestResult,
+        BaseCounterExample, CounterExample, FuzzCase, FuzzFixtures, FuzzTestResult, fixture_name,
         strategies::{fuzz_calldata, fuzz_msg_value},
     },
     native::{EthereumExecutor, EthereumInspectorStack},
@@ -252,6 +252,39 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         Ok((result, logs, traces))
     }
 
+    /// Reads declared fuzz fixtures from the state after `setUp()`.
+    pub fn fuzz_fixtures(&self, abi: &JsonAbi) -> FuzzFixtures {
+        let mut fixtures = HashMap::default();
+        for function in abi.functions().filter(|function| function.is_fixture()) {
+            let value = if function.inputs.is_empty() {
+                self.read_fixture(function, &[])
+            } else {
+                let values = (0..)
+                    .map(|index| {
+                        self.read_fixture(function, &[DynSolValue::Uint(U256::from(index), 256)])
+                    })
+                    .take_while(Option::is_some)
+                    .flatten()
+                    .collect();
+                Some(DynSolValue::Array(values))
+            };
+            if let Some(value) = value {
+                fixtures.insert(fixture_name(function.name.clone()), value);
+            }
+        }
+        FuzzFixtures::new(fixtures)
+    }
+
+    fn read_fixture(&self, function: &Function, args: &[DynSolValue]) -> Option<DynSolValue> {
+        let input = function.abi_encode_input(args).ok()?;
+        let (result, _, _) = self.run_input(input.into(), U256::ZERO).ok()?;
+        if !result.status {
+            return None;
+        }
+        let mut values = function.abi_decode_output(&result.output).ok()?;
+        Some(if values.len() == 1 { values.pop()? } else { DynSolValue::Tuple(values) })
+    }
+
     fn execute(&mut self, input: Bytes) -> Result<TxResult> {
         self.execute_with_value(input, U256::ZERO)
     }
@@ -434,6 +467,7 @@ impl NativeMultiContractRunner {
                 }
             };
             let mut tests = BTreeMap::new();
+            let mut fixtures = None;
             for function in matcher.matching_test_functions(filter, id, &contract.abi) {
                 let kind = matcher.test_function_kind(
                     &id.identifier(),
@@ -470,9 +504,11 @@ impl NativeMultiContractRunner {
                     continue;
                 }
                 if matches!(kind, TestFunctionKind::FuzzTest { should_fail: false }) {
+                    let fixtures =
+                        fixtures.get_or_insert_with(|| runner.fuzz_fixtures(&contract.abi));
                     tests.insert(
                         function.signature(),
-                        self.run_fuzz_campaign(&runner, function, &env)?,
+                        self.run_fuzz_campaign(&runner, function, fixtures, &env)?,
                     );
                     continue;
                 }
@@ -582,6 +618,7 @@ impl NativeMultiContractRunner {
         &self,
         runner: &NativeContractRunner<D>,
         function: &Function,
+        fixtures: &FuzzFixtures,
         env: &EthereumEnv,
     ) -> Result<TestResult> {
         let config = &self.config.fuzz;
@@ -605,7 +642,7 @@ impl NativeMultiContractRunner {
             TestRunner::new(test_runner_config)
         };
         let strategy = (
-            fuzz_calldata(function.clone(), &FuzzFixtures::default()),
+            fuzz_calldata(function.clone(), fixtures),
             fuzz_msg_value(if matches!(function.state_mutability, StateMutability::Payable) {
                 config.corpus.payable_value_weight
             } else {
@@ -691,7 +728,6 @@ impl NativeMultiContractRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_json_abi::JsonAbi;
     use evm2::{SpecId, env::BlockEnvExt};
     use std::collections::BTreeSet;
 

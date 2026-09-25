@@ -694,6 +694,74 @@ Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing te
 "#]]);
 });
 
+forgetest_init!(evm2_fuzz_uses_storage_fixtures_after_setup, |prj, cmd| {
+    prj.update_config(|config| {
+        config.isolate = false;
+        config.fuzz.runs = 8;
+        config.fuzz.seed = Some(alloy_primitives::U256::ONE);
+        config.fuzz.max_test_rejects = 100;
+    });
+    prj.add_test(
+        "NativeFixture.t.sol",
+        r#"
+interface Vm {
+    function assume(bool condition) external;
+}
+
+contract NativeFixtureTest {
+    Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    uint256[] public fixture_value;
+
+    function setUp() public {
+        fixture_value.push(42);
+        fixture_value.push(99);
+    }
+
+    function testFuzzFixture(uint256 value) public {
+        vm.assume(value == 42 || value == 99);
+    }
+
+    function fixture_key() public pure returns (bytes32[] memory keys) {
+        keys = new bytes32[](1);
+        keys[0] = bytes32(uint256(12345));
+    }
+
+    function testFuzzFunctionFixture(bytes32 key) public {
+        vm.assume(key == bytes32(uint256(12345)));
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-test", "testFuzzFixture"]).assert_success().stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeFixture.t.sol:NativeFixtureTest
+[PASS] testFuzzFixture(uint256) (runs: 8, [AVG_GAS])
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]]);
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-test", "testFuzzFunctionFixture"]).assert_success().stdout_eq(str![
+        [r#"
+No files changed, compilation skipped
+
+Ran 1 test for test/NativeFixture.t.sol:NativeFixtureTest
+[PASS] testFuzzFunctionFixture(bytes32) (runs: 8, [AVG_GAS])
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]
+    ]);
+});
+
 forgetest_init!(evm2_reports_console_and_opcode_logs, |prj, cmd| {
     prj.update_config(|config| config.isolate = false);
     prj.add_test(
