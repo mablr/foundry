@@ -260,6 +260,9 @@ Ran 1 test suite [ELAPSED]: 7 tests passed, 0 failed, 0 skipped (7 total tests)
 
 "#]],
     );
+    cmd.forge_fuse()
+        .args(["test", "--match-test", "testBroadcastCreateRestoresOrigin", "-vvvv"])
+        .assert_success();
 });
 
 forgetest_init!(evm2_invariant_detects_handler_assertions, |prj, cmd| {

@@ -37,6 +37,7 @@ pub struct EthereumInspectorStack<D: Database + Clone = EmptyDB> {
     backend_reset: Option<LocalState<D>>,
     isolate: bool,
     in_isolated_transaction: bool,
+    synthetic_create_depth: u16,
     root_state: Option<State<'static>>,
     logs: Vec<Log>,
     tracing: Option<TracingInspector>,
@@ -53,6 +54,7 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
             backend_reset: None,
             isolate: false,
             in_isolated_transaction: false,
+            synthetic_create_depth: 0,
             root_state: None,
             logs: Vec::new(),
             tracing: None,
@@ -166,6 +168,7 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
         let mut backend = self.backend.clone();
         let accepted = self.backend.clone();
         let state = interp.host().state().clone_with(Db::new(backend.clone()));
+        self.synthetic_create_depth += 1;
         let (result, mut state, block) = {
             let mut evm = EthereumFactory.create(env, Db::new(&mut backend));
             *evm.state_mut() = state;
@@ -175,6 +178,7 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
             let state = evm.state().clone_with(Db::new(accepted));
             (result, state, *evm.block())
         };
+        self.synthetic_create_depth -= 1;
         self.cheatcodes.finish_synthetic_create_prank(interp, depth);
         if let Some((_, backend)) = self.cheatcodes.take_restored_state() {
             state = state.clone_with(Db::new(backend.clone()));
@@ -400,7 +404,8 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
             && !(self.in_isolated_transaction && message.depth == 0)
         {
             let mut trace_message = message.clone();
-            trace_message.depth += u16::from(self.in_isolated_transaction);
+            trace_message.depth +=
+                u16::from(self.in_isolated_transaction) + self.synthetic_create_depth;
             let _ = tracing.call(interp, &mut trace_message);
         }
         if message.call_target == HARDHAT_CONSOLE_ADDRESS {
@@ -468,7 +473,8 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
         }
         if let Some(tracing) = &mut self.tracing {
             let mut trace_message = message.clone();
-            trace_message.depth += u16::from(self.in_isolated_transaction);
+            trace_message.depth +=
+                u16::from(self.in_isolated_transaction) + self.synthetic_create_depth;
             let _ = tracing.create(interp, &mut trace_message);
         }
         None
