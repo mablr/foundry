@@ -1,15 +1,46 @@
 //! Ethereum script execution on evm2.
 
+use crate::{
+    ScriptArgs,
+    build::{BuildData, LinkedBuildData},
+    execute::ExecutionData,
+};
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_network::Ethereum;
 use alloy_primitives::{Address, Bytes, Log, TxKind};
 use evm2::{TxResult, ethereum::TxEnvelope, evm::Database};
 use eyre::Result;
 use foundry_cheatcodes::BroadcastableTransactions;
+use foundry_config::Config;
 use foundry_evm::{
+    core::fork::ResolvedFork,
     native::{EthereumExecutor, EthereumInspectorStack},
+    opts::EvmOpts,
     traces::native::CallTraceArena,
 };
+
+/// Compiled, linked, and ABI-encoded inputs for native Ethereum script execution.
+pub struct NativeScriptPlan {
+    pub build: LinkedBuildData,
+    pub execution: ExecutionData,
+}
+
+impl NativeScriptPlan {
+    /// Prepares script artifacts without constructing a legacy EVM runner.
+    pub async fn prepare(
+        args: &ScriptArgs,
+        config: &Config,
+        evm_opts: &EvmOpts,
+        sender_nonce: u64,
+        resolved_fork: Option<&ResolvedFork>,
+    ) -> Result<Self> {
+        let build = BuildData::compile_target(args, config)?
+            .link(config, evm_opts, sender_nonce, resolved_fork)
+            .await?;
+        let execution = ExecutionData::prepare(args, &build)?;
+        Ok(Self { build, execution })
+    }
+}
 
 /// Observations from one native script execution stage.
 pub struct NativeScriptRun {
@@ -114,6 +145,56 @@ mod tests {
     use evm2::{SpecId, env::BlockEnvExt};
     use foundry_cheatcodes::Vm;
     use foundry_evm::core::{constants::CHEATCODE_ADDRESS, native::LocalState};
+
+    #[tokio::test]
+    async fn prepared_solidity_script_runs_on_native_executor() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("src/Counter.s.sol");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(
+            &source,
+            "pragma solidity ^0.8.20; contract CounterScript { uint256 public value; function setUp() public { value = 3; } function run() public returns (uint256) { value += 2; return value; } }",
+        )
+        .unwrap();
+        let mut config = Config::with_root(root.path());
+        config.cache_path = root.path().join("cache");
+        let args = ScriptArgs {
+            path: source.to_string_lossy().into_owned(),
+            sig: "run()".into(),
+            ..Default::default()
+        };
+        let mut opts = EvmOpts::default();
+        opts.env.gas_limit = foundry_config::GasLimit(30_000_000);
+        opts.memory_limit = 1_000_000;
+        let plan = NativeScriptPlan::prepare(&args, &config, &opts, 1, None).await.unwrap();
+        assert_eq!(plan.build.predeploy_libraries.libraries_count(), 0);
+
+        let deployer = Address::with_last_byte(1);
+        let sender = Address::with_last_byte(2);
+        let mut state = LocalState::default();
+        state.set_balance(deployer, U256::MAX).unwrap();
+        state.set_balance(sender, U256::MAX).unwrap();
+        let env =
+            foundry_evm::core::native::EthereumEnv::local_from_config(&config, &opts).unwrap();
+        let executor = EthereumExecutor::new_foundry(env, state);
+        let mut runner = NativeScriptRunner::new(executor, deployer, sender, 1_000_000, 0);
+        let deployment = runner.deploy(plan.execution.bytecode.clone()).unwrap();
+        assert!(deployment.result.status, "{:#?}", deployment.result);
+        let address = deployment.result.created_address.unwrap();
+
+        let setup = runner
+            .setup(address, Bytes::copy_from_slice(&alloy_primitives::keccak256("setUp()")[..4]))
+            .unwrap();
+        assert!(setup.result.status);
+        let script = runner.script(address, plan.execution.calldata).unwrap();
+        assert!(script.result.status);
+        assert_eq!(U256::from_be_slice(&script.result.output), U256::from(5));
+
+        let read = runner
+            .script(address, Bytes::copy_from_slice(&alloy_primitives::keccak256("value()")[..4]))
+            .unwrap();
+        assert_eq!(U256::from_be_slice(&read.result.output), U256::from(3));
+    }
 
     #[test]
     fn script_keeps_setup_state_and_discards_its_own_writes() {
