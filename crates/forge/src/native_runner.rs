@@ -13,7 +13,7 @@ use alloy_dyn_abi::{DynSolValue, FunctionExt, JsonAbiExt};
 use alloy_json_abi::{Function, JsonAbi, StateMutability};
 use alloy_primitives::{Address, Bytes, Log, TxKind, U256, map::HashMap};
 use evm2::{
-    EvmFeatures, TxResult,
+    TxResult,
     ethereum::{TxEnvelope, intrinsic_gas},
     evm::{Database, EmptyDB},
 };
@@ -431,10 +431,6 @@ impl NativeMultiContractRunner {
         env: EthereumEnv,
         state: LocalState<D>,
     ) -> Result<BTreeMap<String, SuiteResult>> {
-        ensure!(
-            !self.config.isolate || !env.version.feature(EvmFeatures::EIP8037),
-            "native call isolation does not yet support EIP-8037 state gas"
-        );
         let gas_price = u128::try_from(env.block.basefee)?;
         let matcher = TestFunctionMatcher::new(&self.config, &self.inline_config, None);
         let mut suites = BTreeMap::new();
