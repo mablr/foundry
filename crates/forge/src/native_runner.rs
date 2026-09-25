@@ -158,7 +158,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             executor.inspector_mut().set_cheatcode_config(config);
         }
         if let Some(tracing) = tracing {
-            executor.inspector_mut().enable_tracing(tracing);
+            executor.inspector_mut().enable_tracing(tracing.set_steps_and_state_diffs(false));
         }
         if coverage {
             executor.inspector_mut().enable_coverage();
@@ -174,6 +174,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
                 "native custom CREATE2 deployer is not implemented"
             );
             Self::deploy_create2_factory(&mut executor, gas_limit, gas_price)?;
+            executor.inspector_mut().take_traces();
         }
         for (index, code) in libraries.code.iter().enumerate() {
             match libraries.deployment {
@@ -269,13 +270,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
 
         if matches!(libraries.deployment, LibraryDeployment::Nonce) {
             Self::deploy_create2_factory(&mut executor, gas_limit, gas_price)?;
-            setup_traces.extend(
-                executor
-                    .inspector_mut()
-                    .take_traces()
-                    .into_iter()
-                    .map(|arena| (TraceKind::Deployment, arena)),
-            );
+            executor.inspector_mut().take_traces();
         }
 
         let mut runner =
@@ -306,6 +301,9 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             }
         }
         runner.setup_coverage = runner.executor.inspector_mut().take_coverage();
+        if let Some(tracing) = tracing {
+            runner.executor.inspector_mut().enable_tracing(tracing);
+        }
         Ok(NativeContractSetup::Ready(Box::new(runner)))
     }
 
