@@ -76,8 +76,10 @@ use foundry_evm::{
     fuzz::{BaseCounterExample, BasicTxDetails, CounterExample},
     opts::EvmOpts,
     traces::{
-        backtrace::BacktraceBuilder, identifier::TraceIdentifiers,
-        native::TraceWriter as NativeTraceWriter, prune_trace_depth, trace_arena_at_depth,
+        backtrace::BacktraceBuilder,
+        identifier::TraceIdentifiers,
+        native::{TraceWriter as NativeTraceWriter, redacted_for_display},
+        prune_trace_depth, trace_arena_at_depth,
     },
 };
 use foundry_evm_networks::NetworkVariant;
@@ -2238,7 +2240,8 @@ impl TestArgs {
                         sh_println!("Traces:")?;
                         for arena in &result.native_traces {
                             let mut output = Vec::new();
-                            NativeTraceWriter::new(&mut output).write_arena(arena)?;
+                            NativeTraceWriter::new(&mut output)
+                                .write_arena(&redacted_for_display(arena))?;
                             sh_println!("{}", String::from_utf8(output)?.trim_end())?;
                         }
                         sh_println!()?;

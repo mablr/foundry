@@ -666,6 +666,52 @@ Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
 "#]]);
 });
 
+forgetest_init!(evm2_redacts_cheatcode_trace_io, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativeTrace.t.sol",
+        r#"
+interface Vm {
+    function deal(address account, uint256 balance) external;
+}
+
+contract NativeTraceTest {
+    Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+
+    function testDeal() public {
+        vm.deal(address(0xBEEF), 123456789);
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-test", "testDeal", "-vvv"])
+        .assert_success()
+        .stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeTrace.t.sol:NativeTraceTest
+[PASS] testDeal() ([GAS])
+Traces:
+  [146731] → new <unknown>@0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+    └─ ← [Return] 432 bytes of code
+  [68137] → new <unknown>@0x4e59b44847b379578588920cA78FbF26c0B4956C
+    └─ ← [Return] 69 bytes of code
+  [24455] 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496::d9ac5498()
+    ├─ [0] 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D::c88a5e6d()
+    │   └─ ← [Return]
+    └─ ← [Stop]
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]]);
+});
+
 forgetest_init!(evm2_warp_updates_live_and_later_block_context, |prj, cmd| {
     prj.update_config(|config| config.isolate = false);
     prj.add_test(
