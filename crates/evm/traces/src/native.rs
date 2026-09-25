@@ -1,10 +1,11 @@
 //! Trace types and display safeguards for evm2 execution.
 
-use alloy_dyn_abi::{EventExt, JsonAbiExt};
+use alloy_dyn_abi::{EventExt, FunctionExt, JsonAbiExt};
 use alloy_json_abi::{Event, Function, JsonAbi};
 use alloy_primitives::{B256, Bytes, Selector};
+use evm2::interpreter::opcode::OpCode;
 use evm2_inspectors::tracing::types::{
-    DecodedCallData, DecodedCallLog, DecodedCallTrace, TraceMemberOrder,
+    DecodedCallData, DecodedCallLog, DecodedCallTrace, DecodedTraceStep, TraceMemberOrder,
 };
 use foundry_common::{ContractsByArtifact, contracts::ContractData, fmt::format_token};
 use foundry_evm_core::{abi::Vm, constants::CHEATCODE_ADDRESS};
@@ -79,6 +80,7 @@ pub struct NativeTraceDecoder {
     functions: HashMap<Selector, Option<Function>>,
     events: HashMap<B256, Vec<Event>>,
     cheatcodes: HashMap<Selector, Function>,
+    opcodes: Vec<OpCode>,
 }
 
 impl Default for NativeTraceDecoder {
@@ -100,6 +102,7 @@ impl NativeTraceDecoder {
             functions: HashMap::default(),
             events: HashMap::default(),
             cheatcodes,
+            opcodes: Vec::new(),
         }
     }
 
@@ -109,6 +112,12 @@ impl NativeTraceDecoder {
             self.with_abi(&contract.abi);
         }
         self.contracts = contracts.clone();
+        self
+    }
+
+    /// Selects opcode steps to include in the displayed trace.
+    pub fn with_opcodes(mut self, opcodes: impl IntoIterator<Item = OpCode>) -> Self {
+        self.opcodes.extend(opcodes);
         self
     }
 
@@ -143,6 +152,40 @@ impl NativeTraceDecoder {
                 })
             };
             self.decode_call(trace, contract);
+            for step in &mut trace.steps {
+                if step.decoded.is_some() || !self.opcodes.contains(&step.op) {
+                    continue;
+                }
+                let line = match &step.storage_change {
+                    Some(change) if step.op == OpCode::SSTORE => match change.had_value {
+                        Some(previous) => format!(
+                            "[{}] {} 0x{:x}: 0x{:x} → 0x{:x}",
+                            step.gas_cost,
+                            step.op.as_str(),
+                            change.key,
+                            previous,
+                            change.value
+                        ),
+                        None => format!(
+                            "[{}] {} 0x{:x} → (0x{:x})",
+                            step.gas_cost,
+                            step.op.as_str(),
+                            change.key,
+                            change.value
+                        ),
+                    },
+                    Some(change) => format!(
+                        "[{}] {} 0x{:x} → (0x{:x})",
+                        step.gas_cost,
+                        step.op.as_str(),
+                        change.key,
+                        change.value
+                    ),
+                    None => format!("[{}] {}", step.gas_cost, step.op.as_str()),
+                };
+                step.decoded = Some(Box::new(DecodedTraceStep::Line(line)));
+                step.storage_change = None;
+            }
             for log in &mut node.logs {
                 let event = contract
                     .and_then(|contract| decode_event(log, contract.abi.events()))
@@ -225,7 +268,11 @@ impl NativeTraceDecoder {
                 contract.map(|contract| contract.name.clone())
             },
             call_data: Some(DecodedCallData { signature: function.signature(), args }),
-            return_data: None,
+            return_data: (!cheatcode && trace.status.is_some_and(|status| status.is_success()))
+                .then(|| function.abi_decode_output(&trace.output).ok())
+                .flatten()
+                .filter(|values| !values.is_empty())
+                .map(|values| values.iter().map(format_token).collect::<Vec<_>>().join(", ")),
         }));
     }
 }

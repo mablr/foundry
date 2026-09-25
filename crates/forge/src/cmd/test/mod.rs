@@ -35,6 +35,7 @@ use alloy_primitives::U256;
 use chrono::Utc;
 use clap::{Parser, ValueEnum, ValueHint};
 use dialoguer::{Select, console::Term};
+use evm2::interpreter::opcode::OpCode as NativeOpCode;
 use eyre::{Context, OptionExt, Result, bail, ensure};
 use foundry_cli::{
     opts::{BuildOpts, EvmArgs, GlobalArgs, TracingArgs},
@@ -91,7 +92,7 @@ use foundry_tui::tui_mode;
 use quick_junit::{NonSuccessKind, Report, TestCase, TestCaseStatus, TestSuite};
 use rand::Rng;
 use regex::Regex;
-use revm::{bytecode::opcode::OpCode, context::Transaction};
+use revm::{bytecode::opcode::OpCode as LegacyOpCode, context::Transaction};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
@@ -986,7 +987,7 @@ pub struct TestArgs {
     /// `--opcodes SLOAD,MLOAD,SSTORE`. Names are in uppercase.
     /// Requires `-vvvvv` to render.
     #[arg(long, value_parser = parse_opcode, value_delimiter(','), conflicts_with_all = ["json", "junit", "list", "debug"])]
-    pub opcodes: Vec<OpCode>,
+    pub opcodes: Vec<NativeOpCode>,
 
     /// Print test summary table.
     #[arg(long, help_heading = "Display options")]
@@ -2156,7 +2157,7 @@ impl TestArgs {
             .build::<FEN, MultiCompiler>(output, evm_env, tx_env, evm_opts, executor_builder)
     }
 
-    /// Runs the experimental Ethereum path using independently prepared artifacts.
+    /// Runs Ethereum tests through evm2 using independently prepared artifacts.
     async fn run_native_network_pass(
         &self,
         config: Arc<Config>,
@@ -2172,14 +2173,17 @@ impl TestArgs {
                 && !self.flamechart
                 && self.evm_profile.is_none()
                 && self.showmap_out.is_none()
-                && self.opcodes.is_empty()
                 && execution.multi_network.all_override_networks.is_empty()
                 && execution.replay_symbolic_artifact.is_none()
                 && self.mutate.is_none()
                 && !self.fuzz_only
                 && !self.fuzz_failure_replay,
-            "native debugging, trace filtering, replay, and campaign modes are not implemented"
+            "native debugging, profiling, replay, and campaign modes are not implemented"
         );
+        if !self.opcodes.is_empty() && config.tracing.verbosity < 5 {
+            sh_eprintln!()?;
+            bail!("Not enough verbosity. Use -vvvvv to show opcodes.");
+        }
         let sender = evm_opts.sender;
         let create2_deployer_available =
             evm_opts.create2_deployer == foundry_evm::constants::DEFAULT_CREATE2_DEPLOYER;
@@ -2277,9 +2281,16 @@ impl TestArgs {
                     if show_traces && traces.iter().any(|(kind, _)| include_trace(kind)) {
                         sh_println!("Traces:")?;
                         let trace_decoder = trace_decoder.get_or_init(|| {
-                            NativeTraceDecoder::new().with_known_contracts(&known_contracts)
+                            NativeTraceDecoder::new()
+                                .with_known_contracts(&known_contracts)
+                                .with_opcodes(self.opcodes.iter().copied())
                         });
-                        for (_, arena) in traces.iter().filter(|(kind, _)| include_trace(kind)) {
+                        for (index, (_, arena)) in
+                            traces.iter().filter(|(kind, _)| include_trace(kind)).enumerate()
+                        {
+                            if index > 0 {
+                                sh_println!()?;
+                            }
                             let arena = GasReport::default()
                                 .normalized_native_trace(arena, &report_version);
                             let arena = trace_decoder.decode_for_display(&arena);
@@ -2289,7 +2300,9 @@ impl TestArgs {
                                 arena
                             };
                             let mut output = Vec::new();
-                            NativeTraceWriter::new(&mut output).write_arena(&arena)?;
+                            NativeTraceWriter::new(&mut output)
+                                .with_storage_changes(config.tracing.verbosity >= 5)
+                                .write_arena(&arena)?;
                             sh_println!("{}", String::from_utf8(output)?.trim_end())?;
                         }
                         sh_println!()?;
@@ -2704,7 +2717,11 @@ impl TestArgs {
                         decoder.identify(arena, &mut identifier);
 
                         if renders_trace && should_include_trace(kind) {
-                            decoder.opcodes = self.opcodes.clone();
+                            decoder.opcodes = self
+                                .opcodes
+                                .iter()
+                                .map(|op| LegacyOpCode::new_or_unknown(op.get()))
+                                .collect();
                             decode_trace_arena(arena, &decoder).await;
                             let rendered = match tracing.trace_depth {
                                 Some(trace_depth) => {
@@ -3280,8 +3297,8 @@ impl Provider for TestArgs {
     }
 }
 
-fn parse_opcode(s: &str) -> Result<OpCode, String> {
-    OpCode::parse(s).ok_or_else(|| format!("invalid opcode: {s}"))
+fn parse_opcode(s: &str) -> Result<NativeOpCode, String> {
+    NativeOpCode::parse(s).ok_or_else(|| format!("invalid opcode: {s}"))
 }
 
 const fn apply_mutation_compiler_overrides(config: &mut Config) {

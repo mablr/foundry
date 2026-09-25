@@ -6284,6 +6284,7 @@ dependencies = [
  "alloy-sol-types",
  "async-trait",
  "base-common-precompiles",
+ "evm2",
  "evm2-inspectors",
  "eyre",
  "foundry-block-explorers",
