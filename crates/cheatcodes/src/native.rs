@@ -10,7 +10,9 @@ use evm2::{
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
 use foundry_evm_core::{
-    constants::{CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, HARDHAT_CONSOLE_ADDRESS},
+    constants::{
+        CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME,
+    },
     native::{FoundryEvmTypes, LocalState, NativeInspector},
 };
 use std::{collections::BTreeMap, sync::Arc};
@@ -251,6 +253,13 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
         }
 
         let (stop, output) = match Vm::VmCalls::abi_decode(&message.input) {
+            Ok(Vm::VmCalls::assume(call)) => {
+                if call.condition {
+                    (InstrStop::Return, Bytes::new())
+                } else {
+                    (InstrStop::Revert, Bytes::from_static(MAGIC_ASSUME))
+                }
+            }
             Ok(Vm::VmCalls::deal(call)) => {
                 match interp.host().state_mut().account(&call.account, false) {
                     Ok(mut account) => {

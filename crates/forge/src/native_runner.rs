@@ -4,9 +4,12 @@ use crate::{
     TestContract, TestFilter,
     result::{SuiteResult, TestKind, TestResult, TestStatus},
     test_contract::{LibraryDeployment, PreparedTestArtifacts},
-    test_matcher::{TestFunctionMatcher, is_generated_symbolic_regression_contract},
+    test_matcher::{
+        FuzzFailureReplayConfig, TestFunctionMatcher, is_generated_symbolic_regression_contract,
+    },
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
+use alloy_dyn_abi::JsonAbiExt;
 use alloy_json_abi::Function;
 use alloy_primitives::{Address, Bytes, Log, TxKind, U256};
 use evm2::{
@@ -15,20 +18,25 @@ use evm2::{
     evm::{Database, EmptyDB},
 };
 use eyre::{Result, ensure};
-use foundry_common::{LIBRARY_DEPLOYER, TestFunctionKind};
+use foundry_common::{
+    LIBRARY_DEPLOYER, TestFunctionKind,
+    fmt::{format_tokens, format_tokens_raw},
+};
 use foundry_compilers::ProjectCompileOutput;
 use foundry_config::{Config, InlineConfig};
 use foundry_evm::{
     core::{
         constants::{
             CALLER, DEFAULT_CREATE2_DEPLOYER, DEFAULT_CREATE2_DEPLOYER_CODE,
-            DEFAULT_CREATE2_DEPLOYER_DEPLOYER,
+            DEFAULT_CREATE2_DEPLOYER_DEPLOYER, MAGIC_ASSUME,
         },
         native::{EthereumEnv, LocalState},
     },
+    fuzz::{CounterExample, FuzzCase, FuzzTestResult},
     native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
 };
+use itertools::Itertools;
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 /// Linked local tests and native Ethereum execution options.
@@ -38,6 +46,7 @@ pub(crate) struct NativeMultiContractRunner {
     inline_config: Arc<InlineConfig>,
     evm_opts: EvmOpts,
     sender: Address,
+    fuzz_input: Option<FuzzFailureReplayConfig>,
 }
 
 /// A deployed test contract with state shared by its individual test runs.
@@ -124,6 +133,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
                         input.into(),
                         gas_limit,
                         gas_price,
+                        U256::ZERO,
                     );
                     let result = executor.transact(&tx)?;
                     ensure!(
@@ -153,6 +163,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             contract.bytecode.clone(),
             gas_limit,
             gas_price,
+            U256::ZERO,
         );
         let result = executor.transact(&tx)?;
         if !result.status {
@@ -202,12 +213,21 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
     /// Executes one no-argument unit test against an isolated copy of setup state.
     pub fn run_unit(&self, function: &Function) -> Result<(TxResult, Vec<Log>)> {
         ensure!(function.inputs.is_empty(), "native unit execution requires no arguments");
+        self.run_input(function.selector().into(), U256::ZERO)
+    }
+
+    /// Replays one concrete call against an isolated copy of setup state.
+    pub fn run_input(&self, input: Bytes, value: U256) -> Result<(TxResult, Vec<Log>)> {
         let mut runner = self.clone();
-        let result = runner.execute(function.selector().into())?;
+        let result = runner.execute_with_value(input, value)?;
         Ok((result, runner.executor.inspector_mut().take_logs()))
     }
 
     fn execute(&mut self, input: Bytes) -> Result<TxResult> {
+        self.execute_with_value(input, U256::ZERO)
+    }
+
+    fn execute_with_value(&mut self, input: Bytes, value: U256) -> Result<TxResult> {
         let nonce =
             self.executor.state().database().account_info(&CALLER).map_or(0, |info| info.nonce);
         let tx = Self::transaction(
@@ -217,6 +237,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             input,
             self.gas_limit,
             self.gas_price,
+            value,
         );
         Ok(self.executor.transact(&tx)?)
     }
@@ -229,7 +250,15 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         gas_limit: u64,
         gas_price: u128,
     ) -> Result<Address> {
-        let tx = Self::transaction(caller, nonce, TxKind::Create, code, gas_limit, gas_price);
+        let tx = Self::transaction(
+            caller,
+            nonce,
+            TxKind::Create,
+            code,
+            gas_limit,
+            gas_price,
+            U256::ZERO,
+        );
         let result = executor.transact(&tx)?;
         ensure!(
             result.status,
@@ -275,12 +304,14 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         input: Bytes,
         gas_limit: u64,
         gas_price: u128,
+        value: U256,
     ) -> Recovered<TxEnvelope> {
         Recovered::new_unchecked(
             TxEnvelope::Legacy(TxLegacy {
                 nonce,
                 gas_limit,
                 gas_price,
+                value,
                 to,
                 input,
                 ..Default::default()
@@ -299,6 +330,7 @@ impl NativeMultiContractRunner {
         evm_opts: EvmOpts,
         sender: Address,
         create2_deployer_available: bool,
+        fuzz_input: Option<FuzzFailureReplayConfig>,
     ) -> Result<Self> {
         let prepared = PreparedTestArtifacts::new(
             &config,
@@ -308,7 +340,7 @@ impl NativeMultiContractRunner {
             &evm_opts,
             create2_deployer_available,
         )?;
-        Ok(Self { prepared, config, inline_config, evm_opts, sender })
+        Ok(Self { prepared, config, inline_config, evm_opts, sender, fuzz_input })
     }
 
     /// Executes selected local unit tests through evm2 and collects their results.
@@ -370,6 +402,35 @@ impl NativeMultiContractRunner {
                     function,
                     is_generated_symbolic_regression_contract(&contract.abi),
                 );
+                if let Some(replay) = &self.fuzz_input {
+                    let test = if replay.contract == id.identifier()
+                        && replay.test == function.signature()
+                    {
+                        ensure!(
+                            matches!(kind, TestFunctionKind::FuzzTest { should_fail: false }),
+                            "native fuzz replay requires a stateless fuzz test"
+                        );
+                        self.run_fuzz_replay(&runner, function, replay, &env)?
+                    } else {
+                        let mut test = TestResult {
+                            status: TestStatus::Skipped,
+                            reason: Some("not runnable in replay mode".to_string()),
+                            ..Default::default()
+                        };
+                        if matches!(kind, TestFunctionKind::FuzzTest { .. }) {
+                            test.kind = TestKind::Fuzz {
+                                first_case: FuzzCase::default(),
+                                runs: 0,
+                                mean_gas: 0,
+                                median_gas: 0,
+                                failed_corpus_replays: 0,
+                            };
+                        }
+                        test
+                    };
+                    tests.insert(function.signature(), test);
+                    continue;
+                }
                 ensure!(
                     matches!(kind, TestFunctionKind::UnitTest { should_fail: false }),
                     "native execution does not yet support {} tests",
@@ -402,6 +463,71 @@ impl NativeMultiContractRunner {
             suites.insert(id.identifier(), SuiteResult::new(timer.elapsed(), tests, Vec::new()));
         }
         Ok(suites)
+    }
+
+    fn run_fuzz_replay<D: Database + Clone + 'static>(
+        &self,
+        runner: &NativeContractRunner<D>,
+        function: &Function,
+        replay: &FuzzFailureReplayConfig,
+        env: &EthereumEnv,
+    ) -> Result<TestResult> {
+        ensure!(self.config.fuzz.fail_on_revert, "native fuzz replay requires fail_on_revert");
+        let balance = runner
+            .executor
+            .state()
+            .database()
+            .account_info(&CALLER)
+            .map_or(U256::ZERO, |info| info.balance);
+        let value = replay.failure.value.unwrap_or_default().min(balance);
+        let (result, logs) = runner.run_input(replay.failure.calldata.clone(), value)?;
+        if result.output.as_ref() == MAGIC_ASSUME {
+            let mut test = TestResult::default();
+            test.fuzz_result(FuzzTestResult {
+                skipped: true,
+                reason: Some("persisted fuzz failure rejected by `vm.assume`".to_string()),
+                ..Default::default()
+            });
+            return Ok(test);
+        }
+        let stipend = intrinsic_gas(
+            &env.version,
+            CALLER,
+            TxKind::Call(runner.address()),
+            &replay.failure.calldata,
+            0,
+            0,
+            value,
+        );
+        let gas_used = result.tx_gas_used();
+        let passed = result.status;
+        let counterexample = (!passed).then(|| {
+            let args = function.abi_decode_input(&replay.failure.calldata[4..]).unwrap_or_default();
+            let mut counterexample = (*replay.failure).clone();
+            counterexample.sender = Some(CALLER);
+            counterexample.addr = Some(runner.address());
+            counterexample.value = (!value.is_zero()).then_some(value);
+            counterexample.warp = None;
+            counterexample.roll = None;
+            counterexample.args = Some(format_tokens(&args).format(", ").to_string());
+            counterexample.raw_args = Some(format_tokens_raw(&args).format(", ").to_string());
+            CounterExample::Single(counterexample)
+        });
+        let mut test = TestResult::default();
+        test.fuzz_result(FuzzTestResult {
+            first_case: if passed {
+                FuzzCase { gas: gas_used, stipend }
+            } else {
+                FuzzCase::default()
+            },
+            gas_by_case: passed.then_some((gas_used, stipend)).into_iter().collect(),
+            success: passed,
+            reason: (!passed).then(|| self.failure_reason(&result)),
+            counterexample,
+            logs,
+            ..Default::default()
+        });
+        Ok(test)
     }
 
     fn failure_reason(&self, result: &TxResult) -> String {

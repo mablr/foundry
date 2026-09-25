@@ -2,7 +2,142 @@
 
 use alloy_primitives::{Address, B256, Bytes, U256};
 use anvil::{NodeConfig, spawn};
+use foundry_evm::fuzz::BaseCounterExample;
 use foundry_test_utils::{forgetest_async, forgetest_init, str};
+
+forgetest_init!(evm2_replays_explicit_fuzz_input, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativeFuzzReplay.t.sol",
+        r#"
+interface Vm {
+    function assume(bool condition) external pure;
+}
+
+contract NativeFuzzReplayTest {
+    Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+
+    function testUnit() public pure {}
+
+    function testFuzz_value(uint256 value) public pure {
+        require(value != 42, "boom");
+    }
+
+    function testFuzz_payable(uint256 value) public payable {
+        require(msg.value == value, "wrong replay value");
+    }
+
+    function testFuzz_assume(uint256 value) public pure {
+        vm.assume(value != 42);
+    }
+}
+"#,
+    );
+    let mut calldata =
+        alloy_primitives::keccak256("testFuzz_value(uint256)").as_slice()[..4].to_vec();
+    calldata.extend_from_slice(&U256::from(42).to_be_bytes::<32>());
+    let failure = BaseCounterExample {
+        warp: None,
+        roll: None,
+        sender: None,
+        addr: None,
+        calldata: calldata.into(),
+        value: None,
+        contract_name: None,
+        func_name: None,
+        signature: None,
+        args: None,
+        raw_args: None,
+        traces: None,
+        show_solidity: false,
+        fuzz: Default::default(),
+    };
+    let input = prj.root().join("fuzz-input.json");
+    std::fs::write(&input, serde_json::to_vec(&failure).unwrap()).unwrap();
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.args(["test", "--match-contract", "NativeFuzzReplayTest", "--fuzz-input-file"])
+        .arg(&input)
+        .assert_failure()
+        .stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 4 tests for test/NativeFuzzReplay.t.sol:NativeFuzzReplayTest
+[SKIP: not runnable in replay mode] testFuzz_assume(uint256) (runs: 0, [AVG_GAS])
+[SKIP: not runnable in replay mode] testFuzz_payable(uint256) (runs: 0, [AVG_GAS])
+[FAIL: boom; counterexample: 		sender=0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38 addr=0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496 calldata=0x4c39e060000000000000000000000000000000000000000000000000000000000000002a args=[42]] testFuzz_value(uint256) (runs: 0, [AVG_GAS])
+[SKIP: not runnable in replay mode] testUnit() ([GAS])
+Suite result: FAILED. 0 passed; 1 failed; 3 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 3 skipped (4 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/NativeFuzzReplay.t.sol:NativeFuzzReplayTest
+[FAIL: boom; counterexample: 		sender=0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38 addr=0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496 calldata=0x4c39e060000000000000000000000000000000000000000000000000000000000000002a args=[42]] testFuzz_value(uint256) (runs: 0, [AVG_GAS])
+
+Encountered a total of 1 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 1 failed test
+Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing test in the debugger
+
+[SEED] (use `--fuzz-seed` to reproduce)
+
+"#]]);
+
+    let mut calldata =
+        alloy_primitives::keccak256("testFuzz_payable(uint256)").as_slice()[..4].to_vec();
+    calldata.extend_from_slice(&U256::from(7).to_be_bytes::<32>());
+    let mut success = failure;
+    success.calldata = calldata.into();
+    success.value = Some(U256::from(7));
+    std::fs::write(&input, serde_json::to_vec(&success).unwrap()).unwrap();
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.args(["test", "--match-contract", "NativeFuzzReplayTest", "--fuzz-input-file"])
+        .arg(&input)
+        .assert_success()
+        .stdout_eq(str![[r#"
+No files changed, compilation skipped
+
+Ran 4 tests for test/NativeFuzzReplay.t.sol:NativeFuzzReplayTest
+[SKIP: not runnable in replay mode] testFuzz_assume(uint256) (runs: 0, [AVG_GAS])
+[PASS] testFuzz_payable(uint256) (runs: 1, [AVG_GAS])
+[SKIP: not runnable in replay mode] testFuzz_value(uint256) (runs: 0, [AVG_GAS])
+[SKIP: not runnable in replay mode] testUnit() ([GAS])
+Suite result: ok. 1 passed; 0 failed; 3 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 3 skipped (4 total tests)
+
+"#]]);
+
+    let mut calldata =
+        alloy_primitives::keccak256("testFuzz_assume(uint256)").as_slice()[..4].to_vec();
+    calldata.extend_from_slice(&U256::from(42).to_be_bytes::<32>());
+    success.calldata = calldata.into();
+    success.value = None;
+    std::fs::write(&input, serde_json::to_vec(&success).unwrap()).unwrap();
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.args(["test", "--match-contract", "NativeFuzzReplayTest", "--fuzz-input-file"])
+        .arg(&input)
+        .assert_success()
+        .stdout_eq(str![[r#"
+No files changed, compilation skipped
+
+Ran 4 tests for test/NativeFuzzReplay.t.sol:NativeFuzzReplayTest
+[SKIP: persisted fuzz failure rejected by `vm.assume`] testFuzz_assume(uint256) (runs: 0, [AVG_GAS])
+[SKIP: not runnable in replay mode] testFuzz_payable(uint256) (runs: 0, [AVG_GAS])
+[SKIP: not runnable in replay mode] testFuzz_value(uint256) (runs: 0, [AVG_GAS])
+[SKIP: not runnable in replay mode] testUnit() ([GAS])
+Suite result: ok. 0 passed; 0 failed; 4 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 0 tests passed, 0 failed, 4 skipped (4 total tests)
+
+"#]]);
+});
 
 forgetest_init!(evm2_reports_setup_failures_as_suite_results, |prj, cmd| {
     prj.update_config(|config| config.isolate = false);

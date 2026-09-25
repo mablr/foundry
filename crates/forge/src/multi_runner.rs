@@ -27,7 +27,7 @@ use foundry_evm::{
     executors::{EarlyExit, Executor, ExecutorBuilder, ReplayObservation, ShowmapDomain},
     fork::CreateFork,
     fuzz::{
-        BaseCounterExample, BasicTxDetails,
+        BasicTxDetails,
         strategies::{EnumBounds, LiteralsDictionary},
     },
     inspectors::{CheatsConfig, EdgeIndexMap},
@@ -46,7 +46,7 @@ use std::{
 };
 
 pub(crate) use crate::test_matcher::{
-    TestFunctionMatcher, is_generated_symbolic_regression_contract,
+    FuzzFailureReplayConfig, TestFunctionMatcher, is_generated_symbolic_regression_contract,
 };
 pub use crate::{test_contract::LibraryDeployment, test_matcher::SymbolicArtifactReplayConfig};
 
@@ -388,17 +388,6 @@ pub struct FuzzMinimizeObservation {
     pub target: String,
     /// Replay result for this target.
     pub observation: ReplayObservation,
-}
-
-/// A validated stateless fuzz failure and its unique replay target.
-#[derive(Clone, Debug)]
-pub struct FuzzFailureReplayConfig {
-    /// Artifact payload to replay.
-    pub failure: Arc<BaseCounterExample>,
-    /// Fully qualified contract identifier selected for replay.
-    pub contract: String,
-    /// Function signature selected for replay.
-    pub test: String,
 }
 
 /// Configuration for the test runner.

@@ -9,7 +9,19 @@ use alloy_json_abi::{Function, JsonAbi};
 use foundry_common::TestFunctionKind;
 use foundry_compilers::ArtifactId;
 use foundry_config::{Config, InlineConfig};
-use std::path::PathBuf;
+use foundry_evm::fuzz::BaseCounterExample;
+use std::{path::PathBuf, sync::Arc};
+
+/// A validated stateless fuzz failure and its unique replay target.
+#[derive(Clone, Debug)]
+pub struct FuzzFailureReplayConfig {
+    /// Artifact payload to replay.
+    pub failure: Arc<BaseCounterExample>,
+    /// Fully qualified contract identifier selected for replay.
+    pub contract: String,
+    /// Function signature selected for replay.
+    pub test: String,
+}
 
 /// A symbolic counterexample selected for replay.
 #[derive(Clone, Debug)]

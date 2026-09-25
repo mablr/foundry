@@ -4,9 +4,9 @@ use crate::{
     decode::decode_console_logs,
     gas_report::GasReport,
     multi_runner::{
-        FuzzFailureReplayConfig, FuzzMinimizeConfig, FuzzMinimizeEdgeIndices, FuzzMinimizeMode,
-        FuzzMinimizeObservation, MultiNetworkConfig, ShowmapConfig, SymbolicArtifactReplayConfig,
-        TestFunctionMatcher, is_generated_symbolic_regression_contract,
+        FuzzMinimizeConfig, FuzzMinimizeEdgeIndices, FuzzMinimizeMode, FuzzMinimizeObservation,
+        MultiNetworkConfig, ShowmapConfig, SymbolicArtifactReplayConfig, TestFunctionMatcher,
+        is_generated_symbolic_regression_contract,
     },
     mutation::{MutationRunConfig, run_mutation_testing},
     native_runner::NativeMultiContractRunner,
@@ -19,6 +19,7 @@ use crate::{
         SymbolicRegression, SymbolicRegressionConfig, attach_symbolic_regressions_to_suites,
         collect_symbolic_artifacts_from_suites, emit_symbolic_regressions,
     },
+    test_matcher::FuzzFailureReplayConfig,
     traces::{
         CallTraceDecoderBuilder, InternalTraceMode, TraceKind,
         debug::{ContractSources, DebugTraceIdentifier},
@@ -2169,7 +2170,6 @@ impl TestArgs {
                 && config.tracing.verbosity < 3
                 && execution.multi_network.all_override_networks.is_empty()
                 && execution.replay_symbolic_artifact.is_none()
-                && execution.fuzz_input.is_none()
                 && self.mutate.is_none()
                 && !self.fuzz_only
                 && !self.fuzz_failure_replay,
@@ -2195,6 +2195,7 @@ impl TestArgs {
             evm_opts,
             sender,
             create2_deployer_available,
+            execution.fuzz_input,
         )?;
         let libraries = runner.prepared.libraries.clone();
         let timer = Instant::now();
