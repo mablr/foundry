@@ -81,6 +81,7 @@ mod build;
 mod execute;
 mod library_deployments;
 mod multi_sequence;
+pub mod native;
 mod progress;
 mod providers;
 mod receipts;

@@ -85,12 +85,21 @@ impl<D: Database + Clone + 'static, I: NativeInspector<D>> EthereumExecutor<D, I
 
     /// Executes a transaction without accepting its state or inspector changes.
     pub fn call(&self, tx: &Recovered<TxEnvelope>) -> HandlerResult<TxResult> {
+        self.inspect(tx).map(|(result, _)| result)
+    }
+
+    /// Executes without accepting state, returning the transaction's inspector observations.
+    pub fn inspect(&self, tx: &Recovered<TxEnvelope>) -> HandlerResult<(TxResult, I)> {
         let mut state = self.state.clone();
         let mut inspector = self.inspector.clone();
         inspector.set_backend(state.clone());
-        let mut evm = EthereumFactory.create(self.env, Db::new(&mut state));
-        evm.set_inspector(&mut inspector);
-        Ok(evm.transact(tx)?.discard())
+        let result = {
+            let mut evm = EthereumFactory.create(self.env, Db::new(&mut state));
+            evm.set_inspector(&mut inspector);
+            evm.transact(tx)?.discard()
+        };
+        inspector.finish_transaction(result.tx_gas_used());
+        Ok((result, inspector))
     }
 
     /// Executes and accepts a transaction's state changes.
@@ -275,7 +284,9 @@ mod tests {
             }),
             caller,
         );
-        assert!(executor.call(&tx).unwrap().status);
+        let (observed_result, observed_inspector) = executor.inspect(&tx).unwrap();
+        assert!(observed_result.status);
+        assert_eq!(observed_inspector.calls, 1);
         assert_eq!(executor.inspector().calls, 0);
         assert!(!executor.state().database().cache.accounts.contains_key(&target));
 

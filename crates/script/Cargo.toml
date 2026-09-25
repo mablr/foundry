@@ -20,6 +20,7 @@ foundry-config.workspace = true
 foundry-common.workspace = true
 foundry-evm.workspace = true
 foundry-evm-networks.workspace = true
+evm2.workspace = true
 alloy-evm.workspace = true
 foundry-debugger.workspace = true
 foundry-cheatcodes.workspace = true
@@ -63,6 +64,7 @@ tempo-alloy.workspace = true
 tempo-primitives.workspace = true
 
 [dev-dependencies]
+alloy-sol-types.workspace = true
 anvil.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 
