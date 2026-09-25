@@ -35,6 +35,7 @@ use foundry_evm::{
     fuzz::{CounterExample, FuzzCase, FuzzTestResult},
     native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
+    traces::native::{CallTraceArena as NativeCallTraceArena, TracingInspectorConfig},
 };
 use itertools::Itertools;
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
@@ -61,7 +62,12 @@ pub struct NativeContractRunner<D: Database + Clone = EmptyDB> {
 /// The result of deploying and setting up one native test contract.
 pub(crate) enum NativeContractSetup<D: Database + Clone> {
     Ready(Box<NativeContractRunner<D>>),
-    Failed { stage: &'static str, result: TxResult, logs: Vec<Log> },
+    Failed {
+        stage: &'static str,
+        result: TxResult,
+        logs: Vec<Log>,
+        traces: Vec<NativeCallTraceArena>,
+    },
 }
 
 /// Libraries linked into a native test contract.
@@ -77,6 +83,7 @@ pub(crate) struct NativeTestSetup<'a> {
     gas_limit: u64,
     gas_price: u128,
     libraries: NativeLibraries<'a>,
+    tracing: Option<TracingInspectorConfig>,
 }
 
 impl<D: Database + Clone + 'static> NativeContractRunner<D> {
@@ -87,7 +94,8 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         mut state: LocalState<D>,
         setup: NativeTestSetup<'_>,
     ) -> Result<NativeContractSetup<D>> {
-        let NativeTestSetup { sender, initial_balance, gas_limit, gas_price, libraries } = setup;
+        let NativeTestSetup { sender, initial_balance, gas_limit, gas_price, libraries, tracing } =
+            setup;
         env.block.gas_limit = U256::from(gas_limit);
         state.set_balance(sender, U256::MAX)?;
         state.set_nonce(sender, 1)?;
@@ -96,6 +104,9 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         let expected_address = sender.create(1);
         state.set_balance(expected_address, initial_balance)?;
         let mut executor = EthereumExecutor::new_foundry(env, state);
+        if let Some(tracing) = tracing {
+            executor.inspector_mut().enable_tracing(tracing);
+        }
         if let LibraryDeployment::Create2 { deployer, .. } = libraries.deployment
             && !libraries.code.is_empty()
         {
@@ -171,6 +182,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
                 stage: "constructor()",
                 result,
                 logs: executor.inspector_mut().take_logs(),
+                traces: executor.inspector_mut().take_traces(),
             });
         }
         let address = result
@@ -199,6 +211,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
                     stage: "setUp()",
                     result,
                     logs: runner.executor.inspector_mut().take_logs(),
+                    traces: runner.executor.inspector_mut().take_traces(),
                 });
             }
         }
@@ -211,16 +224,25 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
     }
 
     /// Executes one no-argument unit test against an isolated copy of setup state.
-    pub fn run_unit(&self, function: &Function) -> Result<(TxResult, Vec<Log>)> {
+    pub fn run_unit(
+        &self,
+        function: &Function,
+    ) -> Result<(TxResult, Vec<Log>, Vec<NativeCallTraceArena>)> {
         ensure!(function.inputs.is_empty(), "native unit execution requires no arguments");
         self.run_input(function.selector().into(), U256::ZERO)
     }
 
     /// Replays one concrete call against an isolated copy of setup state.
-    pub fn run_input(&self, input: Bytes, value: U256) -> Result<(TxResult, Vec<Log>)> {
+    pub fn run_input(
+        &self,
+        input: Bytes,
+        value: U256,
+    ) -> Result<(TxResult, Vec<Log>, Vec<NativeCallTraceArena>)> {
         let mut runner = self.clone();
         let result = runner.execute_with_value(input, value)?;
-        Ok((result, runner.executor.inspector_mut().take_logs()))
+        let logs = runner.executor.inspector_mut().take_logs();
+        let traces = runner.executor.inspector_mut().take_traces();
+        Ok((result, logs, traces))
     }
 
     fn execute(&mut self, input: Bytes) -> Result<TxResult> {
@@ -377,13 +399,20 @@ impl NativeMultiContractRunner {
                         code: &self.prepared.libs_to_deploy,
                         deployment: self.prepared.library_deployment,
                     },
+                    tracing: (self.config.tracing.verbosity >= 3).then_some(
+                        TracingInspectorConfig {
+                            record_steps: self.config.tracing.verbosity >= 5,
+                            ..Default::default()
+                        },
+                    ),
                 },
             )?;
             let runner = match runner {
                 NativeContractSetup::Ready(runner) => runner,
-                NativeContractSetup::Failed { stage, result, logs } => {
+                NativeContractSetup::Failed { stage, result, logs, traces } => {
                     let mut failure = TestResult::fail(self.failure_reason(&result));
                     failure.logs = logs;
+                    failure.native_traces = traces;
                     suites.insert(
                         id.identifier(),
                         SuiteResult::new(
@@ -436,7 +465,7 @@ impl NativeMultiContractRunner {
                     "native execution does not yet support {} tests",
                     kind.name()
                 );
-                let (result, logs) = runner.run_unit(function)?;
+                let (result, logs, traces) = runner.run_unit(function)?;
                 let passed = result.status;
                 let reason = (!passed).then(|| self.failure_reason(&result));
                 let input = Bytes::copy_from_slice(function.selector().as_slice());
@@ -456,6 +485,7 @@ impl NativeMultiContractRunner {
                         reason,
                         kind: TestKind::Unit { gas: result.tx_gas_used().saturating_sub(stipend) },
                         logs,
+                        native_traces: traces,
                         ..Default::default()
                     },
                 );
@@ -480,7 +510,7 @@ impl NativeMultiContractRunner {
             .account_info(&CALLER)
             .map_or(U256::ZERO, |info| info.balance);
         let value = replay.failure.value.unwrap_or_default().min(balance);
-        let (result, logs) = runner.run_input(replay.failure.calldata.clone(), value)?;
+        let (result, logs, traces) = runner.run_input(replay.failure.calldata.clone(), value)?;
         if result.output.as_ref() == MAGIC_ASSUME {
             let mut test = TestResult::default();
             test.fuzz_result(FuzzTestResult {
@@ -488,6 +518,7 @@ impl NativeMultiContractRunner {
                 reason: Some("persisted fuzz failure rejected by `vm.assume`".to_string()),
                 ..Default::default()
             });
+            test.native_traces = traces;
             return Ok(test);
         }
         let stipend = intrinsic_gas(
@@ -527,6 +558,7 @@ impl NativeMultiContractRunner {
             logs,
             ..Default::default()
         });
+        test.native_traces = traces;
         Ok(test)
     }
 
@@ -575,6 +607,7 @@ mod tests {
                 gas_limit: 100_000,
                 gas_price: 0,
                 libraries: NativeLibraries { code: &[], deployment: LibraryDeployment::Nonce },
+                tracing: None,
             },
         )
         .unwrap();
@@ -583,7 +616,7 @@ mod tests {
         };
 
         assert_eq!(runner.address(), sender.create(1));
-        let (result, _) = runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();
+        let (result, _, _) = runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();
         assert!(result.status);
         assert_eq!(U256::from_be_slice(&result.output), U256::from(42));
     }

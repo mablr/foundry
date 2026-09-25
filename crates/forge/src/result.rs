@@ -23,7 +23,10 @@ use foundry_evm::{
         CallDetails, CounterExample, FuzzCase, FuzzFixtures, FuzzTestResult,
         strategies::EvmFuzzState,
     },
-    traces::{CallTraceArena, CallTraceDecoder, TraceKind, Traces},
+    traces::{
+        CallTraceArena, CallTraceDecoder, TraceKind, Traces,
+        native::CallTraceArena as NativeCallTraceArena,
+    },
 };
 use foundry_evm_symbolic::{
     PortfolioDiagnostics, SymbolicStats, SymbolicStopReason, SymbolicStorageAssignment,
@@ -1316,6 +1319,10 @@ pub struct TestResult {
 
     /// Traces
     pub traces: Traces,
+
+    /// Traces recorded by the evm2 executor.
+    #[serde(skip)]
+    pub native_traces: Vec<NativeCallTraceArena>,
 
     /// Runtime bytecodes for contracts seen in debug traces.
     #[serde(skip)]

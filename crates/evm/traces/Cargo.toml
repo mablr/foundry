@@ -23,6 +23,8 @@ foundry-evm-core.workspace = true
 foundry-evm-hardforks.workspace = true
 foundry-evm-networks.workspace = true
 
+evm2-inspectors.workspace = true
+
 alloy-dyn-abi = { workspace = true, features = ["arbitrary", "eip712"] }
 alloy-json-abi.workspace = true
 alloy-primitives = { workspace = true, features = [

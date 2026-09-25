@@ -76,8 +76,8 @@ use foundry_evm::{
     fuzz::{BaseCounterExample, BasicTxDetails, CounterExample},
     opts::EvmOpts,
     traces::{
-        backtrace::BacktraceBuilder, identifier::TraceIdentifiers, prune_trace_depth,
-        trace_arena_at_depth,
+        backtrace::BacktraceBuilder, identifier::TraceIdentifiers,
+        native::TraceWriter as NativeTraceWriter, prune_trace_depth, trace_arena_at_depth,
     },
 };
 use foundry_evm_networks::NetworkVariant;
@@ -2167,13 +2167,14 @@ impl TestArgs {
                 && self.evm_profile.is_none()
                 && !config.isolate
                 && self.showmap_out.is_none()
-                && config.tracing.verbosity < 3
+                && self.opcodes.is_empty()
+                && config.tracing.trace_depth.is_none()
                 && execution.multi_network.all_override_networks.is_empty()
                 && execution.replay_symbolic_artifact.is_none()
                 && self.mutate.is_none()
                 && !self.fuzz_only
                 && !self.fuzz_failure_replay,
-            "native tracing, coverage, isolation, replay, and campaign modes are not implemented"
+            "native coverage, isolation, trace filtering, replay, and campaign modes are not implemented"
         );
         let sender = evm_opts.sender;
         let create2_deployer_available =
@@ -2229,6 +2230,18 @@ impl TestArgs {
                         && (!self.suppress_successful_traces || result.status.is_failure())
                     {
                         print_test_logs(result)?;
+                    }
+                    if config.tracing.verbosity >= 3
+                        && (!self.suppress_successful_traces || result.status.is_failure())
+                        && !result.native_traces.is_empty()
+                    {
+                        sh_println!("Traces:")?;
+                        for arena in &result.native_traces {
+                            let mut output = Vec::new();
+                            NativeTraceWriter::new(&mut output).write_arena(arena)?;
+                            sh_println!("{}", String::from_utf8(output)?.trim_end())?;
+                        }
+                        sh_println!()?;
                     }
                 }
                 sh_println!("{}", suite.summary())?;

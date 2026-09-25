@@ -94,6 +94,13 @@ pub use revm_inspectors::tracing::{
     },
 };
 
+/// Trace types produced by evm2 execution.
+pub mod native {
+    pub use evm2_inspectors::tracing::{
+        CallTraceArena, TraceWriter, TracingInspector, TracingInspectorConfig,
+    };
+}
+
 /// Call trace address identifiers.
 ///
 /// Identifiers figure out what ABIs and labels belong to all the addresses of the trace.

@@ -633,6 +633,37 @@ Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
 Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
 
 "#]]);
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-test", "testLogs", "-vvv"])
+        .assert_success()
+        .stdout_eq(str![[r#"
+No files changed, compilation skipped
+
+Ran 1 test for test/NativeLogs.t.sol:NativeLogsTest
+[PASS] testLogs() ([GAS])
+Logs:
+  setup
+  console
+  event
+
+Traces:
+  [252794] → new <unknown>@0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+    └─ ← [Return] 930 bytes of code
+  [68137] → new <unknown>@0x4e59b44847b379578588920cA78FbF26c0B4956C
+    └─ ← [Return] 69 bytes of code
+  [22982] 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496::0a9254e4()
+    └─ ← [Stop]
+  [26341] 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496::3c67c51e()
+    ├─ [0] 0x000000000000000000636F6e736F6c652e6c6f67::41304fac(00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000007636f6e736f6c6500000000000000000000000000000000000000000000000000) [staticcall]
+    │   └─ ← [Return]
+    └─ ← [Stop]
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]]);
 });
 
 forgetest_init!(evm2_warp_updates_live_and_later_block_context, |prj, cmd| {

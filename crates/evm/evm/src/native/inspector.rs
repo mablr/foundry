@@ -7,7 +7,6 @@ use evm2::{
     evm::{Database, EmptyDB},
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
-use evm2_inspectors::tracing::{CallTraceArena, TracingInspector, TracingInspectorConfig};
 use foundry_cheatcodes::native::NativeCheatcodes;
 use foundry_common::{ErrorExt, fmt::ConsoleFmt};
 use foundry_evm_core::{
@@ -15,6 +14,7 @@ use foundry_evm_core::{
     constants::HARDHAT_CONSOLE_ADDRESS,
     native::{FoundryEvmTypes, LocalState, NativeInspector},
 };
+use foundry_evm_traces::native::{CallTraceArena, TracingInspector, TracingInspectorConfig};
 
 /// Native Ethereum inspectors and their per-test observations.
 #[derive(Clone, Debug)]
