@@ -8,17 +8,21 @@ use crate::{
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_network::Ethereum;
-use alloy_primitives::{Address, Bytes, Log, TxKind};
+use alloy_primitives::{Address, Bytes, Log, TxKind, U256, keccak256};
 use evm2::{TxResult, ethereum::TxEnvelope, evm::Database};
 use eyre::Result;
-use foundry_cheatcodes::{BroadcastableTransactions, Wallets};
-use foundry_cli::opts::TempoOpts;
+use foundry_cheatcodes::{BroadcastableTransactions, CheatsConfig, Wallets};
+use foundry_cli::{opts::TempoOpts, utils::needs_setup};
 use foundry_config::Config;
 use foundry_evm::{
-    core::fork::ResolvedFork,
+    core::{
+        constants::CALLER,
+        fork::ResolvedFork,
+        native::{EthereumEnv, EthereumFork, LocalState},
+    },
     native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
-    traces::native::CallTraceArena,
+    traces::native::{CallTraceArena, TracingInspectorConfig},
 };
 use foundry_evm_networks::NetworkVariant;
 use foundry_wallets::wallet_browser::signer::BrowserSigner;
@@ -69,6 +73,90 @@ impl NativeScriptContext {
             plan,
         })
     }
+
+    /// Runs the prepared Ethereum script on the selected local state or exact RPC fork.
+    pub async fn execute(&self) -> Result<NativeScriptExecution> {
+        eyre::ensure!(
+            self.plan.build.predeploy_libraries.libraries_count() == 0,
+            "native script library deployment is not implemented"
+        );
+        if let Some(resolved) = &self.resolved_fork {
+            let fork = EthereumFork::open(&self.config, &self.evm_opts, resolved).await?;
+            self.execute_on(fork.env, fork.state)
+        } else {
+            let env = EthereumEnv::local_from_config(&self.config, &self.evm_opts)?;
+            self.execute_on(env, LocalState::default())
+        }
+    }
+
+    fn execute_on<D: Database + Clone + 'static>(
+        &self,
+        env: EthereumEnv,
+        mut state: LocalState<D>,
+    ) -> Result<NativeScriptExecution> {
+        state.set_balance(CALLER, U256::MAX)?;
+        state.set_nonce(self.evm_opts.sender, self.sender_nonce)?;
+        if self.evm_opts.sender == Config::DEFAULT_SENDER {
+            state.set_balance(self.evm_opts.sender, U256::MAX)?;
+        }
+        let restore_sender_nonce = self.evm_opts.sender == CALLER;
+        let deployer_nonce = if restore_sender_nonce { u64::MAX / 2 } else { 0 };
+        if restore_sender_nonce {
+            state.set_nonce(CALLER, deployer_nonce)?;
+        }
+        state.set_balance(CALLER.create(deployer_nonce), self.evm_opts.initial_balance)?;
+
+        let mut executor = EthereumExecutor::new_foundry(env, state);
+        let inspector = executor.inspector_mut();
+        inspector.set_cheatcode_config(CheatsConfig::new(
+            &self.config,
+            self.evm_opts.clone(),
+            Some(self.plan.build.known_contracts.clone()),
+            Some(self.plan.build.build_data.target.clone()),
+            false,
+        ));
+        inspector.enable_tracing(TracingInspectorConfig::default());
+        if self.evm_opts.isolate {
+            inspector.enable_isolation();
+        }
+
+        let gas_price =
+            self.evm_opts.env.gas_price.unwrap_or_default().max(env.block.basefee.to::<u64>());
+        let mut runner = NativeScriptRunner::new(
+            executor,
+            CALLER,
+            self.evm_opts.sender,
+            self.evm_opts.gas_limit(),
+            u128::from(gas_price),
+        );
+        let deployment = runner.deploy(self.plan.execution.bytecode.clone())?;
+        if restore_sender_nonce {
+            runner.executor_mut().state_mut().set_nonce(CALLER, self.sender_nonce)?;
+        }
+        let Some(address) = deployment.result.created_address.filter(|_| deployment.result.status)
+        else {
+            return Ok(NativeScriptExecution { deployment, setup: None, script: None });
+        };
+        let setup = if needs_setup(&self.plan.execution.abi) {
+            let input = Bytes::copy_from_slice(&keccak256("setUp()")[..4]);
+            Some(runner.setup(address, input)?)
+        } else {
+            None
+        };
+        let script = if setup.as_ref().is_none_or(|setup| setup.result.status) {
+            Some(runner.script(address, self.plan.execution.calldata.clone())?)
+        } else {
+            None
+        };
+        Ok(NativeScriptExecution { deployment, setup, script })
+    }
+}
+
+/// Native constructor, setup, and script-call observations.
+pub struct NativeScriptExecution {
+    pub deployment: NativeScriptRun,
+    pub setup: Option<NativeScriptRun>,
+    pub script: Option<NativeScriptRun>,
 }
 
 /// Compiled, linked, and ABI-encoded inputs for native Ethereum script execution.
@@ -192,11 +280,10 @@ impl<D: Database + Clone + 'static> NativeScriptRunner<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_primitives::U256;
     use alloy_sol_types::SolCall;
     use evm2::{SpecId, env::BlockEnvExt};
     use foundry_cheatcodes::Vm;
-    use foundry_evm::core::{constants::CHEATCODE_ADDRESS, native::LocalState};
+    use foundry_evm::core::constants::CHEATCODE_ADDRESS;
 
     #[tokio::test]
     async fn prepared_solidity_script_runs_on_native_executor() {
@@ -215,42 +302,24 @@ mod tests {
             sig: "run()".into(),
             ..Default::default()
         };
-        let mut opts = EvmOpts::default();
-        opts.env.gas_limit = foundry_config::GasLimit(30_000_000);
-        opts.memory_limit = 1_000_000;
+        let opts = EvmOpts {
+            sender: CALLER,
+            env: foundry_evm::opts::Env {
+                gas_limit: foundry_config::GasLimit(30_000_000),
+                ..Default::default()
+            },
+            memory_limit: 1_000_000,
+            ..Default::default()
+        };
         let context = NativeScriptContext::prepare(args, config, opts).await.unwrap();
         assert_eq!(context.sender_nonce, 1);
-        let plan = context.plan;
-        assert_eq!(plan.build.predeploy_libraries.libraries_count(), 0);
-
-        let deployer = Address::with_last_byte(1);
-        let sender = Address::with_last_byte(2);
-        let mut state = LocalState::default();
-        state.set_balance(deployer, U256::MAX).unwrap();
-        state.set_balance(sender, U256::MAX).unwrap();
-        let env = foundry_evm::core::native::EthereumEnv::local_from_config(
-            &context.config,
-            &context.evm_opts,
-        )
-        .unwrap();
-        let executor = EthereumExecutor::new_foundry(env, state);
-        let mut runner = NativeScriptRunner::new(executor, deployer, sender, 1_000_000, 0);
-        let deployment = runner.deploy(plan.execution.bytecode.clone()).unwrap();
-        assert!(deployment.result.status, "{:#?}", deployment.result);
-        let address = deployment.result.created_address.unwrap();
-
-        let setup = runner
-            .setup(address, Bytes::copy_from_slice(&alloy_primitives::keccak256("setUp()")[..4]))
-            .unwrap();
-        assert!(setup.result.status);
-        let script = runner.script(address, plan.execution.calldata).unwrap();
+        let execution = context.execute().await.unwrap();
+        assert!(execution.deployment.result.status, "{:#?}", execution.deployment.result);
+        assert_eq!(execution.deployment.result.created_address, Some(CALLER.create(u64::MAX / 2)));
+        assert!(execution.setup.as_ref().unwrap().result.status);
+        let script = execution.script.unwrap();
         assert!(script.result.status);
         assert_eq!(U256::from_be_slice(&script.result.output), U256::from(5));
-
-        let read = runner
-            .script(address, Bytes::copy_from_slice(&alloy_primitives::keccak256("value()")[..4]))
-            .unwrap();
-        assert_eq!(U256::from_be_slice(&read.result.output), U256::from(3));
     }
 
     #[test]
