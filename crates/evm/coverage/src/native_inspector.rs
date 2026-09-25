@@ -1,6 +1,6 @@
 //! Opcode and call hit collection for evm2 execution.
 
-use crate::{CallData, HitMap, HitMaps};
+use crate::{HitMap, HitMaps};
 use evm2::{
     EvmTypesHost, Inspector,
     interpreter::{Interpreter, Message, MessageResult},
@@ -39,7 +39,7 @@ impl<T: EvmTypesHost> Inspector<T> for NativeLineCoverageCollector {
         message: &mut Message<T>,
     ) -> Option<MessageResult<T>> {
         self.map(message.code.hash_slow(), message.code.original_bytes())
-            .call(CallData::new(&message.input), !message.value.is_zero());
+            .record_call(&message.input, !message.value.is_zero());
         None
     }
 
@@ -50,7 +50,7 @@ impl<T: EvmTypesHost> Inspector<T> for NativeLineCoverageCollector {
         result: &mut MessageResult<T>,
     ) {
         if result.stop.is_success() {
-            self.map(message.code.hash_slow(), message.code.original_bytes()).creation();
+            self.map(message.code.hash_slow(), message.code.original_bytes()).record_creation();
         }
     }
 }

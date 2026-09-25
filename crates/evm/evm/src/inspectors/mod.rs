@@ -1,7 +1,6 @@
 //! EVM inspectors.
 
 pub use foundry_cheatcodes::{self as cheatcodes, Cheatcodes, CheatsConfig};
-pub use foundry_evm_coverage::LineCoverageCollector;
 pub use foundry_evm_fuzz::Fuzzer;
 pub use foundry_evm_traces::{StackSnapshotType, TracingInspector, TracingInspectorConfig};
 
@@ -15,6 +14,9 @@ pub use chisel_state::ChiselState;
 
 mod logs;
 pub use logs::LogCollector;
+
+mod line_coverage;
+pub use line_coverage::LineCoverageCollector;
 
 mod script;
 pub use script::ScriptExecutionInspector;

@@ -6179,7 +6179,6 @@ dependencies = [
  "foundry-compilers",
  "foundry-evm-core",
  "rayon",
- "revm",
  "semver 1.0.28",
  "solar-compiler",
  "tracing",

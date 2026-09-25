@@ -31,9 +31,6 @@ use std::{
 pub mod analysis;
 pub mod anchors;
 
-mod inspector;
-pub use inspector::LineCoverageCollector;
-
 mod native_inspector;
 pub use native_inspector::NativeLineCoverageCollector;
 
@@ -386,8 +383,9 @@ impl HitMap {
         *self.hits.entry(pc).or_default() += hits;
     }
 
-    fn call(&mut self, call: CallData, with_value: bool) {
-        let hits = match call {
+    /// Records a call by calldata shape and whether it carried value.
+    pub fn record_call(&mut self, input: &[u8], with_value: bool) {
+        let hits = match CallData::new(input) {
             CallData::Empty => &mut self.empty_calls,
             CallData::Short => &mut self.short_calls,
             CallData::Selector(selector) => self.selector_calls.entry(selector).or_default(),
@@ -395,7 +393,8 @@ impl HitMap {
         hits.hit(with_value);
     }
 
-    const fn creation(&mut self) {
+    /// Records a successful contract creation.
+    pub const fn record_creation(&mut self) {
         self.creations += 1;
     }
 

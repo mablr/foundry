@@ -1,5 +1,5 @@
-use crate::{CallData, HitMap, HitMaps};
 use alloy_primitives::B256;
+use foundry_evm_coverage::{HitMap, HitMaps};
 use revm::{
     Inspector,
     interpreter::{CreateInputs, CreateOutcome, Interpreter, interpreter_types::Jumps},
@@ -34,18 +34,15 @@ impl Default for LineCoverageCollector {
 
 impl<CTX> Inspector<CTX> for LineCoverageCollector {
     fn initialize_interp(&mut self, interpreter: &mut Interpreter, _context: &mut CTX) {
-        let call = interpreter.input.bytecode_address.is_some().then(|| {
-            let calldata = if interpreter.input.input.is_empty() {
-                CallData::Empty
+        let map = self.get_or_insert_map(interpreter);
+        if interpreter.input.bytecode_address.is_some() {
+            let with_value = !interpreter.input.call_value.is_zero();
+            if interpreter.input.input.is_empty() {
+                map.record_call(&[], with_value);
             } else {
                 let input = interpreter.input.input.as_bytes_memory(&interpreter.memory);
-                CallData::new(&input)
-            };
-            (calldata, !interpreter.input.call_value.is_zero())
-        });
-        let map = self.get_or_insert_map(interpreter);
-        if let Some((call, with_value)) = call {
-            map.call(call, with_value);
+                map.record_call(&input, with_value);
+            }
         }
         // Reserve some space early to avoid reallocating too often.
         map.reserve(8192.min(interpreter.bytecode.len()));
@@ -65,7 +62,7 @@ impl<CTX> Inspector<CTX> for LineCoverageCollector {
         if outcome.result.result.is_ok()
             && let Some(map) = self.maps.get_mut(&inputs.init_code_hash())
         {
-            map.creation();
+            map.record_creation();
         }
     }
 }
