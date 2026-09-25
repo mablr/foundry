@@ -1,7 +1,7 @@
 //! Ethereum cheatcodes executed through evm2 inspection hooks.
 
 use crate::{CheatsConfig, Error, Vm};
-use alloy_primitives::{Address, Bytes, U256};
+use alloy_primitives::{Address, B256, Bytes, U256};
 use alloy_sol_types::{SolError, SolInterface, SolValue};
 use evm2::{
     Inspector,
@@ -52,6 +52,44 @@ struct NativeExpectedRevert {
     depth: u16,
     reason: Option<Bytes>,
     partial_match: bool,
+}
+
+/// A `vm.deployCode` request that must execute a nested CREATE message.
+pub struct NativeDeployCodeRequest {
+    pub path: String,
+    pub args: Bytes,
+    pub value: U256,
+    pub salt: Option<B256>,
+}
+
+impl NativeDeployCodeRequest {
+    /// Decodes a `vm.deployCode` call from cheatcode calldata.
+    pub fn decode(input: &[u8]) -> Option<Self> {
+        let (path, args, value, salt) = match Vm::VmCalls::abi_decode(input).ok()? {
+            Vm::VmCalls::deployCode_0(call) => (call.artifactPath, Bytes::new(), U256::ZERO, None),
+            Vm::VmCalls::deployCode_1(call) => {
+                (call.artifactPath, call.constructorArgs, U256::ZERO, None)
+            }
+            Vm::VmCalls::deployCode_2(call) => (call.artifactPath, Bytes::new(), call.value, None),
+            Vm::VmCalls::deployCode_3(call) => {
+                (call.artifactPath, call.constructorArgs, call.value, None)
+            }
+            Vm::VmCalls::deployCode_4(call) => {
+                (call.artifactPath, Bytes::new(), U256::ZERO, Some(call.salt))
+            }
+            Vm::VmCalls::deployCode_5(call) => {
+                (call.artifactPath, call.constructorArgs, U256::ZERO, Some(call.salt))
+            }
+            Vm::VmCalls::deployCode_6(call) => {
+                (call.artifactPath, Bytes::new(), call.value, Some(call.salt))
+            }
+            Vm::VmCalls::deployCode_7(call) => {
+                (call.artifactPath, call.constructorArgs, call.value, Some(call.salt))
+            }
+            _ => return None,
+        };
+        Some(Self { path, args, value, salt })
+    }
 }
 
 impl Default for NativeCheatcodes<EmptyDB> {

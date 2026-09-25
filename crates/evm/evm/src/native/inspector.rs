@@ -1,7 +1,7 @@
 //! Inspectors for native Ethereum execution.
 
 use alloy_consensus::{TxLegacy, transaction::Recovered};
-use alloy_primitives::{Address, B256, Bytes, Log, TxKind, U256};
+use alloy_primitives::{Address, Bytes, Log, TxKind, U256};
 use alloy_sol_types::{SolEvent, SolInterface, SolValue};
 use evm2::{
     EvmFeatures, EvmTypesHost, Inspector,
@@ -13,7 +13,10 @@ use evm2::{
         MessageResultExt, derive_create_destination,
     },
 };
-use foundry_cheatcodes::{CheatsConfig, Error, Vm, native::NativeCheatcodes};
+use foundry_cheatcodes::{
+    CheatsConfig, Error,
+    native::{NativeCheatcodes, NativeDeployCodeRequest},
+};
 use foundry_common::{ErrorExt, fmt::ConsoleFmt};
 use foundry_evm_core::{
     abi::console,
@@ -38,42 +41,6 @@ pub struct EthereumInspectorStack<D: Database + Clone = EmptyDB> {
     tracing: Option<TracingInspector>,
     traces: Vec<CallTraceArena>,
     coverage: Option<NativeLineCoverageCollector>,
-}
-
-struct NativeDeployCodeRequest {
-    path: String,
-    args: Bytes,
-    value: U256,
-    salt: Option<B256>,
-}
-
-impl NativeDeployCodeRequest {
-    fn from_call(call: Vm::VmCalls) -> Option<Self> {
-        let (path, args, value, salt) = match call {
-            Vm::VmCalls::deployCode_0(call) => (call.artifactPath, Bytes::new(), U256::ZERO, None),
-            Vm::VmCalls::deployCode_1(call) => {
-                (call.artifactPath, call.constructorArgs, U256::ZERO, None)
-            }
-            Vm::VmCalls::deployCode_2(call) => (call.artifactPath, Bytes::new(), call.value, None),
-            Vm::VmCalls::deployCode_3(call) => {
-                (call.artifactPath, call.constructorArgs, call.value, None)
-            }
-            Vm::VmCalls::deployCode_4(call) => {
-                (call.artifactPath, Bytes::new(), U256::ZERO, Some(call.salt))
-            }
-            Vm::VmCalls::deployCode_5(call) => {
-                (call.artifactPath, call.constructorArgs, U256::ZERO, Some(call.salt))
-            }
-            Vm::VmCalls::deployCode_6(call) => {
-                (call.artifactPath, Bytes::new(), call.value, Some(call.salt))
-            }
-            Vm::VmCalls::deployCode_7(call) => {
-                (call.artifactPath, call.constructorArgs, call.value, Some(call.salt))
-            }
-            _ => return None,
-        };
-        Some(Self { path, args, value, salt })
-    }
 }
 
 impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
@@ -452,8 +419,7 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
             });
         }
         if message.call_target == CHEATCODE_ADDRESS
-            && let Ok(call) = Vm::VmCalls::abi_decode(&message.input)
-            && let Some(request) = NativeDeployCodeRequest::from_call(call)
+            && let Some(request) = NativeDeployCodeRequest::decode(&message.input)
         {
             return Some(self.deploy_code(interp, message, request));
         }
