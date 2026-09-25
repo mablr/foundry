@@ -78,7 +78,10 @@ use foundry_evm::{
     traces::{
         backtrace::BacktraceBuilder,
         identifier::TraceIdentifiers,
-        native::{NativeTraceDecoder, TraceWriter as NativeTraceWriter},
+        native::{
+            NativeTraceDecoder, TraceWriter as NativeTraceWriter,
+            trace_arena_at_depth as native_trace_arena_at_depth,
+        },
         prune_trace_depth, trace_arena_at_depth,
     },
 };
@@ -2168,7 +2171,6 @@ impl TestArgs {
                 && self.evm_profile.is_none()
                 && self.showmap_out.is_none()
                 && self.opcodes.is_empty()
-                && config.tracing.trace_depth.is_none()
                 && execution.multi_network.all_override_networks.is_empty()
                 && execution.replay_symbolic_artifact.is_none()
                 && self.mutate.is_none()
@@ -2210,7 +2212,11 @@ impl TestArgs {
 
         if shell::is_json() || self.junit {
             let rendered = if shell::is_json() {
-                prepare_results_for_json(&mut results, 0, config.tracing.trace_depth);
+                prepare_results_for_json(
+                    &mut results,
+                    config.tracing.verbosity,
+                    config.tracing.trace_depth,
+                );
                 serde_json::to_string(&results)?
             } else {
                 junit_xml_report(&results, 0).to_string()?
@@ -2241,10 +2247,15 @@ impl TestArgs {
                         let trace_decoder = trace_decoder.get_or_init(|| {
                             NativeTraceDecoder::new().with_known_contracts(&known_contracts)
                         });
-                        for arena in &result.native_traces {
+                        for (_, arena) in &result.native_traces {
+                            let arena = trace_decoder.decode_for_display(arena);
+                            let arena = if let Some(depth) = config.tracing.trace_depth {
+                                native_trace_arena_at_depth(&arena, depth)
+                            } else {
+                                arena
+                            };
                             let mut output = Vec::new();
-                            NativeTraceWriter::new(&mut output)
-                                .write_arena(&trace_decoder.decode_for_display(arena))?;
+                            NativeTraceWriter::new(&mut output).write_arena(&arena)?;
                             sh_println!("{}", String::from_utf8(output)?.trim_end())?;
                         }
                         sh_println!()?;
@@ -2965,6 +2976,11 @@ fn prepare_results_for_json(
             }
             if let Some(trace_depth) = trace_depth {
                 *arena = trace_arena_at_depth(arena, trace_depth);
+            }
+        }
+        for (_, arena) in &mut test_result.native_traces {
+            if let Some(trace_depth) = trace_depth {
+                *arena = native_trace_arena_at_depth(arena, trace_depth);
             }
         }
     }

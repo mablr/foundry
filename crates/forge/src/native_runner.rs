@@ -43,7 +43,10 @@ use foundry_evm::{
     inspectors::CheatsConfig,
     native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
-    traces::native::{CallTraceArena as NativeCallTraceArena, TracingInspectorConfig},
+    traces::{
+        TraceKind,
+        native::{CallTraceArena as NativeCallTraceArena, TracingInspectorConfig},
+    },
 };
 use itertools::Itertools;
 use proptest::{
@@ -73,9 +76,11 @@ pub struct NativeContractRunner<D: Database + Clone = EmptyDB> {
     gas_limit: u64,
     gas_price: u128,
     setup_coverage: Option<HitMaps>,
+    setup_traces: NativeTraces,
 }
 
-type NativeCallOutput = (TxResult, Vec<Log>, Vec<NativeCallTraceArena>, Option<HitMaps>);
+type NativeTraces = Vec<(TraceKind, NativeCallTraceArena)>;
+type NativeCallOutput = (TxResult, Vec<Log>, NativeTraces, Option<HitMaps>);
 
 /// The result of deploying and setting up one native test contract.
 pub(crate) enum NativeContractSetup<D: Database + Clone> {
@@ -84,7 +89,7 @@ pub(crate) enum NativeContractSetup<D: Database + Clone> {
         stage: &'static str,
         result: Box<TxResult>,
         logs: Vec<Log>,
-        traces: Vec<NativeCallTraceArena>,
+        traces: NativeTraces,
         coverage: Option<HitMaps>,
     },
 }
@@ -221,6 +226,12 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
                 }
             }
         }
+        let mut setup_traces = executor
+            .inspector_mut()
+            .take_traces()
+            .into_iter()
+            .map(|arena| (TraceKind::Deployment, arena))
+            .collect::<NativeTraces>();
         let tx = Self::transaction(
             sender,
             1,
@@ -231,12 +242,19 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             U256::ZERO,
         );
         let result = executor.transact(&tx)?;
+        setup_traces.extend(
+            executor
+                .inspector_mut()
+                .take_traces()
+                .into_iter()
+                .map(|arena| (TraceKind::Deployment, arena)),
+        );
         if !result.status {
             return Ok(NativeContractSetup::Failed {
                 stage: "constructor()",
                 result: Box::new(result),
                 logs: executor.inspector_mut().take_logs(),
-                traces: executor.inspector_mut().take_traces(),
+                traces: setup_traces,
                 coverage: executor.inspector_mut().take_coverage(),
             });
         }
@@ -251,9 +269,17 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
 
         if matches!(libraries.deployment, LibraryDeployment::Nonce) {
             Self::deploy_create2_factory(&mut executor, gas_limit, gas_price)?;
+            setup_traces.extend(
+                executor
+                    .inspector_mut()
+                    .take_traces()
+                    .into_iter()
+                    .map(|arena| (TraceKind::Deployment, arena)),
+            );
         }
 
-        let mut runner = Self { executor, address, gas_limit, gas_price, setup_coverage: None };
+        let mut runner =
+            Self { executor, address, gas_limit, gas_price, setup_coverage: None, setup_traces };
         if let Some(setup) = contract
             .abi
             .functions
@@ -261,12 +287,20 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             .and_then(|functions| functions.iter().find(|function| function.inputs.is_empty()))
         {
             let result = runner.execute(setup.selector().into())?;
+            runner.setup_traces.extend(
+                runner
+                    .executor
+                    .inspector_mut()
+                    .take_traces()
+                    .into_iter()
+                    .map(|arena| (TraceKind::Setup, arena)),
+            );
             if !result.status {
                 return Ok(NativeContractSetup::Failed {
                     stage: "setUp()",
                     result: Box::new(result),
                     logs: runner.executor.inspector_mut().take_logs(),
-                    traces: runner.executor.inspector_mut().take_traces(),
+                    traces: runner.setup_traces,
                     coverage: runner.executor.inspector_mut().take_coverage(),
                 });
             }
@@ -291,7 +325,15 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         let mut runner = self.clone();
         let result = runner.execute_with_value(input, value)?;
         let logs = runner.executor.inspector_mut().take_logs();
-        let traces = runner.executor.inspector_mut().take_traces();
+        let mut traces = runner.setup_traces;
+        traces.extend(
+            runner
+                .executor
+                .inspector_mut()
+                .take_traces()
+                .into_iter()
+                .map(|arena| (TraceKind::Execution, arena)),
+        );
         let coverage = runner.executor.inspector_mut().take_coverage();
         Ok((result, logs, traces, coverage))
     }
@@ -672,11 +714,11 @@ impl NativeMultiContractRunner {
                     },
                     tracing: (self.config.tracing.verbosity >= 3).then_some(
                         TracingInspectorConfig {
-                            record_steps: self.config.tracing.verbosity >= 5,
                             record_bytecode: true,
                             record_logs: true,
                             ..Default::default()
-                        },
+                        }
+                        .set_steps_and_state_diffs(self.config.tracing.verbosity >= 5),
                     ),
                     coverage: self.coverage,
                     isolation: self.config.isolate,
@@ -1273,7 +1315,7 @@ mod tests {
                 gas_limit: 100_000,
                 gas_price: 0,
                 libraries: NativeLibraries { code: &[], deployment: LibraryDeployment::Nonce },
-                tracing: None,
+                tracing: Some(TracingInspectorConfig::default()),
                 coverage: false,
                 isolation: false,
                 cheatcode_config: None,
@@ -1285,9 +1327,12 @@ mod tests {
         };
 
         assert_eq!(runner.address(), sender.create(1));
-        let (result, _, _, _) = runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();
+        let (result, _, traces, _) =
+            runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();
         assert!(result.status);
         assert_eq!(U256::from_be_slice(&result.output), U256::from(42));
+        assert!(traces.iter().any(|(kind, _)| *kind == TraceKind::Deployment));
+        assert_eq!(traces.last().map(|(kind, _)| *kind), Some(TraceKind::Execution));
     }
 
     #[test]

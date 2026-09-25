@@ -25,13 +25,16 @@ use foundry_evm::{
     },
     traces::{
         CallTraceArena, CallTraceDecoder, TraceKind, Traces,
-        native::CallTraceArena as NativeCallTraceArena,
+        native::{CallTraceArena as NativeCallTraceArena, redacted_for_display},
     },
 };
 use foundry_evm_symbolic::{
     PortfolioDiagnostics, SymbolicStats, SymbolicStopReason, SymbolicStorageAssignment,
 };
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Serialize, Serializer,
+    ser::{Error as _, SerializeMap},
+};
 use std::{
     collections::{BTreeMap, HashMap as Map},
     fmt::{self, Write},
@@ -260,9 +263,41 @@ pub struct SuiteResult {
     #[serde(with = "foundry_common::serde_helpers::duration")]
     pub duration: Duration,
     /// Individual test results: `test fn signature -> TestResult`.
+    #[serde(serialize_with = "serialize_test_results")]
     pub test_results: BTreeMap<String, TestResult>,
     /// Generated warnings.
     pub warnings: Vec<String>,
+}
+
+fn serialize_test_results<S>(
+    results: &BTreeMap<String, TestResult>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut map = serializer.serialize_map(Some(results.len()))?;
+    for (name, result) in results {
+        if result.native_traces.is_empty() {
+            map.serialize_entry(name, result)?;
+        } else {
+            let mut value = serde_json::to_value(result).map_err(S::Error::custom)?;
+            let traces = result
+                .native_traces
+                .iter()
+                .map(|(kind, arena)| {
+                    let mut arena = redacted_for_display(arena);
+                    for node in arena.nodes_mut() {
+                        node.trace.bytecode = None;
+                    }
+                    (*kind, arena)
+                })
+                .collect::<Vec<_>>();
+            value["traces"] = serde_json::to_value(traces).map_err(S::Error::custom)?;
+            map.serialize_entry(name, &value)?;
+        }
+    }
+    map.end()
 }
 
 impl SuiteResult {
@@ -1322,7 +1357,7 @@ pub struct TestResult {
 
     /// Traces recorded by the evm2 executor.
     #[serde(skip)]
-    pub native_traces: Vec<NativeCallTraceArena>,
+    pub native_traces: Vec<(TraceKind, NativeCallTraceArena)>,
 
     /// Runtime bytecodes for contracts seen in debug traces.
     #[serde(skip)]
@@ -2185,6 +2220,7 @@ const fn symbolic_result_schema_version() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use foundry_evm::core::constants::CHEATCODE_ADDRESS;
 
     const SYMBOLIC_RESULT_SCHEMA: &str =
         include_str!("../../evm/symbolic/assets/symbolic-result.schema.json");
@@ -2318,5 +2354,26 @@ mod tests {
         .unwrap();
 
         assert_eq!(kind.invariant_workers(), Some(1));
+    }
+
+    #[test]
+    fn native_test_json_redacts_cheatcode_io() {
+        let mut arena = NativeCallTraceArena::default();
+        let trace = &mut arena.nodes_mut()[0].trace;
+        trace.address = CHEATCODE_ADDRESS;
+        trace.data = Bytes::from_static(&[1, 2, 3, 4, 5]);
+        trace.output = Bytes::from_static(&[6, 7]);
+        let result =
+            TestResult { native_traces: vec![(TraceKind::Execution, arena)], ..Default::default() };
+        let suite = SuiteResult::new(
+            Duration::ZERO,
+            BTreeMap::from([("test()".to_string(), result)]),
+            Vec::new(),
+        );
+        let json = serde_json::to_value(suite).unwrap();
+        let trace = &json["test_results"]["test()"]["traces"][0];
+        assert_eq!(trace[0], "Execution");
+        assert_eq!(trace[1]["arena"][0]["trace"]["data"], "0x01020304");
+        assert_eq!(trace[1]["arena"][0]["trace"]["output"], "0x");
     }
 }
