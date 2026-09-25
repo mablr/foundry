@@ -78,7 +78,7 @@ use foundry_evm::{
     traces::{
         backtrace::BacktraceBuilder,
         identifier::TraceIdentifiers,
-        native::{TraceWriter as NativeTraceWriter, redacted_for_display},
+        native::{NativeTraceDecoder, TraceWriter as NativeTraceWriter},
         prune_trace_depth, trace_arena_at_depth,
     },
 };
@@ -92,7 +92,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, mpsc::channel},
+    sync::{Arc, Mutex, OnceLock, mpsc::channel},
     time::{Duration, Instant},
 };
 use tempfile::TempDir;
@@ -2218,6 +2218,7 @@ impl TestArgs {
             };
             sh_println!("{rendered}")?;
         } else {
+            let trace_decoder = OnceLock::new();
             for (contract_name, suite) in &results {
                 if suite.test_results.is_empty() {
                     continue;
@@ -2238,10 +2239,13 @@ impl TestArgs {
                         && !result.native_traces.is_empty()
                     {
                         sh_println!("Traces:")?;
+                        let trace_decoder = trace_decoder.get_or_init(|| {
+                            NativeTraceDecoder::new().with_known_contracts(&known_contracts)
+                        });
                         for arena in &result.native_traces {
                             let mut output = Vec::new();
                             NativeTraceWriter::new(&mut output)
-                                .write_arena(&redacted_for_display(arena))?;
+                                .write_arena(&trace_decoder.decode_for_display(arena))?;
                             sh_println!("{}", String::from_utf8(output)?.trim_end())?;
                         }
                         sh_println!()?;

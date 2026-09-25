@@ -686,9 +686,7 @@ contract NativeTraceTest {
     );
 
     cmd.forge_fuse();
-    cmd.args(["test", "--match-test", "testDeal", "-vvv"])
-        .assert_success()
-        .stdout_eq(str![[r#"
+    cmd.args(["test", "--match-test", "testDeal", "-vvv"]).assert_success().stdout_eq(str![[r#"
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
 Compiler run successful!
@@ -700,8 +698,8 @@ Traces:
     └─ ← [Return] 432 bytes of code
   [68137] → new <unknown>@0x4e59b44847b379578588920cA78FbF26c0B4956C
     └─ ← [Return] 69 bytes of code
-  [24455] 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496::d9ac5498()
-    ├─ [0] 0x7109709ECfa91a80626fF3989D68f67F5b1DD12D::c88a5e6d()
+  [24455] 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496::testDeal()
+    ├─ [0] VM::deal()
     │   └─ ← [Return]
     └─ ← [Stop]
 
