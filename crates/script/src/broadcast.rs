@@ -27,7 +27,7 @@ use alloy_provider::{Provider, RootProvider, utils::Eip1559Estimation};
 use alloy_rpc_types::TransactionRequest;
 use alloy_signer::Signature;
 use eyre::{Context, Result, bail};
-use forge_script_sequence::ScriptSequence;
+use forge_script_sequence::{ScriptSequence, ScriptTransactionKind};
 use foundry_cheatcodes::Wallets;
 use foundry_cli::utils::{has_batch_support, has_different_gas_calc};
 use foundry_common::{
@@ -49,7 +49,6 @@ use foundry_evm::core::{
 use foundry_wallets::{TempoAccountsWallet, wallet_browser::signer::BrowserSigner};
 use futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered};
 use itertools::Itertools;
-use revm_inspectors::tracing::types::CallKind;
 use tempo_alloy::{TempoNetwork, rpc::TempoTransactionRequest};
 use tempo_primitives::transaction::Call;
 
@@ -905,7 +904,9 @@ impl BundledState<TempoEvmNetwork> {
                         .iter()
                         .skip(remaining_start)
                         .map(|tx| match tx.call_kind {
-                            CallKind::Create | CallKind::Create2 => tx.contract_address,
+                            ScriptTransactionKind::Create | ScriptTransactionKind::Create2 => {
+                                tx.contract_address
+                            }
                             _ => None,
                         })
                         .collect();
@@ -1087,11 +1088,9 @@ impl BundledState<TempoEvmNetwork> {
         }
 
         // CREATE2 deployer must exist on-chain for any rewritten CREATEs.
-        let needs_factory = sequence
-            .transactions
-            .iter()
-            .skip(remaining_start)
-            .any(|tx| matches!(tx.call_kind, CallKind::Create | CallKind::Create2));
+        let needs_factory = sequence.transactions.iter().skip(remaining_start).any(|tx| {
+            matches!(tx.call_kind, ScriptTransactionKind::Create | ScriptTransactionKind::Create2)
+        });
         if needs_factory {
             let code = provider.get_code_at(create2_deployer).await?;
             if keccak256(&code) != DEFAULT_CREATE2_DEPLOYER_CODEHASH {
@@ -1255,7 +1254,9 @@ impl BundledState<TempoEvmNetwork> {
             .iter()
             .skip(remaining_start)
             .map(|tx| match tx.call_kind {
-                CallKind::Create | CallKind::Create2 => tx.contract_address,
+                ScriptTransactionKind::Create | ScriptTransactionKind::Create2 => {
+                    tx.contract_address
+                }
                 _ => None,
             })
             .collect();

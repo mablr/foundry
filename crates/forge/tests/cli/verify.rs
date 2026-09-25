@@ -12,10 +12,9 @@ use axum::{
     http::{StatusCode, header},
     response::IntoResponse,
 };
-use forge_script_sequence::ScriptSequence;
+use forge_script_sequence::{ScriptSequence, ScriptTransactionKind};
 use foundry_common::retry::Retry;
 use foundry_compilers::PathStyle;
-use foundry_evm::traces::CallKind;
 use foundry_test_utils::{
     forgetest, forgetest_async, str,
     util::{OutputExt, SOLC_VERSION, TestCommand, TestProject},
@@ -1097,7 +1096,7 @@ contract Deploy is Script {{
         .flat_map(|transaction| &transaction.additional_contracts)
         .find(|contract| contract.address == child_address)
         .expect("submitted contract is not a traced nested creation");
-    assert_eq!(child.call_kind, CallKind::Create2);
+    assert_eq!(child.call_kind, ScriptTransactionKind::Create2);
     assert_eq!(
         &child.creator_code_addresses[..2],
         &[executor.parse::<Address>().unwrap(), factory.parse::<Address>().unwrap()]

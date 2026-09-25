@@ -4,11 +4,10 @@ use alloy_dyn_abi::JsonAbiExt;
 use alloy_network::{Network, TransactionBuilder};
 use alloy_primitives::{Address, B256, Selector, hex};
 use eyre::Result;
-use forge_script_sequence::TransactionWithMetadata;
+use forge_script_sequence::{ScriptTransactionKind, TransactionWithMetadata};
 use foundry_common::{ContractData, SELECTOR_LEN, TransactionMaybeSigned, fmt::format_token_raw};
 use foundry_evm::traces::CallTraceDecoder;
 use itertools::Itertools;
-use revm_inspectors::tracing::types::CallKind;
 use std::collections::BTreeMap;
 
 #[derive(Debug)]
@@ -34,7 +33,7 @@ impl<N: Network> ScriptTransactionBuilder<N> {
         create2_deployer: Address,
     ) -> Result<()> {
         if let Some(to) = self.transaction.transaction.to() {
-            self.transaction.call_kind = CallKind::Call;
+            self.transaction.call_kind = ScriptTransactionKind::Call;
             self.transaction.contract_address = Some(to);
 
             if to == create2_deployer {
@@ -110,9 +109,9 @@ impl<N: Network> ScriptTransactionBuilder<N> {
         contracts: &BTreeMap<Address, &ContractData>,
     ) -> Result<()> {
         if is_create2 {
-            self.transaction.call_kind = CallKind::Create2;
+            self.transaction.call_kind = ScriptTransactionKind::Create2;
         } else {
-            self.transaction.call_kind = CallKind::Create;
+            self.transaction.call_kind = ScriptTransactionKind::Create;
         }
 
         let info = contracts.get(&address);
@@ -225,7 +224,7 @@ mod tests {
         let create2_deployer = address!("0000000000000000000000000000000000001234");
         for input in [None, Some(Bytes::new()), Some(Bytes::from(vec![0xab; 31]))] {
             let transaction = call_to_create2_deployer(input);
-            assert_eq!(transaction.call_kind, CallKind::Call);
+            assert_eq!(transaction.call_kind, ScriptTransactionKind::Call);
             assert_eq!(transaction.contract_address, Some(create2_deployer));
         }
     }
@@ -237,7 +236,7 @@ mod tests {
             let expected = create2_deployer
                 .create2_from_code(B256::repeat_byte(0xab), input.get(32..).unwrap());
             let transaction = call_to_create2_deployer(Some(input));
-            assert_eq!(transaction.call_kind, CallKind::Create2);
+            assert_eq!(transaction.call_kind, ScriptTransactionKind::Create2);
             assert_eq!(transaction.contract_address, Some(expected));
         }
     }

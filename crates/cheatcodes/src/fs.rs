@@ -12,7 +12,7 @@ use alloy_network::{Network, ReceiptResponse};
 use alloy_primitives::{Bytes, FixedBytes, U256, hex, map::Entry};
 use alloy_sol_types::SolValue;
 use dialoguer::{Input, Password};
-use forge_script_sequence::{BroadcastReader, TransactionWithMetadata};
+use forge_script_sequence::{BroadcastReader, ScriptTransactionKind, TransactionWithMetadata};
 use foundry_common::fs;
 use foundry_config::fs_permissions::FsAccessKind;
 use foundry_evm_core::{FoundryTransaction, env::FoundryContextExt, evm::FoundryEvmNetwork};
@@ -20,7 +20,6 @@ use revm::{
     context::{Cfg, ContextTr, CreateScheme, JournalTr},
     interpreter::CreateInputs,
 };
-use revm_inspectors::tracing::types::CallKind;
 use std::{
     io::{BufRead, BufReader},
     path::Path,
@@ -786,7 +785,7 @@ impl Cheatcode for getDeployment_0Call {
             contractName,
             chain_id,
             &ccx.state.config.broadcast,
-            vec![CallKind::Create, CallKind::Create2],
+            vec![ScriptTransactionKind::Create, ScriptTransactionKind::Create2],
         )?;
 
         Ok(latest_broadcast.contractAddress.abi_encode())
@@ -801,7 +800,7 @@ impl Cheatcode for getDeployment_1Call {
             contractName,
             *chainId,
             &state.config.broadcast,
-            vec![CallKind::Create, CallKind::Create2],
+            vec![ScriptTransactionKind::Create, ScriptTransactionKind::Create2],
         )?;
 
         Ok(latest_broadcast.contractAddress.abi_encode())
@@ -813,8 +812,8 @@ impl Cheatcode for getDeploymentsCall {
         let Self { contractName, chainId } = self;
 
         let reader = BroadcastReader::new(contractName.clone(), *chainId, &state.config.broadcast)?
-            .with_tx_type(CallKind::Create)
-            .with_tx_type(CallKind::Create2);
+            .with_tx_type(ScriptTransactionKind::Create)
+            .with_tx_type(ScriptTransactionKind::Create2);
 
         let broadcasts = reader.read::<<FEN as FoundryEvmNetwork>::Network>()?;
 
@@ -833,11 +832,11 @@ impl Cheatcode for getDeploymentsCall {
     }
 }
 
-fn map_broadcast_tx_type(tx_type: BroadcastTxType) -> CallKind {
+fn map_broadcast_tx_type(tx_type: BroadcastTxType) -> ScriptTransactionKind {
     match tx_type {
-        BroadcastTxType::Call => CallKind::Call,
-        BroadcastTxType::Create => CallKind::Create,
-        BroadcastTxType::Create2 => CallKind::Create2,
+        BroadcastTxType::Call => ScriptTransactionKind::Call,
+        BroadcastTxType::Create => ScriptTransactionKind::Create,
+        BroadcastTxType::Create2 => ScriptTransactionKind::Create2,
         _ => unreachable!("invalid tx type"),
     }
 }
@@ -851,9 +850,9 @@ fn parse_broadcast_results<N: Network>(
             txHash: receipt.transaction_hash(),
             blockNumber: receipt.block_number().unwrap_or_default(),
             txType: match tx.call_kind {
-                CallKind::Call => BroadcastTxType::Call,
-                CallKind::Create => BroadcastTxType::Create,
-                CallKind::Create2 => BroadcastTxType::Create2,
+                ScriptTransactionKind::Call => BroadcastTxType::Call,
+                ScriptTransactionKind::Create => BroadcastTxType::Create,
+                ScriptTransactionKind::Create2 => BroadcastTxType::Create2,
                 _ => unreachable!("invalid tx type"),
             },
             contractAddress: tx.contract_address.unwrap_or_default(),
@@ -866,7 +865,7 @@ fn latest_broadcast<N: Network>(
     contract_name: &String,
     chain_id: u64,
     broadcast_path: &Path,
-    filters: Vec<CallKind>,
+    filters: Vec<ScriptTransactionKind>,
 ) -> Result<BroadcastTxSummary>
 where
     N::TxEnvelope: for<'d> serde::Deserialize<'d>,
@@ -1413,7 +1412,7 @@ mod tests {
             &"Counter".to_owned(),
             31337,
             &broadcast_path,
-            vec![CallKind::Create],
+            vec![ScriptTransactionKind::Create],
         )
         .unwrap();
 

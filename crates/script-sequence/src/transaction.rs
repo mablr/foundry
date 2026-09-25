@@ -1,14 +1,34 @@
 use alloy_network::Network;
 use alloy_primitives::{Address, B256, Bytes};
 use foundry_common::TransactionMaybeSigned;
-use revm_inspectors::tracing::types::CallKind;
 use serde::{Deserialize, Serialize};
+
+/// Call classification stored in script broadcast files.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum ScriptTransactionKind {
+    #[default]
+    Call,
+    StaticCall,
+    CallCode,
+    DelegateCall,
+    AuthCall,
+    Create,
+    Create2,
+}
+
+impl ScriptTransactionKind {
+    /// Returns whether the transaction creates a contract.
+    pub const fn is_any_create(self) -> bool {
+        matches!(self, Self::Create | Self::Create2)
+    }
+}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdditionalContract {
     #[serde(rename = "transactionType")]
-    pub call_kind: CallKind,
+    pub call_kind: ScriptTransactionKind,
     pub contract_name: Option<String>,
     pub address: Address,
     pub init_code: Bytes,
@@ -27,7 +47,7 @@ pub struct AdditionalContract {
 pub struct TransactionWithMetadata<N: Network> {
     pub hash: Option<B256>,
     #[serde(rename = "transactionType")]
-    pub call_kind: CallKind,
+    pub call_kind: ScriptTransactionKind,
     #[serde(default = "default_string")]
     pub contract_name: Option<String>,
     #[serde(default = "default_address")]
@@ -87,13 +107,30 @@ impl<N: Network> TransactionWithMetadata<N> {
     }
 
     pub fn is_create2(&self) -> bool {
-        self.call_kind == CallKind::Create2
+        self.call_kind == ScriptTransactionKind::Create2
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn script_transaction_kind_preserves_broadcast_json() {
+        for (kind, json) in [
+            (ScriptTransactionKind::Call, "\"CALL\""),
+            (ScriptTransactionKind::StaticCall, "\"STATICCALL\""),
+            (ScriptTransactionKind::CallCode, "\"CALLCODE\""),
+            (ScriptTransactionKind::DelegateCall, "\"DELEGATECALL\""),
+            (ScriptTransactionKind::AuthCall, "\"AUTHCALL\""),
+            (ScriptTransactionKind::Create, "\"CREATE\""),
+            (ScriptTransactionKind::Create2, "\"CREATE2\""),
+        ] {
+            assert_eq!(serde_json::to_string(&kind).unwrap(), json);
+            assert_eq!(serde_json::from_str::<ScriptTransactionKind>(json).unwrap(), kind);
+        }
+        assert_eq!(ScriptTransactionKind::default(), ScriptTransactionKind::Call);
+    }
 
     #[test]
     fn additional_contract_creator_code_addresses_are_backward_compatible() {
@@ -109,7 +146,7 @@ mod tests {
 
         let creator = Address::repeat_byte(0x22);
         let contract = AdditionalContract {
-            call_kind: CallKind::Create2,
+            call_kind: ScriptTransactionKind::Create2,
             contract_name: None,
             address: Address::repeat_byte(0x33),
             init_code: Bytes::new(),

@@ -1,8 +1,7 @@
-use crate::{ScriptSequence, TransactionWithMetadata};
+use crate::{ScriptSequence, ScriptTransactionKind, TransactionWithMetadata};
 use alloy_network::{Network, ReceiptResponse};
 use eyre::{Result, bail};
 use foundry_common::fs;
-use revm_inspectors::tracing::types::CallKind;
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
 
@@ -19,7 +18,7 @@ use std::path::{Component, Path, PathBuf};
 pub struct BroadcastReader {
     contract_name: String,
     chain_id: u64,
-    tx_type: Vec<CallKind>,
+    tx_type: Vec<ScriptTransactionKind>,
     broadcast_path: PathBuf,
 }
 
@@ -39,7 +38,7 @@ impl BroadcastReader {
     }
 
     /// Set the transaction type to filter by.
-    pub fn with_tx_type(mut self, tx_type: CallKind) -> Self {
+    pub fn with_tx_type(mut self, tx_type: ScriptTransactionKind) -> Self {
         self.tx_type.push(tx_type);
         self
     }

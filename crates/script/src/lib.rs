@@ -25,7 +25,7 @@ use build::PreprocessedState;
 use clap::{Parser, ValueHint, builder::RangedU64ValueParser};
 use dialoguer::Confirm;
 use eyre::{ContextCompat, Result};
-use forge_script_sequence::{AdditionalContract, NestedValue};
+use forge_script_sequence::{AdditionalContract, NestedValue, ScriptTransactionKind};
 use forge_verify::{RetryArgs, VerifierArgs};
 use foundry_cli::{
     opts::{BuildOpts, EvmArgs, GlobalArgs, TempoOpts, TracingArgs},
@@ -961,7 +961,11 @@ impl<N: Network> ScriptResult<N> {
                         .find_by_creation_code(init_code.as_ref())
                         .map(|artifact| artifact.0.name.clone());
                     Some(AdditionalContract {
-                        call_kind: node.trace.kind,
+                        call_kind: if node.trace.kind == foundry_evm::traces::CallKind::Create2 {
+                            ScriptTransactionKind::Create2
+                        } else {
+                            ScriptTransactionKind::Create
+                        },
                         address: node.trace.address,
                         contract_name,
                         init_code,
