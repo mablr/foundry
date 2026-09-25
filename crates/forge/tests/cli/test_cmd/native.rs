@@ -762,6 +762,56 @@ Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
     ]);
 });
 
+forgetest_init!(evm2_fuzz_bounds_enum_inputs, |prj, cmd| {
+    prj.update_config(|config| {
+        config.isolate = false;
+        config.fuzz.runs = 64;
+        config.fuzz.seed = Some(U256::ONE);
+    });
+    prj.add_source("LibEnum.sol", "enum LibEnumVal { L0, L1 }");
+    prj.add_test(
+        "NativeEnum.t.sol",
+        r#"
+import {LibEnumVal} from "src/LibEnum.sol";
+
+contract NativeEnumTest {
+    enum Choice { A, B, C }
+
+    struct Input {
+        Choice choice;
+        LibEnumVal libraryChoice;
+    }
+
+    function testFuzzScalar(Choice choice) public pure {
+        require(uint8(choice) < 3, "invalid choice");
+    }
+
+    function testFuzzStruct(Input memory input) public pure {
+        require(uint8(input.choice) < 3, "invalid choice");
+        require(uint8(input.libraryChoice) < 2, "invalid library choice");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-contract", "NativeEnumTest"]).assert_success().stdout_eq(str![[
+        r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 2 tests for test/NativeEnum.t.sol:NativeEnumTest
+[PASS] testFuzzScalar(uint8) (runs: 64, [AVG_GAS])
+[PASS] testFuzzStruct((uint8,uint8)) (runs: 64, [AVG_GAS])
+Suite result: ok. 2 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
+
+"#
+    ]]);
+});
+
 forgetest_init!(evm2_reports_console_and_opcode_logs, |prj, cmd| {
     prj.update_config(|config| config.isolate = false);
     prj.add_test(

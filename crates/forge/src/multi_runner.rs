@@ -8,12 +8,11 @@ use crate::{
         ContractRunnerContext, InvariantCampaignScope, count_runnable_invariant_campaign_anchors,
         function_matches_network_pass,
     },
-    test_contract::PreparedTestArtifacts,
+    test_contract::{PreparedTestArtifacts, analyze_compiled_sources},
 };
 use alloy_json_abi::{Function, JsonAbi};
 use alloy_primitives::{Address, Bytes, ChainId, U256};
 use eyre::Result;
-use foundry_cli::opts::configure_pcx_from_compile_output;
 use foundry_common::{ContractsByArtifact, TestFunctionKind, get_contract_name};
 use foundry_compilers::{
     ArtifactId, Compiler, ProjectCompileOutput,
@@ -742,32 +741,7 @@ impl MultiContractRunnerBuilder {
         )?;
         let inline_config = self.inline_config;
 
-        // Initialize and configure the solar compiler.
-        let mut analysis = solar::sema::Compiler::new(
-            solar::interface::Session::builder().with_stderr_emitter().build(),
-        );
-        let dcx = analysis.dcx_mut();
-        dcx.set_emitter(Box::new(
-            solar::interface::diagnostics::HumanEmitter::stderr(Default::default())
-                .source_map(Some(dcx.source_map().unwrap())),
-        ));
-        dcx.set_flags_mut(|f| f.track_diagnostics = false);
-
-        // Populate solar's global context by parsing and lowering the sources.
-        let files: Vec<_> = output.output().sources.as_ref().keys().cloned().collect();
-        analysis.enter_mut(|compiler| -> Result<()> {
-            let mut pcx = compiler.parse();
-            configure_pcx_from_compile_output(
-                &mut pcx,
-                &self.config,
-                output,
-                (!files.is_empty()).then_some(&files),
-            )?;
-            pcx.parse();
-            let _ = compiler.lower_asts();
-            Ok(())
-        })?;
-        let analysis = Arc::new(analysis);
+        let analysis = analyze_compiled_sources(&self.config, output)?;
 
         // Enum variant counts used to constrain fuzzed enum inputs to valid values.
         let enum_bounds = EnumBounds::collect(&analysis);

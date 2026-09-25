@@ -4,6 +4,7 @@ use crate::test_matcher::{SymbolicArtifactReplayConfig, TestFunctionMatcher};
 use alloy_json_abi::JsonAbi;
 use alloy_primitives::{Address, B256, Bytes};
 use eyre::Result;
+use foundry_cli::opts::configure_pcx_from_compile_output;
 use foundry_common::{
     ContractsByArtifact, ContractsByArtifactBuilder, EmptyTestFilter, LIBRARY_DEPLOYER,
 };
@@ -11,7 +12,10 @@ use foundry_compilers::{Artifact, ArtifactId, ProjectCompileOutput, artifacts::L
 use foundry_config::{Config, InlineConfig};
 use foundry_evm::{decode::RevertDecoder, opts::EvmOpts};
 use foundry_linking::{DetailedLinkOutput, LinkOutput, Linker, LinkerError, Resolver};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 /// A deployable test contract and the libraries linked into its bytecode.
 #[derive(Debug, Clone)]
@@ -150,4 +154,35 @@ impl PreparedTestArtifacts {
             libraries,
         })
     }
+}
+
+/// Parses compiled sources for engine-independent Forge test analysis.
+pub(crate) fn analyze_compiled_sources(
+    config: &Config,
+    output: &ProjectCompileOutput,
+) -> Result<Arc<solar::sema::Compiler>> {
+    let mut analysis = solar::sema::Compiler::new(
+        solar::interface::Session::builder().with_stderr_emitter().build(),
+    );
+    let dcx = analysis.dcx_mut();
+    dcx.set_emitter(Box::new(
+        solar::interface::diagnostics::HumanEmitter::stderr(Default::default())
+            .source_map(Some(dcx.source_map().unwrap())),
+    ));
+    dcx.set_flags_mut(|flags| flags.track_diagnostics = false);
+
+    let files = output.output().sources.as_ref().keys().cloned().collect::<Vec<_>>();
+    analysis.enter_mut(|compiler| -> Result<()> {
+        let mut pcx = compiler.parse();
+        configure_pcx_from_compile_output(
+            &mut pcx,
+            config,
+            output,
+            (!files.is_empty()).then_some(&files),
+        )?;
+        pcx.parse();
+        let _ = compiler.lower_asts();
+        Ok(())
+    })?;
+    Ok(Arc::new(analysis))
 }

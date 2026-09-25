@@ -3,7 +3,7 @@
 use crate::{
     TestContract, TestFilter,
     result::{SuiteResult, TestKind, TestResult, TestStatus},
-    test_contract::{LibraryDeployment, PreparedTestArtifacts},
+    test_contract::{LibraryDeployment, PreparedTestArtifacts, analyze_compiled_sources},
     test_matcher::{
         FuzzFailureReplayConfig, TestFunctionMatcher, is_generated_symbolic_regression_contract,
     },
@@ -34,7 +34,7 @@ use foundry_evm::{
     },
     fuzz::{
         BaseCounterExample, CounterExample, FuzzCase, FuzzFixtures, FuzzTestResult, fixture_name,
-        strategies::{fuzz_calldata, fuzz_msg_value},
+        strategies::{EnumBounds, fuzz_calldata, fuzz_msg_value},
     },
     native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
@@ -55,6 +55,7 @@ pub(crate) struct NativeMultiContractRunner {
     evm_opts: EvmOpts,
     sender: Address,
     fuzz_input: Option<FuzzFailureReplayConfig>,
+    enum_bounds: EnumBounds,
 }
 
 /// A deployed test contract with state shared by its individual test runs.
@@ -402,7 +403,8 @@ impl NativeMultiContractRunner {
             &evm_opts,
             create2_deployer_available,
         )?;
-        Ok(Self { prepared, config, inline_config, evm_opts, sender, fuzz_input })
+        let enum_bounds = EnumBounds::collect(&analyze_compiled_sources(&config, output)?);
+        Ok(Self { prepared, config, inline_config, evm_opts, sender, fuzz_input, enum_bounds })
     }
 
     /// Executes selected local unit tests through evm2 and collects their results.
@@ -504,8 +506,11 @@ impl NativeMultiContractRunner {
                     continue;
                 }
                 if matches!(kind, TestFunctionKind::FuzzTest { should_fail: false }) {
-                    let fixtures =
-                        fixtures.get_or_insert_with(|| runner.fuzz_fixtures(&contract.abi));
+                    let fixtures = fixtures.get_or_insert_with(|| {
+                        runner
+                            .fuzz_fixtures(&contract.abi)
+                            .with_enum_bounds(self.enum_bounds.clone())
+                    });
                     tests.insert(
                         function.signature(),
                         self.run_fuzz_campaign(&runner, function, fixtures, &env)?,
