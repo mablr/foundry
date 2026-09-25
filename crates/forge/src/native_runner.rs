@@ -529,6 +529,15 @@ impl NativeMultiContractRunner {
                     );
                     continue;
                 }
+                if matches!(kind, TestFunctionKind::TableTest) {
+                    let fixtures =
+                        fixtures.get_or_insert_with(|| runner.fuzz_fixtures(&contract.abi));
+                    tests.insert(
+                        function.signature(),
+                        self.run_table_test(&runner, function, fixtures, &env)?,
+                    );
+                    continue;
+                }
                 ensure!(
                     matches!(kind, TestFunctionKind::UnitTest { should_fail: false }),
                     "native execution does not yet support {} tests",
@@ -729,6 +738,75 @@ impl NativeMultiContractRunner {
         }
         let mut test = TestResult::default();
         test.fuzz_result(campaign);
+        test.native_traces = native_traces;
+        Ok(test)
+    }
+
+    fn run_table_test<D: Database + Clone + 'static>(
+        &self,
+        runner: &NativeContractRunner<D>,
+        function: &Function,
+        fixtures: &FuzzFixtures,
+        env: &EthereumEnv,
+    ) -> Result<TestResult> {
+        let Some(first) = function.inputs.first() else {
+            return Ok(TestResult::fail("Table test should have at least one parameter".into()));
+        };
+        let Some(first_fixtures) = fixtures.param_fixtures(first.name()) else {
+            return Ok(TestResult::fail("Table test should have fixtures defined".into()));
+        };
+        if first_fixtures.is_empty() {
+            return Ok(TestResult::fail("Table test should have at least one fixture".into()));
+        }
+        let mut rows = vec![first_fixtures];
+        for param in &function.inputs[1..] {
+            let Some(values) = fixtures.param_fixtures(param.name()) else {
+                return Ok(TestResult::fail(format!(
+                    "No fixture defined for param {}",
+                    param.name()
+                )));
+            };
+            if values.len() != first_fixtures.len() {
+                return Ok(TestResult::fail(format!(
+                    "{} fixtures defined for {} (expected {})",
+                    values.len(),
+                    param.name(),
+                    first_fixtures.len()
+                )));
+            }
+            rows.push(values);
+        }
+
+        let mut campaign = FuzzTestResult { success: true, ..Default::default() };
+        let mut native_traces = Vec::new();
+        for index in 0..first_fixtures.len() {
+            let args = rows.iter().map(|values| values[index].clone()).collect_vec();
+            let input = Bytes::from(function.abi_encode_input(&args)?);
+            let (result, logs, traces) = runner.run_input(input.clone(), U256::ZERO)?;
+            let stipend = intrinsic_gas(
+                &env.version,
+                CALLER,
+                TxKind::Call(runner.address()),
+                &input,
+                0,
+                0,
+                U256::ZERO,
+            );
+            campaign.gas_by_case.push((result.tx_gas_used(), stipend));
+            campaign.logs.extend(logs);
+            native_traces = traces;
+            if !result.status {
+                let mut counterexample = BaseCounterExample::from_fuzz_call(input, args, None);
+                counterexample.sender = Some(CALLER);
+                counterexample.addr = Some(runner.address());
+                campaign.counterexample = Some(CounterExample::Single(counterexample));
+                campaign.reason = Some(self.failure_reason(&result));
+                campaign.success = false;
+                break;
+            }
+        }
+        let mut test = TestResult::default();
+        test.table_result(campaign);
         test.native_traces = native_traces;
         Ok(test)
     }

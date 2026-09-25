@@ -5,6 +5,60 @@ use anvil::{NodeConfig, spawn};
 use foundry_evm::fuzz::BaseCounterExample;
 use foundry_test_utils::{forgetest_async, forgetest_init, str};
 
+forgetest_init!(evm2_runs_table_rows_from_setup_fixtures, |prj, cmd| {
+    prj.add_test(
+        "NativeTable.t.sol",
+        r#"
+contract NativeTableTest {
+    uint256[] values;
+
+    function setUp() public {
+        values.push(1);
+        values.push(2);
+    }
+
+    function fixtureValue() public view returns (uint256[] memory) {
+        return values;
+    }
+
+    function tablePass(uint256 value) public pure {
+        require(value != 0, "missing value");
+    }
+
+    function tableFail(uint256 value) public pure {
+        require(value != 2, "bad row");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-contract", "NativeTableTest"]).assert_failure().stdout_eq(str![[
+        r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 2 tests for test/NativeTable.t.sol:NativeTableTest
+[FAIL: bad row; counterexample: [..]] tableFail(uint256) (runs: 2, [AVG_GAS])
+[PASS] tablePass(uint256) (runs: 2, [AVG_GAS])
+Suite result: FAILED. 1 passed; 1 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 1 failed, 0 skipped (2 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/NativeTable.t.sol:NativeTableTest
+[FAIL: bad row; counterexample: [..]] tableFail(uint256) (runs: 2, [AVG_GAS])
+
+Encountered a total of 1 failing tests, 1 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 1 failed test
+Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing test in the debugger
+
+"#
+    ]]);
+});
+
 forgetest_init!(evm2_replays_explicit_fuzz_input, |prj, cmd| {
     prj.update_config(|config| config.isolate = false);
     prj.add_test(
