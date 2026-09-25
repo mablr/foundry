@@ -402,6 +402,8 @@ impl NativeMultiContractRunner {
                     tracing: (self.config.tracing.verbosity >= 3).then_some(
                         TracingInspectorConfig {
                             record_steps: self.config.tracing.verbosity >= 5,
+                            record_bytecode: true,
+                            record_logs: true,
                             ..Default::default()
                         },
                     ),

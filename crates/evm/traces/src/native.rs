@@ -1,10 +1,10 @@
 //! Trace types and display safeguards for evm2 execution.
 
-use alloy_dyn_abi::JsonAbiExt;
-use alloy_json_abi::{Function, JsonAbi};
-use alloy_primitives::{Bytes, Selector};
-use evm2_inspectors::tracing::types::{DecodedCallData, DecodedCallTrace};
-use foundry_common::{ContractsByArtifact, fmt::format_token};
+use alloy_dyn_abi::{EventExt, JsonAbiExt};
+use alloy_json_abi::{Event, Function, JsonAbi};
+use alloy_primitives::{B256, Bytes, Selector};
+use evm2_inspectors::tracing::types::{DecodedCallData, DecodedCallLog, DecodedCallTrace};
+use foundry_common::{ContractsByArtifact, contracts::ContractData, fmt::format_token};
 use foundry_evm_core::{abi::Vm, constants::CHEATCODE_ADDRESS};
 use std::collections::HashMap;
 
@@ -14,7 +14,9 @@ pub use evm2_inspectors::tracing::{
 
 /// ABI decoder for evm2 traces recorded by Foundry.
 pub struct NativeTraceDecoder {
+    contracts: ContractsByArtifact,
     functions: HashMap<Selector, Option<Function>>,
+    events: HashMap<B256, Vec<Event>>,
     cheatcodes: HashMap<Selector, Function>,
 }
 
@@ -32,7 +34,12 @@ impl NativeTraceDecoder {
             .flatten()
             .map(|function| (function.selector(), function))
             .collect();
-        Self { functions: HashMap::default(), cheatcodes }
+        Self {
+            contracts: ContractsByArtifact::default(),
+            functions: HashMap::default(),
+            events: HashMap::default(),
+            cheatcodes,
+        }
     }
 
     /// Registers functions from known compiled contracts.
@@ -40,6 +47,7 @@ impl NativeTraceDecoder {
         for contract in contracts.values() {
             self.with_abi(&contract.abi);
         }
+        self.contracts = contracts.clone();
         self
     }
 
@@ -56,6 +64,9 @@ impl NativeTraceDecoder {
                 })
                 .or_insert_with(|| Some(function.clone()));
         }
+        for event in abi.events() {
+            self.events.entry(event.selector()).or_default().push(event.clone());
+        }
     }
 
     /// Decodes a display copy while keeping cheatcode inputs and outputs private.
@@ -63,32 +74,102 @@ impl NativeTraceDecoder {
         let mut display = redacted_for_display(arena);
         for node in display.nodes_mut() {
             let trace = &mut node.trace;
-            let Some(selector) = trace.data.get(..4).and_then(|data| Selector::try_from(data).ok())
-            else {
-                continue;
-            };
-            let cheatcode = trace.address == CHEATCODE_ADDRESS;
-            let function = if cheatcode {
-                self.cheatcodes.get(&selector)
+            let contract = if trace.kind.is_any_create() {
+                self.contracts.find_by_creation_code(&trace.data).map(|(_, contract)| contract)
             } else {
-                self.functions.get(&selector).and_then(Option::as_ref)
+                trace.bytecode.as_deref().and_then(|code| {
+                    self.contracts.find_by_deployed_code(code).map(|(_, contract)| contract)
+                })
             };
-            let Some(function) = function else { continue };
-            let args = if cheatcode {
-                Vec::new()
-            } else {
-                let Some(input) = trace.data.get(4..) else { continue };
-                let Ok(decoded) = function.abi_decode_input(input) else { continue };
-                decoded.iter().map(format_token).collect()
-            };
-            trace.decoded = Some(Box::new(DecodedCallTrace {
-                label: cheatcode.then(|| "VM".to_string()),
-                call_data: Some(DecodedCallData { signature: function.signature(), args }),
-                return_data: None,
-            }));
+            self.decode_call(trace, contract);
+            for log in &mut node.logs {
+                let event = contract
+                    .and_then(|contract| decode_event(log, contract.abi.events()))
+                    .or_else(|| {
+                        log.raw_log
+                            .topics()
+                            .first()
+                            .and_then(|topic| self.events.get(topic))
+                            .and_then(|events| decode_event(log, events.iter()))
+                    });
+                log.decoded = event.map(Box::new);
+            }
         }
         display
     }
+
+    fn decode_call(
+        &self,
+        trace: &mut evm2_inspectors::tracing::types::CallTrace,
+        contract: Option<&ContractData>,
+    ) {
+        if trace.kind.is_any_create() {
+            if let Some(contract) = contract {
+                trace.decoded().label = Some(contract.name.clone());
+            }
+            return;
+        }
+        let Some(selector) = trace.data.get(..4).and_then(|data| Selector::try_from(data).ok())
+        else {
+            return;
+        };
+        let cheatcode = trace.address == CHEATCODE_ADDRESS;
+        let function = if cheatcode {
+            self.cheatcodes.get(&selector)
+        } else {
+            contract
+                .and_then(|contract| {
+                    contract.abi.functions().find(|function| function.selector() == selector)
+                })
+                .or_else(|| self.functions.get(&selector).and_then(Option::as_ref))
+        };
+        let Some(function) = function else { return };
+        let args = if cheatcode {
+            Vec::new()
+        } else {
+            let Some(input) = trace.data.get(4..) else { return };
+            let Ok(decoded) = function.abi_decode_input(input) else { return };
+            decoded.iter().map(format_token).collect()
+        };
+        trace.decoded = Some(Box::new(DecodedCallTrace {
+            label: if cheatcode {
+                Some("VM".to_string())
+            } else {
+                contract.map(|contract| contract.name.clone())
+            },
+            call_data: Some(DecodedCallData { signature: function.signature(), args }),
+            return_data: None,
+        }));
+    }
+}
+
+fn decode_event<'a>(
+    log: &evm2_inspectors::tracing::types::CallLog,
+    events: impl Iterator<Item = &'a Event>,
+) -> Option<DecodedCallLog> {
+    let topic = log.raw_log.topics().first()?;
+    let mut decoded = events
+        .filter(|event| {
+            event.selector() == *topic
+                && event.inputs.iter().filter(|input| input.indexed).count() + 1
+                    == log.raw_log.topics().len()
+        })
+        .filter_map(|event| {
+            let values = event.decode_log(&log.raw_log).ok()?;
+            let mut indexed = values.indexed.iter();
+            let mut body = values.body.iter();
+            let params = event
+                .inputs
+                .iter()
+                .map(|input| {
+                    let value = if input.indexed { indexed.next() } else { body.next() }?;
+                    Some((input.name.clone(), format_token(value)))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(DecodedCallLog { name: Some(event.name.clone()), params: Some(params) })
+        });
+    let first = decoded.next()?;
+    decoded.all(|next| next == first).then_some(first)
 }
 
 /// Returns a display copy that does not expose cheatcode arguments or return values.

@@ -648,15 +648,17 @@ Logs:
   event
 
 Traces:
-  [252794] → new <unknown>@0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+  [252794] → new NativeLogsTest@0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
     └─ ← [Return] 930 bytes of code
   [68137] → new <unknown>@0x4e59b44847b379578588920cA78FbF26c0B4956C
     └─ ← [Return] 69 bytes of code
-  [22982] 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496::0a9254e4()
+  [22982] NativeLogsTest::setUp()
+    ├─ emit log(message: "setup")
     └─ ← [Stop]
-  [26341] 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496::3c67c51e()
+  [26341] NativeLogsTest::testLogs()
     ├─ [0] 0x000000000000000000636F6e736F6c652e6c6f67::41304fac(00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000007636f6e736f6c6500000000000000000000000000000000000000000000000000) [staticcall]
     │   └─ ← [Return]
+    ├─ emit log(message: "event")
     └─ ← [Stop]
 
 Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
@@ -677,9 +679,11 @@ interface Vm {
 
 contract NativeTraceTest {
     Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    event Ping(uint256 indexed id, uint256 amount);
 
     function testDeal() public {
         vm.deal(address(0xBEEF), 123456789);
+        emit Ping(7, 11);
     }
 }
 "#,
@@ -694,13 +698,14 @@ Compiler run successful!
 Ran 1 test for test/NativeTrace.t.sol:NativeTraceTest
 [PASS] testDeal() ([GAS])
 Traces:
-  [146731] → new <unknown>@0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
-    └─ ← [Return] 432 bytes of code
+  [177015] → new NativeTraceTest@0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496
+    └─ ← [Return] 572 bytes of code
   [68137] → new <unknown>@0x4e59b44847b379578588920cA78FbF26c0B4956C
     └─ ← [Return] 69 bytes of code
-  [24455] 0x7FA9385bE102ac3EAc297483Dd6233D62b3e1496::testDeal()
+  [26141] NativeTraceTest::testDeal()
     ├─ [0] VM::deal()
     │   └─ ← [Return]
+    ├─ emit Ping(id: 7, amount: 11)
     └─ ← [Stop]
 
 Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
