@@ -23,10 +23,26 @@ interface Remote {
     function value() external view returns (uint256);
 }
 
+interface Vm {
+    function snapshotState() external returns (uint256);
+    function revertToState(uint256 snapshotId) external returns (bool);
+    function store(address target, bytes32 slot, bytes32 value) external;
+}
+
 contract NativeForkTest {
+    Vm constant vm = Vm(address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+
     function testFork() public view {
         require(block.number == 1, "wrong fork block");
         require(Remote(address(0x42)).value() == 42, "wrong fork storage");
+    }
+
+    function testForkSnapshot() public {
+        uint256 id = vm.snapshotState();
+        vm.store(address(0x42), bytes32(0), bytes32(uint256(99)));
+        require(Remote(address(0x42)).value() == 99, "fork write did not apply");
+        require(vm.revertToState(id), "snapshot missing");
+        require(Remote(address(0x42)).value() == 42, "fork storage was not restored");
     }
 }
 "#,
@@ -41,11 +57,12 @@ contract NativeForkTest {
 [SOLC_VERSION] [ELAPSED]
 Compiler run successful!
 
-Ran 1 test for test/NativeFork.t.sol:NativeForkTest
+Ran 2 tests for test/NativeFork.t.sol:NativeForkTest
 [PASS] testFork() ([GAS])
-Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+[PASS] testForkSnapshot() ([GAS])
+Suite result: ok. 2 passed; 0 failed; 0 skipped; [ELAPSED]
 
-Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
 
 "#]]);
 });
@@ -439,6 +456,105 @@ Ran 6 tests for test/NativePrank.t.sol:NativePrankTest
 Suite result: ok. 6 passed; 0 failed; 0 skipped; [ELAPSED]
 
 Ran 1 test suite [ELAPSED]: 6 tests passed, 0 failed, 0 skipped (6 total tests)
+
+"#]]);
+});
+
+forgetest_init!(evm2_snapshot_restores_live_and_accepted_state, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativeSnapshot.t.sol",
+        r#"
+interface Vm {
+    function snapshotState() external returns (uint256);
+    function revertToState(uint256 snapshotId) external returns (bool);
+    function revertToStateAndDelete(uint256 snapshotId) external returns (bool);
+    function warp(uint256 timestamp) external;
+}
+
+contract NativeSnapshotTest {
+    Vm constant vm = Vm(address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+    uint256 public value;
+    uint256 setupSnapshot;
+
+    function setUp() public {
+        value = 7;
+        setupSnapshot = vm.snapshotState();
+        value = 9;
+    }
+
+    function restoreAndRevert(uint256 id) external {
+        require(vm.revertToState(id), "snapshot missing");
+        revert("expected");
+    }
+
+    function parentRestoreThenRevert(uint256 id) external {
+        value = 11;
+        try this.restoreAndRevert(id) {
+            revert("child did not revert");
+        } catch Error(string memory reason) {
+            require(keccak256(bytes(reason)) == keccak256("expected"), "unexpected child revert");
+        }
+        require(value == 9, "child did not leave restored state");
+        revert("parent");
+    }
+
+    function testRestoresSetupSnapshot() public {
+        uint256 id = setupSnapshot;
+        require(value == 9, "setup write was not accepted");
+        value = 11;
+        require(vm.revertToState(id), "setup snapshot missing");
+        require(value == 7, "accepted state was not restored");
+    }
+
+    function testNestedRestoreThenRevert() public {
+        uint256 id = vm.snapshotState();
+        value = 11;
+        try this.restoreAndRevert(id) {
+            revert("child did not revert");
+        } catch Error(string memory reason) {
+            require(keccak256(bytes(reason)) == keccak256("expected"), "unexpected child revert");
+        }
+        require(value == 9, "restored state was rolled back");
+    }
+
+    function testBothActiveFramesRevertAfterRestore() public {
+        uint256 id = vm.snapshotState();
+        try this.parentRestoreThenRevert(id) {
+            revert("parent did not revert");
+        } catch Error(string memory reason) {
+            require(keccak256(bytes(reason)) == keccak256("parent"), "unexpected parent revert");
+        }
+        require(value == 9, "parent rollback damaged restored state");
+    }
+
+    function testRestoresBlockContext() public {
+        uint256 timestamp = block.timestamp;
+        uint256 id = vm.snapshotState();
+        vm.warp(99);
+        require(vm.revertToStateAndDelete(id), "snapshot missing");
+        require(block.timestamp == timestamp, "block context was not restored");
+        require(!vm.revertToState(id), "deleted snapshot survived");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.arg("test").assert_success().stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 4 tests for test/NativeSnapshot.t.sol:NativeSnapshotTest
+[PASS] testBothActiveFramesRevertAfterRestore() ([GAS])
+[PASS] testNestedRestoreThenRevert() ([GAS])
+[PASS] testRestoresBlockContext() ([GAS])
+[PASS] testRestoresSetupSnapshot() ([GAS])
+Suite result: ok. 4 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 4 tests passed, 0 failed, 0 skipped (4 total tests)
 
 "#]]);
 });

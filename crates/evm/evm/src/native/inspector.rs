@@ -4,7 +4,7 @@ use alloy_primitives::Log;
 use alloy_sol_types::{SolEvent, SolInterface, SolValue};
 use evm2::{
     EvmTypesHost, Inspector,
-    evm::Database,
+    evm::{Database, EmptyDB},
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
 use foundry_cheatcodes::native::NativeCheatcodes;
@@ -12,19 +12,24 @@ use foundry_common::{ErrorExt, fmt::ConsoleFmt};
 use foundry_evm_core::{
     abi::console,
     constants::HARDHAT_CONSOLE_ADDRESS,
-    native::{FoundryEvmTypes, LocalState},
+    native::{FoundryEvmTypes, LocalState, NativeInspector},
 };
 
 /// Native Ethereum inspectors and their per-test observations.
-#[derive(Clone, Debug, Default)]
-pub struct EthereumInspectorStack {
-    cheatcodes: NativeCheatcodes,
+#[derive(Clone, Debug)]
+pub struct EthereumInspectorStack<D: Database + Clone = EmptyDB> {
+    cheatcodes: NativeCheatcodes<D>,
     logs: Vec<Log>,
 }
 
-impl EthereumInspectorStack {
+impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
+    /// Creates an inspector stack over the executor's accepted state.
+    pub const fn new(backend: LocalState<D>) -> Self {
+        Self { cheatcodes: NativeCheatcodes::new(backend), logs: Vec::new() }
+    }
+
     /// Installs contracts required by the enabled inspectors.
-    pub fn install<D: Database + Clone>(&self, state: &mut LocalState<D>) {
+    pub fn install(&self, state: &mut LocalState<D>) {
         self.cheatcodes.install(state);
     }
 
@@ -34,7 +39,7 @@ impl EthereumInspectorStack {
     }
 }
 
-impl Inspector<FoundryEvmTypes> for EthereumInspectorStack {
+impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspectorStack<D> {
     fn log(&mut self, log: &Log, _host: &mut <FoundryEvmTypes as EvmTypesHost>::Host<'_>) {
         self.logs.push(log.clone());
     }
@@ -75,6 +80,16 @@ impl Inspector<FoundryEvmTypes> for EthereumInspectorStack {
         result: &mut MessageResult<FoundryEvmTypes>,
     ) {
         self.cheatcodes.call_end(interp, message, result);
+    }
+}
+
+impl<D: Database + Clone + 'static> NativeInspector<D> for EthereumInspectorStack<D> {
+    fn set_backend(&mut self, backend: LocalState<D>) {
+        self.cheatcodes.set_backend(backend);
+    }
+
+    fn take_backend_reset(&mut self) -> Option<LocalState<D>> {
+        self.cheatcodes.take_backend_reset()
     }
 }
 

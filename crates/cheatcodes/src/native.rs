@@ -2,24 +2,35 @@
 
 use crate::Vm;
 use alloy_primitives::{Address, Bytes, U256};
-use alloy_sol_types::SolInterface;
+use alloy_sol_types::{SolInterface, SolValue};
 use evm2::{
     Inspector,
     bytecode::Bytecode,
-    evm::{AccountInfo, Database},
+    evm::{AccountInfo, Database, Db, EmptyDB, State},
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
 use foundry_evm_core::{
     constants::{CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, HARDHAT_CONSOLE_ADDRESS},
-    native::{FoundryEvmTypes, LocalState},
+    native::{FoundryEvmTypes, LocalState, NativeInspector},
 };
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 /// Cheatcode dispatch for native Ethereum execution.
-#[derive(Clone, Debug, Default)]
-pub struct NativeCheatcodes {
+#[derive(Clone, Debug)]
+pub struct NativeCheatcodes<D: Database + Clone = EmptyDB> {
+    backend: LocalState<D>,
     pranks: BTreeMap<u16, NativePrank>,
     active_origins: BTreeMap<u16, Option<Address>>,
+    snapshots: BTreeMap<U256, Arc<NativeSnapshot<D>>>,
+    next_snapshot_id: U256,
+    backend_reset: Option<LocalState<D>>,
+}
+
+#[derive(Debug)]
+struct NativeSnapshot<D: Database + Clone> {
+    state: State<'static>,
+    block: evm2::env::BlockEnv<FoundryEvmTypes>,
+    backend: LocalState<D>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -31,9 +42,27 @@ struct NativePrank {
     used: bool,
 }
 
-impl NativeCheatcodes {
+impl Default for NativeCheatcodes<EmptyDB> {
+    fn default() -> Self {
+        Self::new(LocalState::default())
+    }
+}
+
+impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
+    /// Creates native cheatcodes over the same accepted state as the executor.
+    pub const fn new(backend: LocalState<D>) -> Self {
+        Self {
+            backend,
+            pranks: BTreeMap::new(),
+            active_origins: BTreeMap::new(),
+            snapshots: BTreeMap::new(),
+            next_snapshot_id: U256::ONE,
+            backend_reset: None,
+        }
+    }
+
     /// Installs code at the cheatcode address for Solidity `EXTCODESIZE` checks.
-    pub fn install<D: Database + Clone>(&self, state: &mut LocalState<D>) {
+    pub fn install(&self, state: &mut LocalState<D>) {
         state.database_mut().insert_account_info(
             &CHEATCODE_ADDRESS,
             AccountInfo {
@@ -73,9 +102,52 @@ impl NativeCheatcodes {
         );
         (InstrStop::Return, Bytes::new())
     }
+
+    fn snapshot(&mut self, interp: &mut Interpreter<'_, '_, FoundryEvmTypes>) -> Bytes {
+        let host = interp.host();
+        let snapshot = NativeSnapshot {
+            state: host.state().clone_with(Db::new(self.backend.clone())),
+            block: *host.block(),
+            backend: self.backend.clone(),
+        };
+        let id = self.next_snapshot_id;
+        self.next_snapshot_id += U256::ONE;
+        self.snapshots.insert(id, Arc::new(snapshot));
+        id.abi_encode().into()
+    }
+
+    fn restore(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        id: U256,
+        delete: bool,
+    ) -> Bytes {
+        let snapshot =
+            if delete { self.snapshots.remove(&id) } else { self.snapshots.get(&id).cloned() };
+        let Some(snapshot) = snapshot else { return false.abi_encode().into() };
+        let host = interp.host();
+        let logs = host.state().logs().to_vec();
+        *host.state_mut() = snapshot.state.clone_with(Db::new(snapshot.backend.clone()));
+        host.state_mut().logs_mut().clone_from(&logs);
+        host.set_block(snapshot.block);
+        self.backend = snapshot.backend.clone();
+        self.backend_reset = Some(snapshot.backend.clone());
+        true.abi_encode().into()
+    }
 }
 
-impl Inspector<FoundryEvmTypes> for NativeCheatcodes {
+impl<D: Database + Clone + 'static> NativeInspector<D> for NativeCheatcodes<D> {
+    fn set_backend(&mut self, backend: LocalState<D>) {
+        self.backend = backend;
+        self.backend_reset = None;
+    }
+
+    fn take_backend_reset(&mut self) -> Option<LocalState<D>> {
+        self.backend_reset.take()
+    }
+}
+
+impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatcodes<D> {
     fn call(
         &mut self,
         interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
@@ -138,6 +210,25 @@ impl Inspector<FoundryEvmTypes> for NativeCheatcodes {
                 self.pranks.remove(&message.depth.saturating_sub(1));
                 (InstrStop::Return, Bytes::new())
             }
+            Ok(Vm::VmCalls::snapshotState(_) | Vm::VmCalls::snapshot(_)) => {
+                (InstrStop::Return, self.snapshot(interp))
+            }
+            Ok(Vm::VmCalls::revertToState(call)) => {
+                (InstrStop::Return, self.restore(interp, call.snapshotId, false))
+            }
+            Ok(Vm::VmCalls::revertTo(call)) => {
+                (InstrStop::Return, self.restore(interp, call.snapshotId, false))
+            }
+            Ok(Vm::VmCalls::revertToStateAndDelete(call)) => {
+                (InstrStop::Return, self.restore(interp, call.snapshotId, true))
+            }
+            Ok(Vm::VmCalls::revertToAndDelete(call)) => {
+                (InstrStop::Return, self.restore(interp, call.snapshotId, true))
+            }
+            Ok(Vm::VmCalls::deleteStateSnapshot(call)) => (
+                InstrStop::Return,
+                self.snapshots.remove(&call.snapshotId).is_some().abi_encode().into(),
+            ),
             Ok(Vm::VmCalls::load(call)) => {
                 let state = interp.host().state_mut();
                 let account_loaded = state.account(&call.target, false).is_ok();

@@ -54,7 +54,7 @@ impl Default for LocalState {
     }
 }
 
-impl<D: Database + Clone> Database for &mut LocalState<D> {
+impl<D: Database + Clone + 'static> Database for LocalState<D> {
     type Error = evm2::AnyError;
 
     fn get_account(&mut self, address: &Address) -> Result<Option<AccountInfo>, Self::Error> {

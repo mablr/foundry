@@ -2,11 +2,11 @@
 
 use alloy_consensus::transaction::Recovered;
 use evm2::{
-    Evm, ExecutionConfig, Inspector, NoopInspector, Precompiles, TxResult,
+    Evm, ExecutionConfig, NoopInspector, Precompiles, TxResult,
     ethereum::{TxEnvelope, ethereum_tx_registry},
     evm::{Database, Db, DynDatabase, EmptyDB, registry::HandlerResult},
 };
-use foundry_evm_core::native::{EthereumEnv, FoundryEvmTypes, LocalState};
+use foundry_evm_core::native::{EthereumEnv, FoundryEvmTypes, LocalState, NativeInspector};
 
 mod inspector;
 pub use inspector::EthereumInspectorStack;
@@ -48,16 +48,16 @@ impl<D: Database + Clone> EthereumExecutor<D, NoopInspector> {
     }
 }
 
-impl<D: Database + Clone> EthereumExecutor<D, EthereumInspectorStack> {
+impl<D: Database + Clone + 'static> EthereumExecutor<D, EthereumInspectorStack<D>> {
     /// Creates an executor with Foundry's native inspector stack installed.
     pub fn new_foundry(env: EthereumEnv, mut state: LocalState<D>) -> Self {
-        let inspector = EthereumInspectorStack::default();
+        let inspector = EthereumInspectorStack::new(state.clone());
         inspector.install(&mut state);
         Self { env, state, inspector }
     }
 }
 
-impl<D: Database + Clone, I: Inspector<FoundryEvmTypes> + Clone> EthereumExecutor<D, I> {
+impl<D: Database + Clone + 'static, I: NativeInspector<D>> EthereumExecutor<D, I> {
     /// Creates an executor with an inspector retained across accepted transactions.
     pub const fn with_inspector(env: EthereumEnv, state: LocalState<D>, inspector: I) -> Self {
         Self { env, state, inspector }
@@ -87,6 +87,7 @@ impl<D: Database + Clone, I: Inspector<FoundryEvmTypes> + Clone> EthereumExecuto
     pub fn call(&self, tx: &Recovered<TxEnvelope>) -> HandlerResult<TxResult> {
         let mut state = self.state.clone();
         let mut inspector = self.inspector.clone();
+        inspector.set_backend(state.clone());
         let mut evm = EthereumFactory.create(self.env, Db::new(&mut state));
         evm.set_inspector(&mut inspector);
         Ok(evm.transact(tx)?.discard())
@@ -95,12 +96,16 @@ impl<D: Database + Clone, I: Inspector<FoundryEvmTypes> + Clone> EthereumExecuto
     /// Executes and accepts a transaction's state changes.
     pub fn transact(&mut self, tx: &Recovered<TxEnvelope>) -> HandlerResult<TxResult> {
         let mut inspector = self.inspector.clone();
+        inspector.set_backend(self.state.clone());
         let (outcome, block) = {
             let mut evm = EthereumFactory.create(self.env, Db::new(&mut self.state));
             evm.set_inspector(&mut inspector);
             let outcome = evm.transact(tx)?.detach();
             (outcome, *evm.block())
         };
+        if let Some(state) = inspector.take_backend_reset() {
+            self.state = state;
+        }
         self.state.commit(&outcome.pending_state);
         self.env.block = block;
         self.inspector = inspector;
@@ -115,7 +120,7 @@ mod tests {
     use alloy_primitives::{Address, Bytes, TxKind, U256};
     use alloy_sol_types::SolCall;
     use evm2::{
-        SpecId,
+        Inspector, SpecId,
         bytecode::Bytecode,
         env::BlockEnvExt,
         evm::{AccountInfo, InMemoryDB},
@@ -247,6 +252,8 @@ mod tests {
                 })
             }
         }
+
+        impl NativeInspector<EmptyDB> for BalanceInspector {}
 
         let caller = Address::with_last_byte(0xa);
         let target = Address::with_last_byte(0xb);

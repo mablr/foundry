@@ -43,7 +43,7 @@ pub(crate) struct NativeMultiContractRunner {
 /// A deployed test contract with state shared by its individual test runs.
 #[derive(Clone, Debug)]
 pub struct NativeContractRunner<D: Database + Clone = EmptyDB> {
-    executor: EthereumExecutor<D, EthereumInspectorStack>,
+    executor: EthereumExecutor<D, EthereumInspectorStack<D>>,
     address: Address,
     gas_limit: u64,
     gas_price: u128,
@@ -64,7 +64,7 @@ pub(crate) struct NativeTestSetup<'a> {
     libraries: NativeLibraries<'a>,
 }
 
-impl<D: Database + Clone> NativeContractRunner<D> {
+impl<D: Database + Clone + 'static> NativeContractRunner<D> {
     /// Deploys a linked test contract and executes its optional `setUp()` function.
     pub(crate) fn new(
         contract: &TestContract,
@@ -205,7 +205,7 @@ impl<D: Database + Clone> NativeContractRunner<D> {
     }
 
     fn deploy_code(
-        executor: &mut EthereumExecutor<D, EthereumInspectorStack>,
+        executor: &mut EthereumExecutor<D, EthereumInspectorStack<D>>,
         caller: Address,
         nonce: u64,
         code: Bytes,
@@ -223,7 +223,7 @@ impl<D: Database + Clone> NativeContractRunner<D> {
     }
 
     fn deploy_create2_factory(
-        executor: &mut EthereumExecutor<D, EthereumInspectorStack>,
+        executor: &mut EthereumExecutor<D, EthereumInspectorStack<D>>,
         gas_limit: u64,
         gas_price: u128,
     ) -> Result<()> {
@@ -301,7 +301,7 @@ impl NativeMultiContractRunner {
     }
 
     /// Executes selected unit tests over fresh snapshots of one native state.
-    pub fn test_collect_with_state<D: Database + Clone>(
+    pub fn test_collect_with_state<D: Database + Clone + 'static>(
         &self,
         filter: &dyn TestFilter,
         env: EthereumEnv,

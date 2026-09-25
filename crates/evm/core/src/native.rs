@@ -2,7 +2,9 @@
 
 use crate::opts::EvmOpts;
 use alloy_primitives::U256;
-use evm2::{EvmFeatures, SpecId, Version, env::BlockEnvExt};
+use evm2::{
+    EvmFeatures, Inspector, NoopInspector, SpecId, Version, env::BlockEnvExt, evm::Database,
+};
 use foundry_common::DEV_CHAIN_ID;
 use foundry_config::Config;
 use foundry_evm_hardforks::{FoundryHardfork, ethereum_spec_from_evm_version, ethereum_spec_id};
@@ -18,6 +20,19 @@ pub use fork::EthereumFork;
 
 mod types;
 pub use types::FoundryEvmTypes;
+
+/// Inspector state handoff at a native transaction boundary.
+pub trait NativeInspector<D: Database + Clone>: Inspector<FoundryEvmTypes> + Clone {
+    /// Supplies the accepted database visible at the start of this execution.
+    fn set_backend(&mut self, _backend: LocalState<D>) {}
+
+    /// Returns a database restored by an in-execution snapshot cheatcode.
+    fn take_backend_reset(&mut self) -> Option<LocalState<D>> {
+        None
+    }
+}
+
+impl<D: Database + Clone> NativeInspector<D> for NoopInspector {}
 
 /// Accepted state for Ethereum execution backed by an RPC fork.
 pub type ForkState = LocalState<fork_db::SharedBackend>;
