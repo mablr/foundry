@@ -186,12 +186,7 @@ impl GasReport {
         let child_intrinsic = arena
             .nodes()
             .iter()
-            .filter(|node| {
-                node.trace.depth == 1
-                    && (node.trace.kind.is_any_create()
-                        || node.trace.kind == NativeCallKind::Call
-                            && !self.is_internal_address(node.trace.address))
-            })
+            .filter(|node| node.trace.depth == 1 && node.trace.kind.is_any_create())
             .filter_map(|node| {
                 let trace = &node.trace;
                 native_intrinsic_gas(
@@ -216,13 +211,13 @@ impl GasReport {
             )
             .unwrap_or_default();
             match trace.depth {
-                // The native root includes its transaction intrinsic charge; REVM's trace instead
-                // counts the intrinsic charges of directly isolated child transactions.
+                // The native root includes its transaction intrinsic charge. The child CALL gas is
+                // already charged to the parent; isolated CREATE gas is added to match REVM.
                 0 => {
                     trace.gas_used =
                         trace.gas_used.saturating_sub(intrinsic).saturating_add(child_intrinsic);
                 }
-                1 if !self.is_internal_address(trace.address) => {
+                1 if trace.kind.is_any_create() => {
                     trace.gas_used = trace.gas_used.saturating_add(intrinsic);
                 }
                 _ => {}
