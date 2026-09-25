@@ -29,7 +29,7 @@ use foundry_evm::{
         fork::ResolvedFork,
         native::{EthereumEnv, EthereumFork, LocalState},
     },
-    decode::decode_console_logs,
+    decode::{RevertDecoder, decode_console_logs},
     native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
     traces::native::{CallTraceArena, NativeTraceDecoder, TraceWriter, TracingInspectorConfig},
@@ -375,7 +375,16 @@ impl NativeScriptContext {
             }
         }
         if !success {
-            eyre::bail!("script failed: {:?}", run.result.stop);
+            let reason = if run.result.output.is_empty() {
+                format!("EvmError: {:?}", run.result.stop)
+            } else {
+                RevertDecoder::new()
+                    .with_abis(
+                        self.plan.build.known_contracts.values().map(|contract| &contract.abi),
+                    )
+                    .decode(&run.result.output, None)
+            };
+            eyre::bail!("script failed: {reason}");
         }
         if execution.has_transactions() && self.evm_opts.fork_url.is_none() {
             sh_println!("\nIf you wish to simulate on-chain transactions pass a RPC URL.")?;
