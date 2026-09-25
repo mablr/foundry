@@ -2255,7 +2255,7 @@ impl TestArgs {
     ) -> Result<(Libraries, TestOutcome)> {
         let NetworkPass { config, evm_opts, multi_network } = pass;
         let execution = TestExecutionOptions { multi_network, ..execution };
-        if std::env::var_os("FOUNDRY_EVM2_NATIVE").is_some() {
+        if evm_opts.networks.execution_network() == NetworkVariant::Ethereum {
             return self
                 .run_native_network_pass(
                     Arc::new(config),

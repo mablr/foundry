@@ -56,7 +56,6 @@ contract NativeFuzzReplayTest {
     std::fs::write(&input, serde_json::to_vec(&failure).unwrap()).unwrap();
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--match-contract", "NativeFuzzReplayTest", "--fuzz-input-file"])
         .arg(&input)
         .assert_failure()
@@ -95,7 +94,6 @@ Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing te
     success.value = Some(U256::from(7));
     std::fs::write(&input, serde_json::to_vec(&success).unwrap()).unwrap();
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--match-contract", "NativeFuzzReplayTest", "--fuzz-input-file"])
         .arg(&input)
         .assert_success()
@@ -120,7 +118,6 @@ Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 3 skipped (4 total tests)
     success.value = None;
     std::fs::write(&input, serde_json::to_vec(&success).unwrap()).unwrap();
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--match-contract", "NativeFuzzReplayTest", "--fuzz-input-file"])
         .arg(&input)
         .assert_success()
@@ -161,7 +158,6 @@ contract HealthyTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.arg("test").assert_failure().stdout_eq(str![[r#"
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
@@ -253,7 +249,6 @@ contract NativeExpectRevertTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.arg("test").assert_success().stdout_eq(str![[r#"
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
@@ -320,7 +315,6 @@ contract NativeExpectRevertFailureTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.arg("test").assert_failure().stdout_eq(str![[r#"
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
@@ -397,7 +391,6 @@ contract NativeForkTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--fork-url", &handle.http_endpoint(), "--match-test", "testFork"])
         .assert_success()
         .stdout_eq(str![[r#"
@@ -459,7 +452,6 @@ contract NativeStorageTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.arg("test").assert_success().stdout_eq(str![[r#"
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
@@ -508,12 +500,10 @@ contract NativeLibraryTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--match-test", "testLibrary"]).assert_success();
 
     prj.update_config(|config| config.create2_deployer = alloy_primitives::Address::ZERO);
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--match-test", "testLibrary"]).assert_success();
 });
 
@@ -537,7 +527,6 @@ contract NativeFactoryTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--match-test", "testFactoryInstalled"]).assert_success();
 });
 
@@ -571,7 +560,6 @@ contract NativeTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--match-test", "testBalance"]).assert_success().stdout_eq(str![[r#"
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
@@ -586,7 +574,6 @@ Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
 "#]]);
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--match-test", "testBroken"]).assert_failure().stdout_eq(str![[r#"
 No files changed, compilation skipped
 
@@ -599,7 +586,6 @@ Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 0 skipped (1 total tests)
 "#]]);
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--match-test", "testFuzz"]).assert_failure().stderr_eq(str![[
         r#"Error: native execution does not yet support fuzz tests
 
@@ -630,7 +616,6 @@ contract NativeLogsTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.args(["test", "--match-test", "testLogs", "-vv"]).assert_success().stdout_eq(str![[r#"
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
@@ -679,7 +664,6 @@ contract NativeWarpTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.arg("test").assert_success().stdout_eq(str![[r#"
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
@@ -788,7 +772,6 @@ contract NativePrankTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.arg("test").assert_success().stdout_eq(str![[r#"
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
@@ -889,7 +872,6 @@ contract NativeSnapshotTest {
     );
 
     cmd.forge_fuse();
-    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
     cmd.arg("test").assert_success().stdout_eq(str![[r#"
 [COMPILING_FILES] with [SOLC_VERSION]
 [SOLC_VERSION] [ELAPSED]
