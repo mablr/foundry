@@ -11,7 +11,7 @@ use evm2::{
     evm::{Database, Db, EmptyDB, State},
     interpreter::{
         GasTracker, Host, InstrStop, Interpreter, Message, MessageExt, MessageKind, MessageResult,
-        MessageResultExt, derive_create_destination,
+        MessageResultExt, derive_create_destination, op,
     },
 };
 use foundry_cheatcodes::{
@@ -29,6 +29,8 @@ use foundry_evm_traces::native::{CallTraceArena, TracingInspector, TracingInspec
 
 use super::EthereumFactory;
 
+const SCRIPT_ADDRESS_ERROR: &str = "Usage of `address(this)` detected in script contract. Script contracts are ephemeral and their addresses should not be relied upon.";
+
 /// Native Ethereum inspectors and their per-test observations.
 #[derive(Clone, Debug)]
 pub struct EthereumInspectorStack<D: Database + Clone = EmptyDB> {
@@ -43,6 +45,7 @@ pub struct EthereumInspectorStack<D: Database + Clone = EmptyDB> {
     tracing: Option<TracingInspector>,
     traces: Vec<CallTraceArena>,
     coverage: Option<NativeLineCoverageCollector>,
+    script_address: Option<Address>,
 }
 
 impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
@@ -60,6 +63,7 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
             tracing: None,
             traces: Vec::new(),
             coverage: None,
+            script_address: None,
         }
     }
 
@@ -97,6 +101,11 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
     /// Installs the running test contract's cheatcode configuration.
     pub fn set_cheatcode_config(&mut self, config: CheatsConfig) {
         self.cheatcodes.set_config(config);
+    }
+
+    /// Rejects `address(this)` in the script contract's own bytecode.
+    pub const fn set_script_execution(&mut self, address: Address) {
+        self.script_address = Some(address);
     }
 
     fn deploy_code(
@@ -372,6 +381,17 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
     fn step(&mut self, interp: &mut Interpreter<'_, '_, FoundryEvmTypes>) {
         if let Some(coverage) = &mut self.coverage {
             coverage.step(interp);
+        }
+        if let Some(address) = self.script_address
+            && interp.opcode() == op::ADDRESS
+            && interp.message().destination == address
+            && interp.message().code_address == address
+        {
+            let reason = SCRIPT_ADDRESS_ERROR.as_bytes();
+            interp.memory_mut().resize(0, reason.len()).expect("script error fits in memory");
+            interp.memory_mut().set(0, reason);
+            interp.set_output(0..reason.len() as u32);
+            interp.set_stop(InstrStop::Revert);
         }
         if let Some(tracing) = &mut self.tracing {
             tracing.step(interp);

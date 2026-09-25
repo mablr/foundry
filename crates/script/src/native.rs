@@ -178,6 +178,9 @@ impl NativeScriptContext {
                 script: None,
             });
         };
+        if self.config.script_execution_protection {
+            runner.executor_mut().inspector_mut().set_script_execution(address);
+        }
         let setup = if needs_setup(&self.plan.execution.abi) {
             let input = Bytes::copy_from_slice(&keccak256("setUp()")[..4]);
             Some(runner.setup(address, input)?)
