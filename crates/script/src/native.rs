@@ -58,9 +58,11 @@ mod broadcast;
 
 /// Executes the Ethereum `forge script` command through the native pipeline.
 pub(crate) async fn run(args: ScriptArgs, config: Config, evm_opts: EvmOpts) -> Result<()> {
-    eyre::ensure!(!args.resume, "native script resume is not implemented");
     eyre::ensure!(!args.debug, "native script debugger is not implemented");
     let context = NativeScriptContext::prepare(args, config, evm_opts).await?;
+    if context.args.resume {
+        return context.resume().await;
+    }
     let execution = context.execute().await?;
     if shell::is_json() {
         context.show_json(&execution)?;
@@ -70,7 +72,7 @@ pub(crate) async fn run(args: ScriptArgs, config: Config, evm_opts: EvmOpts) -> 
     if execution.has_transactions() && context.evm_opts.fork_url.is_some() {
         let mut sequence = context.prepare_sequence(&execution).await?;
         if context.args.broadcast {
-            context.broadcast(sequence).await?;
+            context.broadcast(sequence, false).await?;
         } else {
             sequence.save(false, true)?;
             if !shell::is_json() {

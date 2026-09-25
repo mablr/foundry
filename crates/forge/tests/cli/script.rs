@@ -5,7 +5,7 @@ use crate::{
     utils::{assert_debug_dump_identifies_contract, generate_large_runtime_contract},
 };
 use alloy_hardforks::EthereumHardfork;
-use alloy_network::Ethereum;
+use alloy_network::{Ethereum, ReceiptResponse};
 use alloy_primitives::{Address, Bytes, U256, address, hex};
 use alloy_provider::Provider;
 use anvil::{NodeConfig, spawn};
@@ -137,9 +137,11 @@ SKIPPING ON CHAIN SIMULATION.
 
 forgetest_async!(native_script_broadcasts_and_saves_receipt, |prj, cmd| {
     let (api, handle) = spawn(NodeConfig::test()).await;
-    let sender = handle.dev_wallets().next().unwrap().address();
+    let wallet = handle.dev_wallets().next().unwrap();
+    let sender = wallet.address();
+    let private_key = format!("0x{}", hex::encode(wallet.credential().to_bytes()));
     let target = address!("000000000000000000000000000000000000beef");
-    api.anvil_set_code(target, hex!("600160005500").into()).await.unwrap();
+    api.anvil_set_code(target, hex!("60005460010160005500").into()).await.unwrap();
     let script = prj.add_script(
         "NativeBroadcast.s.sol",
         r#"
@@ -155,6 +157,8 @@ contract NativeBroadcast {
         vm.startBroadcast();
         (bool ok,) = address(0xbeef).call("");
         require(ok, "broadcast call failed");
+        (ok,) = address(0xbeef).call("");
+        require(ok, "second broadcast call failed");
         vm.stopBroadcast();
     }
 }
@@ -174,17 +178,135 @@ contract NativeBroadcast {
         ])
         .assert_success();
 
-    assert_eq!(handle.http_provider().get_storage_at(target, U256::ZERO).await.unwrap(), U256::ONE);
+    assert_eq!(
+        handle.http_provider().get_storage_at(target, U256::ZERO).await.unwrap(),
+        U256::from(2)
+    );
     let path = foundry_common::fs::json_files(&prj.root().join("broadcast"))
         .find(|path| {
             path.ends_with("run-latest.json") && !path.to_string_lossy().contains("dry-run")
         })
         .unwrap();
     let sequence = foundry_common::fs::read_json_file::<ScriptSequence<Ethereum>>(&path).unwrap();
-    assert_eq!(sequence.transactions.len(), 1);
-    assert!(sequence.transactions[0].hash.is_some());
-    assert_eq!(sequence.receipts.len(), 1);
+    assert_eq!(sequence.transactions.len(), 2);
+    assert_eq!(sequence.transactions[0].transaction.nonce(), Some(0));
+    assert_eq!(sequence.transactions[1].transaction.nonce(), Some(1));
+    assert!(sequence.transactions.iter().all(|tx| tx.hash.is_some()));
+    assert_eq!(sequence.receipts.len(), 2);
     assert!(sequence.pending.is_empty());
+
+    cmd.forge_fuse()
+        .args([
+            "script",
+            script.to_str().unwrap(),
+            "--fork-url",
+            rpc.as_str(),
+            "--sender",
+            &sender.to_string(),
+            "--broadcast",
+            "--private-key",
+            &private_key,
+        ])
+        .assert_success();
+    assert_eq!(
+        handle.http_provider().get_storage_at(target, U256::ZERO).await.unwrap(),
+        U256::from(4)
+    );
+    let sequence = foundry_common::fs::read_json_file::<ScriptSequence<Ethereum>>(&path).unwrap();
+    assert_eq!(sequence.transactions[0].transaction.nonce(), Some(2));
+    assert_eq!(sequence.transactions[1].transaction.nonce(), Some(3));
+    assert_eq!(sequence.receipts.len(), 2);
+    assert!(sequence.pending.is_empty());
+
+    // Simulate a process exit after submitting the second transaction but before saving its
+    // receipt.
+    let mut interrupted = sequence;
+    let hash = interrupted.transactions[1].hash.unwrap();
+    interrupted.receipts.retain(|receipt| receipt.transaction_hash() != hash);
+    interrupted.pending.push(hash);
+    fs::write(&path, serde_json::to_vec_pretty(&interrupted).unwrap()).unwrap();
+    cmd.forge_fuse()
+        .args([
+            "script",
+            script.to_str().unwrap(),
+            "--fork-url",
+            rpc.as_str(),
+            "--sender",
+            &sender.to_string(),
+            "--resume",
+            "--unlocked",
+        ])
+        .assert_success();
+    assert_eq!(
+        handle.http_provider().get_storage_at(target, U256::ZERO).await.unwrap(),
+        U256::from(4)
+    );
+    let resumed = foundry_common::fs::read_json_file::<ScriptSequence<Ethereum>>(&path).unwrap();
+    assert_eq!(resumed.receipts.len(), 2);
+    assert!(resumed.pending.is_empty());
+
+    cmd.forge_fuse()
+        .args(["script", script.to_str().unwrap(), "--fork-url", rpc.as_str(), "--resume"])
+        .assert_success();
+    assert_eq!(
+        handle.http_provider().get_storage_at(target, U256::ZERO).await.unwrap(),
+        U256::from(4)
+    );
+});
+
+forgetest_async!(native_script_resumes_dry_run_sequence, |prj, cmd| {
+    let (api, handle) = spawn(NodeConfig::test()).await;
+    let sender = handle.dev_wallets().next().unwrap().address();
+    let target = address!("000000000000000000000000000000000000beef");
+    api.anvil_set_code(target, hex!("600160005500").into()).await.unwrap();
+    let script = prj.add_script(
+        "NativeDryRun.s.sol",
+        r#"
+interface Vm {
+    function startBroadcast() external;
+}
+
+contract NativeDryRun {
+    Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+
+    function run() external {
+        vm.startBroadcast();
+        (bool ok,) = address(0xbeef).call("");
+        require(ok, "broadcast call failed");
+    }
+}
+"#,
+    );
+    let rpc = handle.http_endpoint();
+    cmd.forge_fuse()
+        .args([
+            "script",
+            script.to_str().unwrap(),
+            "--fork-url",
+            rpc.as_str(),
+            "--sender",
+            &sender.to_string(),
+        ])
+        .assert_success();
+    assert_eq!(
+        handle.http_provider().get_storage_at(target, U256::ZERO).await.unwrap(),
+        U256::ZERO
+    );
+    assert_eq!(latest_dry_run_sequence(prj.root()).transactions.len(), 1);
+
+    cmd.forge_fuse()
+        .args([
+            "script",
+            script.to_str().unwrap(),
+            "--fork-url",
+            rpc.as_str(),
+            "--sender",
+            &sender.to_string(),
+            "--resume",
+            "--unlocked",
+        ])
+        .assert_success();
+    assert_eq!(handle.http_provider().get_storage_at(target, U256::ZERO).await.unwrap(), U256::ONE);
 });
 
 fn latest_dry_run_sequence(root: &Path) -> ScriptSequence<Ethereum> {
