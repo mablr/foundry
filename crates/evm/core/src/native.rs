@@ -8,8 +8,16 @@ use foundry_config::Config;
 use foundry_evm_hardforks::{FoundryHardfork, ethereum_spec_from_evm_version, ethereum_spec_id};
 use foundry_evm_networks::NetworkVariant;
 
+pub use foundry_fork_db_native as fork_db;
+
 mod local_state;
 pub use local_state::LocalState;
+
+mod fork;
+pub use fork::EthereumFork;
+
+/// Accepted state for Ethereum execution backed by an RPC fork.
+pub type ForkState = LocalState<fork_db::SharedBackend>;
 
 /// Configuration and block data for an Ethereum execution.
 #[derive(Clone, Copy, Debug)]

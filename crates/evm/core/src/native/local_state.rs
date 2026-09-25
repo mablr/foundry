@@ -28,29 +28,29 @@ impl<D: Database + Clone> LocalState<D> {
     pub fn commit(&mut self, pending: &PendingState) {
         self.database_mut().commit_pending(pending);
     }
+
+    /// Sets an account's balance while retaining its other fields from the backing database.
+    pub fn set_balance(&mut self, address: Address, balance: U256) -> Result<(), evm2::AnyError> {
+        let db = self.database_mut();
+        let mut info = Database::get_account(db, &address)?.unwrap_or_default();
+        info.balance = balance;
+        db.insert_account_info(&address, info);
+        Ok(())
+    }
+
+    /// Sets an account's nonce while retaining its other fields from the backing database.
+    pub fn set_nonce(&mut self, address: Address, nonce: u64) -> Result<(), evm2::AnyError> {
+        let db = self.database_mut();
+        let mut info = Database::get_account(db, &address)?.unwrap_or_default();
+        info.nonce = nonce;
+        db.insert_account_info(&address, info);
+        Ok(())
+    }
 }
 
 impl Default for LocalState {
     fn default() -> Self {
         Self::new(EmptyDB::default())
-    }
-}
-
-impl LocalState {
-    /// Sets a local account's balance while retaining its other fields.
-    pub fn set_balance(&mut self, address: Address, balance: U256) {
-        let db = self.database_mut();
-        let mut info = db.account_info(&address).cloned().unwrap_or_default();
-        info.balance = balance;
-        db.insert_account_info(&address, info);
-    }
-
-    /// Sets a local account's nonce while retaining its other fields.
-    pub fn set_nonce(&mut self, address: Address, nonce: u64) {
-        let db = self.database_mut();
-        let mut info = db.account_info(&address).cloned().unwrap_or_default();
-        info.nonce = nonce;
-        db.insert_account_info(&address, info);
     }
 }
 
@@ -80,7 +80,7 @@ impl<D: Database + Clone> Database for &mut LocalState<D> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evm2::evm::InMemoryDB;
+    use evm2::{bytecode::Bytecode, evm::InMemoryDB};
 
     #[test]
     fn backing_reads_and_commits_remain_isolated_across_clones() {
@@ -101,6 +101,37 @@ mod tests {
         assert_eq!(
             Database::get_storage(&mut &mut snapshot, &address, &key).unwrap(),
             U256::from(3)
+        );
+    }
+
+    #[test]
+    fn overrides_preserve_backing_account_fields() {
+        let address = Address::with_last_byte(1);
+        let code = Bytecode::new_legacy([0x60, 0x00].into());
+        let mut backing = InMemoryDB::default();
+        backing.insert_account_info(
+            &address,
+            AccountInfo {
+                balance: U256::from(3),
+                nonce: 7,
+                code: Some(code),
+                ..Default::default()
+            },
+        );
+        let mut state = LocalState::new(backing);
+
+        state.set_balance(address, U256::from(5)).unwrap();
+        state.set_nonce(address, 8).unwrap();
+
+        let info = state.database().account_info(&address).unwrap();
+        assert_eq!((info.balance, info.nonce), (U256::from(5), 8));
+        let code_hash = info.code_hash;
+        assert_eq!(
+            Database::get_code_by_hash(&mut &mut state, &code_hash)
+                .unwrap()
+                .original_bytes()
+                .as_ref(),
+            &[0x60, 0x00]
         );
     }
 }

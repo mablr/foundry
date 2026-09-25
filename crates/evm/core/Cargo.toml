@@ -46,6 +46,7 @@ alloy-rpc-types = { workspace = true, features = ["anvil"] }
 alloy-sol-types.workspace = true
 alloy-rlp.workspace = true
 foundry-fork-db.workspace = true
+foundry-fork-db-native = { package = "foundry-fork-db", git = "https://github.com/mablr/foundry-core", rev = "0ad6f3dcf71c93a3242c54893d436c4dedcc59e9" }
 
 # Base
 base-common-chains = { workspace = true, optional = true, features = ["std"] }

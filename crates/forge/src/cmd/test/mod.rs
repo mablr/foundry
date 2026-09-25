@@ -66,8 +66,9 @@ use foundry_config::{
 };
 use foundry_debugger::{Debugger, DebuggerLayout};
 use foundry_evm::{
-    core::evm::{
-        BlockEnvFor, EthEvmNetwork, FoundryEvmNetwork, SpecFor, TempoEvmNetwork, TxEnvFor,
+    core::{
+        evm::{BlockEnvFor, EthEvmNetwork, FoundryEvmNetwork, SpecFor, TempoEvmNetwork, TxEnvFor},
+        native::EthereumFork,
     },
     executors::{ExecutorBuilder, ShowmapDomain},
     fork::ResolvedFork,
@@ -2146,14 +2147,15 @@ impl TestArgs {
             .build::<FEN, MultiCompiler>(output, evm_env, tx_env, evm_opts, executor_builder)
     }
 
-    /// Runs the experimental local Ethereum path using independently prepared artifacts.
-    fn run_native_network_pass(
+    /// Runs the experimental Ethereum path using independently prepared artifacts.
+    async fn run_native_network_pass(
         &self,
         config: Arc<Config>,
         evm_opts: EvmOpts,
         output: &ProjectCompileOutput,
         filter: &ProjectPathsAwareFilter,
         execution: TestExecutionOptions,
+        resolved_fork: Option<&ResolvedFork>,
     ) -> Result<(Libraries, TestOutcome)> {
         ensure!(
             !execution.coverage
@@ -2176,6 +2178,16 @@ impl TestArgs {
         let sender = evm_opts.sender;
         let create2_deployer_available =
             evm_opts.create2_deployer == foundry_evm::constants::DEFAULT_CREATE2_DEPLOYER;
+        let newly_resolved =
+            if resolved_fork.is_none() { evm_opts.resolve_fork().await? } else { None };
+        let resolved_fork = resolved_fork.or(newly_resolved.as_ref());
+        let fork = match resolved_fork {
+            Some(resolved) => Some(EthereumFork::open(&config, &evm_opts, resolved).await?),
+            None => {
+                ensure!(evm_opts.fork_url.is_none(), "native fork must be resolved");
+                None
+            }
+        };
         let runner = NativeMultiContractRunner::new(
             config.clone(),
             execution.inline_config,
@@ -2186,7 +2198,11 @@ impl TestArgs {
         )?;
         let libraries = runner.prepared.libraries.clone();
         let timer = Instant::now();
-        let mut results = runner.test_collect(filter)?;
+        let mut results = if let Some(fork) = fork {
+            runner.test_collect_with_state(filter, fork.env, fork.state)?
+        } else {
+            runner.test_collect(filter)?
+        };
         let known_contracts = runner.prepared.known_contracts;
 
         if shell::is_json() || self.junit {
@@ -2239,17 +2255,16 @@ impl TestArgs {
         let NetworkPass { config, evm_opts, multi_network } = pass;
         let execution = TestExecutionOptions { multi_network, ..execution };
         if std::env::var_os("FOUNDRY_EVM2_NATIVE").is_some() {
-            ensure!(
-                resolved_fork.is_none() && evm_opts.fork_url.is_none(),
-                "native fork execution is not implemented"
-            );
-            return self.run_native_network_pass(
-                Arc::new(config),
-                evm_opts,
-                output,
-                filter,
-                execution,
-            );
+            return self
+                .run_native_network_pass(
+                    Arc::new(config),
+                    evm_opts,
+                    output,
+                    filter,
+                    execution,
+                    resolved_fork,
+                )
+                .await;
         }
         let verbosity = evm_opts.verbosity;
         let config = Arc::new(config);

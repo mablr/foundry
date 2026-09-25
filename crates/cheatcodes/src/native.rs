@@ -6,7 +6,7 @@ use alloy_sol_types::SolInterface;
 use evm2::{
     BaseEvmTypes, Inspector,
     bytecode::Bytecode,
-    evm::AccountInfo,
+    evm::{AccountInfo, Database},
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
 use foundry_evm_core::{
@@ -20,7 +20,7 @@ pub struct NativeCheatcodes;
 
 impl NativeCheatcodes {
     /// Installs code at the cheatcode address for Solidity `EXTCODESIZE` checks.
-    pub fn install(&self, state: &mut LocalState) {
+    pub fn install<D: Database + Clone>(&self, state: &mut LocalState<D>) {
         state.database_mut().insert_account_info(
             &CHEATCODE_ADDRESS,
             AccountInfo {

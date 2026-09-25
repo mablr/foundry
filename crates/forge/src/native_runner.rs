@@ -12,6 +12,7 @@ use alloy_primitives::{Address, Bytes, Log, TxKind, U256};
 use evm2::{
     TxResult,
     ethereum::{TxEnvelope, intrinsic_gas},
+    evm::{Database, EmptyDB},
 };
 use eyre::{Result, ensure};
 use foundry_common::{LIBRARY_DEPLOYER, TestFunctionKind};
@@ -41,8 +42,8 @@ pub(crate) struct NativeMultiContractRunner {
 
 /// A deployed test contract with state shared by its individual test runs.
 #[derive(Clone, Debug)]
-pub struct NativeContractRunner {
-    executor: EthereumExecutor,
+pub struct NativeContractRunner<D: Database + Clone = EmptyDB> {
+    executor: EthereumExecutor<D>,
     inspector: EthereumInspectorStack,
     address: Address,
     gas_limit: u64,
@@ -55,26 +56,33 @@ pub(crate) struct NativeLibraries<'a> {
     deployment: LibraryDeployment,
 }
 
-impl NativeContractRunner {
+/// Inputs shared by test contract deployment and execution.
+pub(crate) struct NativeTestSetup<'a> {
+    sender: Address,
+    initial_balance: U256,
+    gas_limit: u64,
+    gas_price: u128,
+    libraries: NativeLibraries<'a>,
+}
+
+impl<D: Database + Clone> NativeContractRunner<D> {
     /// Deploys a linked test contract and executes its optional `setUp()` function.
     pub(crate) fn new(
         contract: &TestContract,
-        env: EthereumEnv,
-        sender: Address,
-        initial_balance: U256,
-        gas_limit: u64,
-        gas_price: u128,
-        libraries: NativeLibraries<'_>,
+        mut env: EthereumEnv,
+        mut state: LocalState<D>,
+        setup: NativeTestSetup<'_>,
     ) -> Result<Self> {
-        let mut state = LocalState::default();
+        let NativeTestSetup { sender, initial_balance, gas_limit, gas_price, libraries } = setup;
+        env.block.gas_limit = U256::from(gas_limit);
         let mut inspector = EthereumInspectorStack::default();
         inspector.install(&mut state);
-        state.set_balance(sender, U256::MAX);
-        state.set_nonce(sender, 1);
-        state.set_balance(CALLER, U256::MAX);
-        state.set_balance(LIBRARY_DEPLOYER, U256::MAX);
+        state.set_balance(sender, U256::MAX)?;
+        state.set_nonce(sender, 1)?;
+        state.set_balance(CALLER, U256::MAX)?;
+        state.set_balance(LIBRARY_DEPLOYER, U256::MAX)?;
         let expected_address = sender.create(1);
-        state.set_balance(expected_address, initial_balance);
+        state.set_balance(expected_address, initial_balance)?;
         let mut executor = EthereumExecutor::new(env, state);
         if let LibraryDeployment::Create2 { deployer, .. } = libraries.deployment
             && !libraries.code.is_empty()
@@ -147,9 +155,9 @@ impl NativeContractRunner {
         )?;
         ensure!(address == expected_address, "native deployment returned an unexpected address");
 
-        executor.state_mut().set_balance(sender, initial_balance);
-        executor.state_mut().set_balance(CALLER, initial_balance);
-        executor.state_mut().set_balance(LIBRARY_DEPLOYER, initial_balance);
+        executor.state_mut().set_balance(sender, initial_balance)?;
+        executor.state_mut().set_balance(CALLER, initial_balance)?;
+        executor.state_mut().set_balance(LIBRARY_DEPLOYER, initial_balance)?;
 
         if matches!(libraries.deployment, LibraryDeployment::Nonce) {
             Self::deploy_create2_factory(&mut executor, &mut inspector, gas_limit, gas_price)?;
@@ -202,7 +210,7 @@ impl NativeContractRunner {
     }
 
     fn deploy_code(
-        executor: &mut EthereumExecutor,
+        executor: &mut EthereumExecutor<D>,
         inspector: &mut EthereumInspectorStack,
         caller: Address,
         nonce: u64,
@@ -212,23 +220,30 @@ impl NativeContractRunner {
     ) -> Result<Address> {
         let tx = Self::transaction(caller, nonce, TxKind::Create, code, gas_limit, gas_price);
         let result = executor.inspect_transact(&tx, inspector)?;
-        ensure!(result.status, "native contract deployment failed: {:?}", result.stop);
+        ensure!(
+            result.status,
+            "native contract deployment by {caller} at nonce {nonce} failed: {:?}",
+            result.stop
+        );
         result.created_address.ok_or_else(|| eyre::eyre!("native deployment returned no address"))
     }
 
     fn deploy_create2_factory(
-        executor: &mut EthereumExecutor,
+        executor: &mut EthereumExecutor<D>,
         inspector: &mut EthereumInspectorStack,
         gas_limit: u64,
         gas_price: u128,
     ) -> Result<()> {
+        if let Some(info) =
+            Database::get_account(&mut executor.state_mut(), &DEFAULT_CREATE2_DEPLOYER)?
+            && !Database::get_code_by_hash(&mut executor.state_mut(), &info.code_hash)?.is_empty()
+        {
+            return Ok(());
+        }
         let creator = DEFAULT_CREATE2_DEPLOYER_DEPLOYER;
-        let balance = executor
-            .state()
-            .database()
-            .account_info(&creator)
+        let balance = Database::get_account(&mut executor.state_mut(), &creator)?
             .map_or(U256::ZERO, |info| info.balance);
-        executor.state_mut().set_balance(creator, U256::MAX);
+        executor.state_mut().set_balance(creator, U256::MAX)?;
         let nonce = executor.state().database().account_info(&creator).map_or(0, |info| info.nonce);
         let address = Self::deploy_code(
             executor,
@@ -240,7 +255,7 @@ impl NativeContractRunner {
             gas_price,
         )?;
         ensure!(address == DEFAULT_CREATE2_DEPLOYER, "native CREATE2 factory address mismatch");
-        executor.state_mut().set_balance(creator, balance);
+        executor.state_mut().set_balance(creator, balance)?;
         Ok(())
     }
 
@@ -290,6 +305,16 @@ impl NativeMultiContractRunner {
     /// Executes selected local unit tests through evm2 and collects their results.
     pub fn test_collect(&self, filter: &dyn TestFilter) -> Result<BTreeMap<String, SuiteResult>> {
         let env = EthereumEnv::local_from_config(&self.config, &self.evm_opts)?;
+        self.test_collect_with_state(filter, env, LocalState::default())
+    }
+
+    /// Executes selected unit tests over fresh snapshots of one native state.
+    pub fn test_collect_with_state<D: Database + Clone>(
+        &self,
+        filter: &dyn TestFilter,
+        env: EthereumEnv,
+        state: LocalState<D>,
+    ) -> Result<BTreeMap<String, SuiteResult>> {
         let gas_price = u128::try_from(env.block.basefee)?;
         let matcher = TestFunctionMatcher::new(&self.config, &self.inline_config, None);
         let mut suites = BTreeMap::new();
@@ -301,13 +326,16 @@ impl NativeMultiContractRunner {
             let runner = NativeContractRunner::new(
                 contract,
                 env,
-                self.sender,
-                self.evm_opts.initial_balance,
-                self.evm_opts.gas_limit(),
-                gas_price,
-                NativeLibraries {
-                    code: &self.prepared.libs_to_deploy,
-                    deployment: self.prepared.library_deployment,
+                state.clone(),
+                NativeTestSetup {
+                    sender: self.sender,
+                    initial_balance: self.evm_opts.initial_balance,
+                    gas_limit: self.evm_opts.gas_limit(),
+                    gas_price,
+                    libraries: NativeLibraries {
+                        code: &self.prepared.libs_to_deploy,
+                        deployment: self.prepared.library_deployment,
+                    },
                 },
             )?;
             let mut tests = BTreeMap::new();
@@ -387,11 +415,14 @@ mod tests {
         let runner = NativeContractRunner::new(
             &contract,
             env,
-            sender,
-            U256::ZERO,
-            100_000,
-            0,
-            NativeLibraries { code: &[], deployment: LibraryDeployment::Nonce },
+            LocalState::default(),
+            NativeTestSetup {
+                sender,
+                initial_balance: U256::ZERO,
+                gas_limit: 100_000,
+                gas_price: 0,
+                libraries: NativeLibraries { code: &[], deployment: LibraryDeployment::Nonce },
+            },
         )
         .unwrap();
 

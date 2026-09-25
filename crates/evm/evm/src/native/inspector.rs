@@ -4,6 +4,7 @@ use alloy_primitives::Log;
 use alloy_sol_types::{SolEvent, SolInterface, SolValue};
 use evm2::{
     BaseEvmTypes, EvmTypesHost, Inspector,
+    evm::Database,
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
 use foundry_cheatcodes::native::NativeCheatcodes;
@@ -19,7 +20,7 @@ pub struct EthereumInspectorStack {
 
 impl EthereumInspectorStack {
     /// Installs contracts required by the enabled inspectors.
-    pub fn install(&self, state: &mut LocalState) {
+    pub fn install<D: Database + Clone>(&self, state: &mut LocalState<D>) {
         self.cheatcodes.install(state);
     }
 

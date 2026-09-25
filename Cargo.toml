@@ -352,7 +352,7 @@ svm = { package = "svm-rs", version = "0.5.28", default-features = false, featur
 ] }
 
 ## evm2
-evm2 = { git = "https://github.com/alloy-rs/evm2", rev = "c177439cbde3a4afb193ac10ff570d0c5e6fa663" }
+evm2 = { git = "https://github.com/mablr/evm2", rev = "2b51ce7d44c38b06eb125a5863655a4f470390f0" }
 
 ## alloy
 alloy-consensus = { version = "2.4.2", default-features = false }

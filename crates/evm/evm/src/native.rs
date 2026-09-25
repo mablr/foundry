@@ -118,7 +118,19 @@ mod tests {
     };
     use foundry_cheatcodes::{Vm, native::NativeCheatcodes};
     use foundry_compilers::artifacts::EvmVersion;
-    use foundry_evm_core::{constants::CHEATCODE_ADDRESS, opts::EvmOpts};
+    use foundry_evm_core::{
+        constants::CHEATCODE_ADDRESS,
+        native::{ForkState, fork_db},
+        opts::EvmOpts,
+    };
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        },
+        time::Duration,
+    };
+    use tiny_http::{Response, Server};
 
     #[test]
     fn executor_discards_calls_and_commits_copy_on_write_transactions() {
@@ -293,8 +305,8 @@ mod tests {
     fn deployed_code_executes_from_accepted_state() {
         let caller = Address::with_last_byte(0xa);
         let mut state = LocalState::default();
-        state.set_balance(caller, U256::MAX);
-        state.set_nonce(caller, 1);
+        state.set_balance(caller, U256::MAX).unwrap();
+        state.set_nonce(caller, 1).unwrap();
         let env = EthereumEnv::new(
             SpecId::CANCUN,
             BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
@@ -452,5 +464,73 @@ mod tests {
             executor.state().database().db.inner().cache.storage[&contract].slots[&U256::ZERO],
             U256::from(3)
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn executor_reads_rpc_fork_and_keeps_commits_local() {
+        let server = Server::http("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", server.server_addr());
+        let stopped = Arc::new(AtomicBool::new(false));
+        let stop = Arc::clone(&stopped);
+        let handle = std::thread::spawn(move || {
+            let mut methods = Vec::new();
+            while !stop.load(Ordering::Relaxed) {
+                if let Some(mut request) = server.recv_timeout(Duration::from_millis(20)).unwrap() {
+                    let rpc: serde_json::Value =
+                        serde_json::from_reader(request.as_reader()).unwrap();
+                    let method = rpc["method"].as_str().unwrap().to_owned();
+                    let result = match method.as_str() {
+                        "eth_getAccountInfo" => serde_json::json!({
+                            "balance": "0x0",
+                            "nonce": "0x0",
+                            "code": "0x5f546001015f555f545f5260205ff3"
+                        }),
+                        "eth_getStorageAt" => serde_json::json!("0x3"),
+                        other => panic!("unexpected RPC method: {other}"),
+                    };
+                    let response =
+                        serde_json::json!({ "jsonrpc": "2.0", "id": rpc["id"], "result": result });
+                    methods.push(method);
+                    request.respond(Response::from_string(response.to_string())).unwrap();
+                }
+            }
+            methods
+        });
+
+        let caller = Address::with_last_byte(0xa);
+        let contract = Address::with_last_byte(0xb);
+        let meta = fork_db::cache::BlockchainDbMeta::new(serde_json::Value::Null, endpoint.clone())
+            .with_account_fetch_policy(fork_db::AccountFetchPolicy::RequireAccountInfo);
+        let db = fork_db::BlockchainDb::new(meta, None);
+        db.accounts().write().insert(caller, AccountInfo::default());
+        let provider = EvmOpts::default().fork_provider_with_url(&endpoint).unwrap();
+        let backend: fork_db::SharedBackend =
+            fork_db::SharedBackend::spawn_backend(Arc::new(provider), db.clone(), None).await;
+        let env = EthereumEnv::new(
+            SpecId::CANCUN,
+            BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
+        );
+        let mut executor = EthereumExecutor::new(env, ForkState::new(backend));
+        let tx = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                gas_limit: 100_000,
+                to: TxKind::Call(contract),
+                ..Default::default()
+            }),
+            caller,
+        );
+
+        assert_eq!(U256::from_be_slice(&executor.call(&tx).unwrap().output), U256::from(4));
+        assert_eq!(U256::from_be_slice(&executor.transact(&tx).unwrap().output), U256::from(4));
+        assert_eq!(
+            executor.state().database().cache.storage[&contract].slots[&U256::ZERO],
+            U256::from(4)
+        );
+        assert_eq!(db.storage().read()[&contract][&U256::ZERO], U256::from(3));
+
+        stopped.store(true, Ordering::Relaxed);
+        let methods = handle.join().unwrap();
+        assert!(methods.contains(&"eth_getAccountInfo".to_owned()));
+        assert!(methods.contains(&"eth_getStorageAt".to_owned()));
     }
 }

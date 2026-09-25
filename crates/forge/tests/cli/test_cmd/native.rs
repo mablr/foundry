@@ -1,6 +1,54 @@
 //! End-to-end checks for the experimental evm2 Forge runner.
 
-use foundry_test_utils::{forgetest_init, str};
+use alloy_primitives::{Address, B256, Bytes, U256};
+use anvil::{NodeConfig, spawn};
+use foundry_test_utils::{forgetest_async, forgetest_init, str};
+
+forgetest_async!(evm2_reads_resolved_fork_state, |prj, cmd| {
+    let (api, handle) = spawn(NodeConfig::test()).await;
+    let address = Address::with_last_byte(0x42);
+    api.anvil_set_code(
+        address,
+        Bytes::from_static(&[0x5f, 0x54, 0x5f, 0x52, 0x60, 0x20, 0x5f, 0xf3]),
+    )
+    .await
+    .unwrap();
+    api.anvil_set_storage_at(address, U256::ZERO, B256::with_last_byte(42)).await.unwrap();
+    api.anvil_mine(Some(U256::ONE), None).await.unwrap();
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativeFork.t.sol",
+        r#"
+interface Remote {
+    function value() external view returns (uint256);
+}
+
+contract NativeForkTest {
+    function testFork() public view {
+        require(block.number == 1, "wrong fork block");
+        require(Remote(address(0x42)).value() == 42, "wrong fork storage");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.args(["test", "--fork-url", &handle.http_endpoint(), "--match-test", "testFork"])
+        .assert_success()
+        .stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeFork.t.sol:NativeForkTest
+[PASS] testFork() ([GAS])
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
+
+"#]]);
+});
 
 forgetest_init!(evm2_storage_cheatcodes_follow_frame_rollback, |prj, cmd| {
     prj.update_config(|config| config.isolate = false);
