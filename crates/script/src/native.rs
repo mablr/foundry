@@ -1,16 +1,18 @@
 //! Ethereum script execution on evm2.
 
 use crate::{
-    ScriptArgs,
+    ScriptArgs, ScriptInputs,
     build::{BuildData, LinkedBuildData},
     execute::ExecutionData,
+    resolve_script_fork, resolve_script_sender_nonce,
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_network::Ethereum;
 use alloy_primitives::{Address, Bytes, Log, TxKind};
 use evm2::{TxResult, ethereum::TxEnvelope, evm::Database};
 use eyre::Result;
-use foundry_cheatcodes::BroadcastableTransactions;
+use foundry_cheatcodes::{BroadcastableTransactions, Wallets};
+use foundry_cli::opts::TempoOpts;
 use foundry_config::Config;
 use foundry_evm::{
     core::fork::ResolvedFork,
@@ -18,6 +20,56 @@ use foundry_evm::{
     opts::EvmOpts,
     traces::native::CallTraceArena,
 };
+use foundry_evm_networks::NetworkVariant;
+use foundry_wallets::wallet_browser::signer::BrowserSigner;
+
+/// Ethereum script inputs prepared without a legacy executor or fork backend.
+pub struct NativeScriptContext {
+    pub args: ScriptArgs,
+    pub config: Config,
+    pub evm_opts: EvmOpts,
+    pub script_wallets: Wallets,
+    pub browser_wallet: Option<BrowserSigner<Ethereum>>,
+    pub tempo: TempoOpts,
+    pub sender_nonce: u64,
+    pub resolved_fork: Option<ResolvedFork>,
+    pub plan: NativeScriptPlan,
+}
+
+impl NativeScriptContext {
+    /// Prepares Ethereum script inputs, the exact fork, and linked artifacts.
+    pub async fn prepare(args: ScriptArgs, config: Config, evm_opts: EvmOpts) -> Result<Self> {
+        let ScriptInputs { args, mut config, mut evm_opts, script_wallets, browser_wallet, tempo } =
+            args.preprocess_inputs::<Ethereum>(config, evm_opts).await?;
+        eyre::ensure!(
+            evm_opts.networks.execution_network() == NetworkVariant::Ethereum,
+            "native script requires Ethereum"
+        );
+        let resolved_fork = resolve_script_fork(&mut config, &mut evm_opts, None).await?;
+        let sender_nonce =
+            resolve_script_sender_nonce(args.sender_nonce, &evm_opts, resolved_fork.as_ref())
+                .await?;
+        let plan = NativeScriptPlan::prepare(
+            &args,
+            &config,
+            &evm_opts,
+            sender_nonce,
+            resolved_fork.as_ref(),
+        )
+        .await?;
+        Ok(Self {
+            args,
+            config,
+            evm_opts,
+            script_wallets,
+            browser_wallet,
+            tempo,
+            sender_nonce,
+            resolved_fork,
+            plan,
+        })
+    }
+}
 
 /// Compiled, linked, and ABI-encoded inputs for native Ethereum script execution.
 pub struct NativeScriptPlan {
@@ -166,7 +218,9 @@ mod tests {
         let mut opts = EvmOpts::default();
         opts.env.gas_limit = foundry_config::GasLimit(30_000_000);
         opts.memory_limit = 1_000_000;
-        let plan = NativeScriptPlan::prepare(&args, &config, &opts, 1, None).await.unwrap();
+        let context = NativeScriptContext::prepare(args, config, opts).await.unwrap();
+        assert_eq!(context.sender_nonce, 1);
+        let plan = context.plan;
         assert_eq!(plan.build.predeploy_libraries.libraries_count(), 0);
 
         let deployer = Address::with_last_byte(1);
@@ -174,8 +228,11 @@ mod tests {
         let mut state = LocalState::default();
         state.set_balance(deployer, U256::MAX).unwrap();
         state.set_balance(sender, U256::MAX).unwrap();
-        let env =
-            foundry_evm::core::native::EthereumEnv::local_from_config(&config, &opts).unwrap();
+        let env = foundry_evm::core::native::EthereumEnv::local_from_config(
+            &context.config,
+            &context.evm_opts,
+        )
+        .unwrap();
         let executor = EthereumExecutor::new_foundry(env, state);
         let mut runner = NativeScriptRunner::new(executor, deployer, sender, 1_000_000, 0);
         let deployment = runner.deploy(plan.execution.bytecode.clone()).unwrap();

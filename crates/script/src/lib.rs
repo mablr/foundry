@@ -106,6 +106,15 @@ enum PreparedScript<FEN: FoundryEvmNetwork> {
     Simulate(Box<PreSimulationState<FEN>>),
 }
 
+struct ScriptInputs<N: Network> {
+    args: ScriptArgs,
+    config: Config,
+    evm_opts: EvmOpts,
+    script_wallets: Wallets,
+    browser_wallet: Option<foundry_wallets::wallet_browser::signer::BrowserSigner<N>>,
+    tempo: TempoOpts,
+}
+
 /// CLI arguments for `forge script`.
 #[derive(Clone, Debug, Default, Parser)]
 pub struct ScriptArgs {
@@ -338,12 +347,11 @@ impl ScriptArgs {
         Ok((config, evm_opts))
     }
 
-    async fn preprocess<FEN: FoundryEvmNetwork>(
+    async fn preprocess_inputs<N: Network>(
         self,
         mut config: Config,
         mut evm_opts: EvmOpts,
-        executor_builder: ExecutorBuilder<FEN>,
-    ) -> Result<PreprocessedState<FEN>> {
+    ) -> Result<ScriptInputs<N>> {
         let args = self;
         let mut tempo = args.tempo.clone();
 
@@ -356,7 +364,7 @@ impl ScriptArgs {
         };
 
         let script_wallets = Wallets::new(args.wallets.get_multi_wallet().await?, args.evm.sender);
-        let browser_wallet = args.wallets.browser_signer::<FEN::Network>().await?;
+        let browser_wallet = args.wallets.browser_signer::<N>().await?;
 
         if let Some(sender) = session_sender {
             evm_opts.sender = sender;
@@ -380,6 +388,17 @@ impl ScriptArgs {
             config.extra_output.push(ContractOutputSelection::StorageLayout);
         }
 
+        Ok(ScriptInputs { args, config, evm_opts, script_wallets, browser_wallet, tempo })
+    }
+
+    async fn preprocess<FEN: FoundryEvmNetwork>(
+        self,
+        config: Config,
+        evm_opts: EvmOpts,
+        executor_builder: ExecutorBuilder<FEN>,
+    ) -> Result<PreprocessedState<FEN>> {
+        let ScriptInputs { args, config, evm_opts, script_wallets, browser_wallet, tempo } =
+            self.preprocess_inputs::<FEN::Network>(config, evm_opts).await?;
         let script_config = ScriptConfig::new(
             config,
             evm_opts,
@@ -1016,6 +1035,22 @@ async fn resolve_script_fork(
     evm_opts.resolve_fork().await
 }
 
+async fn resolve_script_sender_nonce(
+    override_nonce: Option<u64>,
+    evm_opts: &EvmOpts,
+    resolved_fork: Option<&ResolvedFork>,
+) -> Result<u64> {
+    if let Some(nonce) = override_nonce {
+        Ok(nonce)
+    } else if evm_opts.fork_url.is_some() {
+        let fork = resolved_fork.context("fork must be resolved")?;
+        next_nonce_resolved(evm_opts.sender, evm_opts, fork).await
+    } else {
+        // dapptools compatibility.
+        Ok(1)
+    }
+}
+
 impl<FEN: FoundryEvmNetwork> ScriptConfig<FEN> {
     pub(crate) async fn new(
         mut config: Config,
@@ -1028,15 +1063,9 @@ impl<FEN: FoundryEvmNetwork> ScriptConfig<FEN> {
         // Linking happens before runner construction, so resolve the fork context now and reuse it
         // for all preflight reads and environment construction.
         let resolved_fork = resolve_script_fork(&mut config, &mut evm_opts, None).await?;
-        let sender_nonce = if let Some(sender_nonce) = sender_nonce_override {
-            sender_nonce
-        } else if evm_opts.fork_url.is_some() {
-            let fork = resolved_fork.as_ref().context("fork must be resolved")?;
-            next_nonce_resolved(evm_opts.sender, &evm_opts, fork).await?
-        } else {
-            // dapptools compatibility
-            1
-        };
+        let sender_nonce =
+            resolve_script_sender_nonce(sender_nonce_override, &evm_opts, resolved_fork.as_ref())
+                .await?;
 
         Ok(Self {
             config,
