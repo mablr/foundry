@@ -52,6 +52,13 @@ impl Inspector<BaseEvmTypes> for NativeCheatcodes {
                     Err(_) => (InstrStop::Revert, Bytes::new()),
                 }
             }
+            Ok(Vm::VmCalls::warp(call)) => {
+                let host = interp.host();
+                let mut block = *host.block();
+                block.timestamp = call.newTimestamp;
+                host.set_block(block);
+                (InstrStop::Return, Bytes::new())
+            }
             Ok(Vm::VmCalls::load(call)) => {
                 let state = interp.host().state_mut();
                 let account_loaded = state.account(&call.target, false).is_ok();

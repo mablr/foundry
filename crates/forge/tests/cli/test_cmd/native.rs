@@ -284,3 +284,48 @@ Ran 1 test suite [ELAPSED]: 1 tests passed, 0 failed, 0 skipped (1 total tests)
 
 "#]]);
 });
+
+forgetest_init!(evm2_warp_updates_live_and_later_block_context, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativeWarp.t.sol",
+        r#"
+interface Vm {
+    function warp(uint256 newTimestamp) external;
+}
+
+contract NativeWarpTest {
+    Vm constant vm = Vm(address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+
+    function setUp() public {
+        vm.warp(123);
+    }
+
+    function testTimestampFromSetup() public view {
+        require(block.timestamp == 123, "setup timestamp was lost");
+    }
+
+    function testWarpWithinCall() public {
+        vm.warp(456);
+        require(block.timestamp == 456, "live timestamp was not updated");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.arg("test").assert_success().stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 2 tests for test/NativeWarp.t.sol:NativeWarpTest
+[PASS] testTimestampFromSetup() ([GAS])
+[PASS] testWarpWithinCall() ([GAS])
+Suite result: ok. 2 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
+
+"#]]);
+});

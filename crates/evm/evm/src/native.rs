@@ -95,12 +95,14 @@ impl<D: Database + Clone, I: Inspector<BaseEvmTypes> + Clone> EthereumExecutor<D
     /// Executes and accepts a transaction's state changes.
     pub fn transact(&mut self, tx: &Recovered<TxEnvelope>) -> HandlerResult<TxResult> {
         let mut inspector = self.inspector.clone();
-        let outcome = {
+        let (outcome, block) = {
             let mut evm = EthereumFactory.create(self.env, Db::new(&mut self.state));
             evm.set_inspector(&mut inspector);
-            evm.transact(tx)?.detach()
+            let outcome = evm.transact(tx)?.detach();
+            (outcome, *evm.block())
         };
         self.state.commit(&outcome.pending_state);
+        self.env.block = block;
         self.inspector = inspector;
         Ok(outcome.result)
     }
