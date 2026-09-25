@@ -1,8 +1,8 @@
 //! Ethereum cheatcodes executed through evm2 inspection hooks.
 
-use crate::Vm;
+use crate::{Error, Vm};
 use alloy_primitives::{Address, Bytes, U256};
-use alloy_sol_types::{SolInterface, SolValue};
+use alloy_sol_types::{SolError, SolInterface, SolValue};
 use evm2::{
     Inspector,
     bytecode::Bytecode,
@@ -21,6 +21,7 @@ pub struct NativeCheatcodes<D: Database + Clone = EmptyDB> {
     backend: LocalState<D>,
     pranks: BTreeMap<u16, NativePrank>,
     active_origins: BTreeMap<u16, Option<Address>>,
+    expected_revert: Option<NativeExpectedRevert>,
     snapshots: BTreeMap<U256, Arc<NativeSnapshot<D>>>,
     next_snapshot_id: U256,
     backend_reset: Option<LocalState<D>>,
@@ -42,6 +43,13 @@ struct NativePrank {
     used: bool,
 }
 
+#[derive(Clone, Debug)]
+struct NativeExpectedRevert {
+    depth: u16,
+    reason: Option<Bytes>,
+    partial_match: bool,
+}
+
 impl Default for NativeCheatcodes<EmptyDB> {
     fn default() -> Self {
         Self::new(LocalState::default())
@@ -55,6 +63,7 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
             backend,
             pranks: BTreeMap::new(),
             active_origins: BTreeMap::new(),
+            expected_revert: None,
             snapshots: BTreeMap::new(),
             next_snapshot_id: U256::ONE,
             backend_reset: None,
@@ -134,6 +143,70 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
         self.backend_reset = Some(snapshot.backend.clone());
         true.abi_encode().into()
     }
+
+    fn expect_revert(
+        &mut self,
+        depth: u16,
+        reason: Option<Bytes>,
+        partial_match: bool,
+    ) -> (InstrStop, Bytes) {
+        if self.expected_revert.is_some() {
+            return (
+                InstrStop::Revert,
+                Error::encode("you must call another function prior to expecting a second revert"),
+            );
+        }
+        self.expected_revert = Some(NativeExpectedRevert { depth, reason, partial_match });
+        (InstrStop::Return, Bytes::new())
+    }
+
+    fn finish_expected_revert(
+        &mut self,
+        message: &Message<FoundryEvmTypes>,
+        result: &mut MessageResult<FoundryEvmTypes>,
+    ) {
+        if !self
+            .expected_revert
+            .as_ref()
+            .is_some_and(|expected| message.depth <= expected.depth.saturating_add(1))
+        {
+            return;
+        }
+        let expected = self.expected_revert.take().unwrap();
+        let call_failed = !result.stop.is_success();
+        let matched = call_failed
+            && expected.reason.as_ref().is_none_or(|reason| {
+                if expected.partial_match {
+                    reason.get(..4).is_some_and(|expected| result.output.get(..4) == Some(expected))
+                } else if result.output == *reason {
+                    true
+                } else if result.output.starts_with(&alloy_sol_types::Revert::SELECTOR) {
+                    String::abi_decode(&result.output[4..])
+                        .is_ok_and(|actual| actual.as_bytes() == reason.as_ref())
+                } else {
+                    false
+                }
+            });
+        if matched && message.depth > expected.depth {
+            result.stop = InstrStop::Return;
+            if message.kind.is_create() {
+                result.created_address = Some(Address::with_last_byte(1));
+                result.output = Bytes::new();
+            } else {
+                result.output = Bytes::from_static(&[0; 8192]);
+            }
+        } else {
+            result.stop = InstrStop::Revert;
+            result.created_address = None;
+            result.output = Error::encode(if message.depth <= expected.depth {
+                "call didn't revert at a lower depth than cheatcode call depth"
+            } else if !call_failed {
+                "next call did not revert as expected"
+            } else {
+                "revert data did not match the expected reason"
+            });
+        }
+    }
 }
 
 impl<D: Database + Clone + 'static> NativeInspector<D> for NativeCheatcodes<D> {
@@ -210,6 +283,17 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
                 self.pranks.remove(&message.depth.saturating_sub(1));
                 (InstrStop::Return, Bytes::new())
             }
+            Ok(Vm::VmCalls::expectRevert_0(_)) => {
+                self.expect_revert(message.depth.saturating_sub(1), None, false)
+            }
+            Ok(Vm::VmCalls::expectRevert_1(call)) => self.expect_revert(
+                message.depth.saturating_sub(1),
+                Some(Bytes::copy_from_slice(call.revertData.as_slice())),
+                true,
+            ),
+            Ok(Vm::VmCalls::expectRevert_2(call)) => {
+                self.expect_revert(message.depth.saturating_sub(1), Some(call.revertData), false)
+            }
             Ok(Vm::VmCalls::snapshotState(_) | Vm::VmCalls::snapshot(_)) => {
                 (InstrStop::Return, self.snapshot(interp))
             }
@@ -274,7 +358,7 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
         &mut self,
         interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
         message: &Message<FoundryEvmTypes>,
-        _result: &mut MessageResult<FoundryEvmTypes>,
+        result: &mut MessageResult<FoundryEvmTypes>,
     ) {
         if message.call_target == CHEATCODE_ADDRESS
             || message.call_target == HARDHAT_CONSOLE_ADDRESS
@@ -288,5 +372,15 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
         if self.pranks.get(&depth).is_some_and(|prank| prank.single_call && prank.used) {
             self.pranks.remove(&depth);
         }
+        self.finish_expected_revert(message, result);
+    }
+
+    fn create_end(
+        &mut self,
+        _interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &Message<FoundryEvmTypes>,
+        result: &mut MessageResult<FoundryEvmTypes>,
+    ) {
+        self.finish_expected_revert(message, result);
     }
 }

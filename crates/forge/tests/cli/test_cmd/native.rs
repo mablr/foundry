@@ -4,6 +4,162 @@ use alloy_primitives::{Address, B256, Bytes, U256};
 use anvil::{NodeConfig, spawn};
 use foundry_test_utils::{forgetest_async, forgetest_init, str};
 
+forgetest_init!(evm2_expect_revert_matches_external_calls, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativeExpectRevert.t.sol",
+        r#"
+interface Vm {
+    function expectRevert() external;
+    function expectRevert(bytes4 selector) external;
+    function expectRevert(bytes calldata reason) external;
+}
+
+contract RevertingConstructor {
+    constructor() { revert("constructor"); }
+}
+
+contract NativeExpectRevertTest {
+    error Boom();
+    Vm constant vm = Vm(address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+
+    function fail() external pure returns (uint256) { revert("reason"); }
+    function failCustom() external pure { revert Boom(); }
+
+    function testAnyRevert() public {
+        vm.expectRevert();
+        require(this.fail() == 0, "expected dummy return data");
+    }
+
+    function testStringReason() public {
+        vm.expectRevert(bytes("reason"));
+        this.fail();
+    }
+
+    function testSelector() public {
+        vm.expectRevert(Boom.selector);
+        this.failCustom();
+    }
+
+    function testNestedRevert() public {
+        vm.expectRevert();
+        this.failAfterCatch();
+    }
+
+    function testConstructorRevert() public {
+        vm.expectRevert(bytes("constructor"));
+        RevertingConstructor deployed = new RevertingConstructor();
+        require(address(deployed) == address(1), "expected dummy create address");
+    }
+
+    function failAfterCatch() external view {
+        try this.fail() returns (uint256) {} catch {}
+        revert("outer");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.arg("test").assert_success().stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 5 tests for test/NativeExpectRevert.t.sol:NativeExpectRevertTest
+[PASS] testAnyRevert() ([GAS])
+[PASS] testConstructorRevert() ([GAS])
+[PASS] testNestedRevert() ([GAS])
+[PASS] testSelector() ([GAS])
+[PASS] testStringReason() ([GAS])
+Suite result: ok. 5 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 5 tests passed, 0 failed, 0 skipped (5 total tests)
+
+"#]]);
+});
+
+forgetest_init!(evm2_expect_revert_rejects_successful_call, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativeExpectRevertFailure.t.sol",
+        r#"
+interface Vm {
+    function expectRevert() external;
+    function expectRevert(bytes4 selector) external;
+    function expectRevert(bytes calldata reason) external;
+}
+
+contract SuccessfulConstructor {}
+
+contract NativeExpectRevertFailureTest {
+    Vm constant vm = Vm(address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
+
+    function succeeds() external pure returns (uint256) { return 1; }
+    function fails() external pure { revert("actual"); }
+    function failsWithoutData() external pure { revert(); }
+
+    function testExpectedRevertMissing() public {
+        vm.expectRevert();
+        this.succeeds();
+    }
+
+    function testReasonMismatch() public {
+        vm.expectRevert(bytes("expected"));
+        this.fails();
+    }
+
+    function testDanglingExpectation() public {
+        vm.expectRevert();
+    }
+
+    function testSelectorDoesNotMatchEmptyData() public {
+        vm.expectRevert(bytes4(0x12345678));
+        this.failsWithoutData();
+    }
+
+    function testExpectedConstructorRevertMissing() public {
+        vm.expectRevert();
+        new SuccessfulConstructor();
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.arg("test").assert_failure().stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 5 tests for test/NativeExpectRevertFailure.t.sol:NativeExpectRevertFailureTest
+[FAIL: call didn't revert at a lower depth than cheatcode call depth] testDanglingExpectation() ([GAS])
+[FAIL: next call did not revert as expected] testExpectedConstructorRevertMissing() ([GAS])
+[FAIL: next call did not revert as expected] testExpectedRevertMissing() ([GAS])
+[FAIL: revert data did not match the expected reason] testReasonMismatch() ([GAS])
+[FAIL: revert data did not match the expected reason] testSelectorDoesNotMatchEmptyData() ([GAS])
+Suite result: FAILED. 0 passed; 5 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 0 tests passed, 5 failed, 0 skipped (5 total tests)
+
+Failing tests:
+Encountered 5 failing tests in test/NativeExpectRevertFailure.t.sol:NativeExpectRevertFailureTest
+[FAIL: call didn't revert at a lower depth than cheatcode call depth] testDanglingExpectation() ([GAS])
+[FAIL: next call did not revert as expected] testExpectedConstructorRevertMissing() ([GAS])
+[FAIL: next call did not revert as expected] testExpectedRevertMissing() ([GAS])
+[FAIL: revert data did not match the expected reason] testReasonMismatch() ([GAS])
+[FAIL: revert data did not match the expected reason] testSelectorDoesNotMatchEmptyData() ([GAS])
+
+Encountered a total of 5 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 5 failed tests
+Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing test in the debugger
+
+"#]]);
+});
+
 forgetest_async!(evm2_reads_resolved_fork_state, |prj, cmd| {
     let (api, handle) = spawn(NodeConfig::test()).await;
     let address = Address::with_last_byte(0x42);

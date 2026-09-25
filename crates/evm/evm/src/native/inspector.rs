@@ -81,6 +81,15 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
     ) {
         self.cheatcodes.call_end(interp, message, result);
     }
+
+    fn create_end(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &Message<FoundryEvmTypes>,
+        result: &mut MessageResult<FoundryEvmTypes>,
+    ) {
+        self.cheatcodes.create_end(interp, message, result);
+    }
 }
 
 impl<D: Database + Clone + 'static> NativeInspector<D> for EthereumInspectorStack<D> {
