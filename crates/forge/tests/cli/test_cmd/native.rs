@@ -8,9 +8,11 @@ use foundry_test_utils::{forgetest_async, forgetest_init, str};
 forgetest_init!(evm2_etch_journals_code_changes, |prj, cmd| {
     prj.add_test(
         "NativeEtch.t.sol",
-        r#"
+        &r#"
 interface Vm {
     function etch(address target, bytes calldata code) external;
+    function load(address target, bytes32 slot) external returns (bytes32);
+    function store(address target, bytes32 slot, bytes32 value) external;
 }
 
 contract EtchTarget {
@@ -30,7 +32,10 @@ contract NativeEtchTest {
 
     function testEtchRollsBackWithChild() public {
         bytes32 original = keccak256(address(target).code);
-        try this.etchThenRevert() {} catch {}
+        try this.etchThenRevert() { revert("expected revert"); }
+        catch Error(string memory reason) {
+            require(keccak256(bytes(reason)) == keccak256(bytes("after etch")));
+        }
         require(keccak256(address(target).code) == original);
         require(target.value() == 1);
     }
@@ -40,13 +45,54 @@ contract NativeEtchTest {
         require(!ok);
     }
 
+    function testEtchWipesHistoryStorage() public {
+        address history = HISTORY_ADDRESS;
+        bytes32 slot = bytes32(uint256(1));
+        vm.etch(history, hex"HISTORY_CODE_HEX");
+        vm.store(history, slot, bytes32(uint256(9)));
+        vm.etch(history, hex"00");
+        require(vm.load(history, slot) == bytes32(0));
+    }
+
+    function testHistoryWipeRollsBackWithChild() public {
+        address history = HISTORY_ADDRESS;
+        bytes32 slot = bytes32(uint256(1));
+        vm.etch(history, hex"HISTORY_CODE_HEX");
+        vm.store(history, slot, bytes32(uint256(9)));
+        try this.etchHistoryThenRevert() { revert("expected revert"); }
+        catch Error(string memory reason) {
+            require(keccak256(bytes(reason)) == keccak256(bytes("after history wipe")));
+        }
+        require(vm.load(history, slot) == bytes32(uint256(9)));
+        require(keccak256(history.code) == keccak256(hex"HISTORY_CODE_HEX"));
+    }
+
     function etchThenRevert() external {
         require(msg.sender == address(this));
         vm.etch(address(target), hex"602a60005260206000f3");
-        revert();
+        revert("after etch");
+    }
+
+    function etchHistoryThenRevert() external {
+        require(msg.sender == address(this));
+        address history = HISTORY_ADDRESS;
+        bytes32 slot = bytes32(uint256(1));
+        vm.etch(history, hex"00");
+        require(vm.load(history, slot) == bytes32(0));
+        revert("after history wipe");
     }
 }
-"#,
+"#
+        .replace(
+            "HISTORY_ADDRESS",
+            &format!("{}", foundry_evm::core::eip2935::HISTORY_STORAGE_ADDRESS),
+        )
+        .replace(
+            "HISTORY_CODE_HEX",
+            &alloy_primitives::hex::encode(
+                foundry_evm::core::eip2935::HISTORY_STORAGE_CODE.as_ref(),
+            ),
+        ),
     );
 
     cmd.forge_fuse();

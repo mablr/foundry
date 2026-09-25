@@ -586,24 +586,22 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
                     match Bytecode::new_raw_checked(call.newRuntimeBytecode) {
                         Ok(code) => {
                             let state = interp.host().state_mut();
-                            match state.account(&call.target, false) {
-                                Ok(mut account) => {
+                            let replaced_history_contract =
+                                state.account(&call.target, false).map(|mut account| {
                                     // Replacing the history contract also needs a journaled storage
                                     // wipe.
-                                    if call.target == HISTORY_STORAGE_ADDRESS
+                                    let replace = call.target == HISTORY_STORAGE_ADDRESS
                                         && account.code_hash() == keccak256(&HISTORY_STORAGE_CODE)
-                                        && code.hash_slow() != keccak256(&HISTORY_STORAGE_CODE)
-                                    {
-                                        (
-                                            InstrStop::Revert,
-                                            Error::encode(
-                                                "vm.etch cannot replace the EIP-2935 history storage contract yet",
-                                            ),
-                                        )
-                                    } else {
-                                        account.set_code_slow(code);
-                                        (InstrStop::Return, Bytes::new())
+                                        && code.hash_slow() != keccak256(&HISTORY_STORAGE_CODE);
+                                    account.set_code_slow(code);
+                                    replace
+                                });
+                            match replaced_history_contract {
+                                Ok(replace) => {
+                                    if replace {
+                                        state.storage(&call.target).wipe_journaled();
                                     }
+                                    (InstrStop::Return, Bytes::new())
                                 }
                                 Err(_) => (InstrStop::Revert, Bytes::new()),
                             }

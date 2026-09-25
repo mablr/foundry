@@ -5051,7 +5051,7 @@ dependencies = [
 [[package]]
 name = "evm2"
 version = "0.1.0"
-source = "git+https://github.com/mablr/evm2?rev=2632660d8b641b7ddd5929bc6221bc1bce959806#2632660d8b641b7ddd5929bc6221bc1bce959806"
+source = "git+https://github.com/mablr/evm2?rev=61e5a888e2807108ce5e69f954ef5b8386e56270#61e5a888e2807108ce5e69f954ef5b8386e56270"
 dependencies = [
  "alloy-consensus",
  "alloy-eip7928",
@@ -5091,7 +5091,7 @@ dependencies = [
 [[package]]
 name = "evm2-inspectors"
 version = "0.1.0"
-source = "git+https://github.com/mablr/evm2?rev=2632660d8b641b7ddd5929bc6221bc1bce959806#2632660d8b641b7ddd5929bc6221bc1bce959806"
+source = "git+https://github.com/mablr/evm2?rev=61e5a888e2807108ce5e69f954ef5b8386e56270#61e5a888e2807108ce5e69f954ef5b8386e56270"
 dependencies = [
  "alloy-consensus",
  "alloy-eip2930",
@@ -5111,7 +5111,7 @@ dependencies = [
 [[package]]
 name = "evm2-macros"
 version = "0.1.0"
-source = "git+https://github.com/mablr/evm2?rev=2632660d8b641b7ddd5929bc6221bc1bce959806#2632660d8b641b7ddd5929bc6221bc1bce959806"
+source = "git+https://github.com/mablr/evm2?rev=61e5a888e2807108ce5e69f954ef5b8386e56270#61e5a888e2807108ce5e69f954ef5b8386e56270"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6139,7 +6139,7 @@ dependencies = [
  "foundry-evm-hardforks",
  "foundry-evm-networks",
  "foundry-fork-db 0.27.0 (git+https://github.com/foundry-rs/foundry-core?rev=6228965ea8112f70b3ae2ef418666ebab1fc8ae8)",
- "foundry-fork-db 0.27.0 (git+https://github.com/mablr/foundry-core?rev=66762c281f2a639add122c302c045be83e9bbeac)",
+ "foundry-fork-db 0.27.0 (git+https://github.com/mablr/foundry-core?rev=e58e6f560a3a4f793c3aa62a870ad5aa3b1a3754)",
  "foundry-test-utils",
  "futures",
  "itertools 0.15.0",
@@ -6342,7 +6342,7 @@ dependencies = [
 [[package]]
 name = "foundry-fork-db"
 version = "0.27.0"
-source = "git+https://github.com/mablr/foundry-core?rev=66762c281f2a639add122c302c045be83e9bbeac#66762c281f2a639add122c302c045be83e9bbeac"
+source = "git+https://github.com/mablr/foundry-core?rev=e58e6f560a3a4f793c3aa62a870ad5aa3b1a3754#e58e6f560a3a4f793c3aa62a870ad5aa3b1a3754"
 dependencies = [
  "alloy-chains",
  "alloy-consensus",
@@ -8647,7 +8647,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b685c8311c9171d1bd2895222965d25616b2de2cb5819dd3504ed9250df9fecd"
 dependencies = [
  "ahash",
- "hashbrown 0.17.1",
+ "hashbrown 0.16.1",
  "parking_lot",
  "stable_deref_trait",
 ]
@@ -9554,7 +9554,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -12166,7 +12166,7 @@ dependencies = [
  "derive_more",
  "dunce",
  "inturn",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "itoa",
  "normalize-path",
  "once_map",
@@ -12178,7 +12178,7 @@ dependencies = [
  "solar-config",
  "solar-data-structures",
  "solar-macros",
- "thiserror 2.0.20",
+ "thiserror 1.0.69",
  "tracing",
  "unicode-width 0.2.2",
 ]
@@ -12213,7 +12213,7 @@ dependencies = [
  "solar-interface",
  "solar-parse",
  "solar-sema",
- "thiserror 2.0.20",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-util",
  "toml_edit",
@@ -12239,7 +12239,7 @@ dependencies = [
  "alloy-primitives",
  "bitflags 2.13.1",
  "bumpalo",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "memchr",
  "num-bigint 0.5.1",
  "num-rational",
@@ -12567,7 +12567,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
- "thiserror 2.0.20",
+ "thiserror 1.0.69",
  "url",
  "zip",
 ]
