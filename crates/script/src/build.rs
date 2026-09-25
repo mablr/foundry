@@ -26,7 +26,12 @@ use foundry_compilers::{
     info::ContractInfo,
     utils::source_files_iter,
 };
-use foundry_evm::{core::evm::FoundryEvmNetwork, traces::debug::ContractSources};
+use foundry_config::Config;
+use foundry_evm::{
+    core::{evm::FoundryEvmNetwork, fork::ResolvedFork},
+    opts::EvmOpts,
+    traces::debug::ContractSources,
+};
 use foundry_linking::Linker;
 use foundry_wallets::{MultiWalletOpts, wallet_browser::signer::BrowserSigner};
 use std::{path::PathBuf, str::FromStr, sync::Arc};
@@ -43,23 +48,82 @@ pub struct BuildData {
 }
 
 impl BuildData {
+    /// Compiles the requested script and selects its target artifact.
+    pub fn compile_target(args: &ScriptArgs, config: &Config) -> Result<Self> {
+        let project = config.project()?;
+        let mut target_name = args.target_contract.clone();
+
+        let target_path = if let Ok(path) = dunce::canonicalize(&args.path) {
+            path
+        } else {
+            let contract = ContractInfo::from_str(&args.path)?;
+            target_name = Some(contract.name.clone());
+            if let Some(path) = contract.path {
+                dunce::canonicalize(path)?
+            } else {
+                project.find_contract_path(contract.name.as_str())?
+            }
+        };
+
+        let sources_to_compile = source_files_iter(
+            project.paths.sources.as_path(),
+            MultiCompilerLanguage::FILE_EXTENSIONS,
+        )
+        .chain([target_path.clone()]);
+
+        let output = ProjectCompiler::new()
+            .files(sources_to_compile)
+            .dynamic_test_linking(config.dynamic_test_linking)
+            .compile(&project)?;
+
+        let mut target_id: Option<ArtifactId> = None;
+        for (id, contract) in output.artifact_ids().filter(|(id, _)| id.source == target_path) {
+            if let Some(name) = &target_name {
+                if id.name != *name {
+                    continue;
+                }
+            } else if contract.abi.as_ref().is_none_or(|abi| abi.is_empty())
+                || contract.bytecode.as_ref().is_none_or(|b| match &b.object {
+                    BytecodeObject::Bytecode(b) => b.is_empty(),
+                    BytecodeObject::Unlinked(_) => false,
+                })
+            {
+                continue;
+            }
+
+            if let Some(target) = target_id {
+                let target_name = target.name.split('.').next().unwrap();
+                let id_name = id.name.split('.').next().unwrap();
+                if target_name != id_name {
+                    eyre::bail!(
+                        "Multiple contracts in the target path. Please specify the contract name with `--tc ContractName`"
+                    );
+                }
+            }
+            target_id = Some(id);
+        }
+
+        let target = target_id.ok_or_eyre("Could not find target contract")?;
+        Ok(Self { output, target, project_root: project.root().to_path_buf() })
+    }
+
     pub fn get_linker(&self) -> Linker<'_> {
         Linker::new(self.project_root.clone(), self.output.artifact_ids().collect())
     }
 
     /// Links contracts. Uses CREATE2 linking when possible, otherwise falls back to
     /// default linking with sender nonce and address.
-    pub async fn link<FEN: FoundryEvmNetwork>(
+    pub async fn link(
         self,
-        script_config: &ScriptConfig<FEN>,
+        config: &Config,
+        evm_opts: &EvmOpts,
+        sender_nonce: u64,
+        resolved_fork: Option<&ResolvedFork>,
     ) -> Result<LinkedBuildData> {
-        let create2_deployer = script_config.evm_opts.create2_deployer;
-        let can_use_create2 = script_config
-            .evm_opts
-            .can_use_create2_deployer_resolved(script_config.resolved_fork()?)
-            .await?;
+        let create2_deployer = evm_opts.create2_deployer;
+        let can_use_create2 = evm_opts.can_use_create2_deployer_resolved(resolved_fork).await?;
 
-        let known_libraries = script_config.config.libraries_with_remappings()?;
+        let known_libraries = config.libraries_with_remappings()?;
 
         let maybe_create2_link_output = can_use_create2
             .then(|| {
@@ -67,7 +131,7 @@ impl BuildData {
                     .link_with_create2_detailed(
                         known_libraries.clone(),
                         create2_deployer,
-                        script_config.config.create2_library_salt,
+                        config.create2_library_salt,
                         [&self.target],
                     )
                     .ok()
@@ -79,15 +143,15 @@ impl BuildData {
                 output.output.libraries,
                 ScriptPredeployLibraries::Create2 {
                     onchain: output.linked_libraries,
-                    salt: script_config.config.create2_library_salt,
+                    salt: config.create2_library_salt,
                     local: Vec::new(),
                 },
             )
         } else {
             let output = self.get_linker().link_with_nonce_or_address_detailed(
                 known_libraries,
-                script_config.evm_opts.sender,
-                script_config.sender_nonce,
+                evm_opts.sender,
+                sender_nonce,
                 [&self.target],
             )?;
 
@@ -196,79 +260,9 @@ impl<FEN: FoundryEvmNetwork> PreprocessedState<FEN> {
     /// After compilation, finds exact [ArtifactId] of the target contract.
     pub fn compile(self) -> Result<CompiledState<FEN>> {
         let Self { args, script_config, script_wallets, browser_wallet } = self;
-        let project = script_config.config.project()?;
+        let build_data = BuildData::compile_target(&args, &script_config.config)?;
 
-        let mut target_name = args.target_contract.clone();
-
-        // If we've received correct path, use it as target_path
-        // Otherwise, parse input as <path>:<name> and use the path from the contract info, if
-        // present.
-        let target_path = if let Ok(path) = dunce::canonicalize(&args.path) {
-            path
-        } else {
-            let contract = ContractInfo::from_str(&args.path)?;
-            target_name = Some(contract.name.clone());
-            if let Some(path) = contract.path {
-                dunce::canonicalize(path)?
-            } else {
-                project.find_contract_path(contract.name.as_str())?
-            }
-        };
-
-        let sources_to_compile = source_files_iter(
-            project.paths.sources.as_path(),
-            MultiCompilerLanguage::FILE_EXTENSIONS,
-        )
-        .chain([target_path.clone()]);
-
-        let output = ProjectCompiler::new()
-            .files(sources_to_compile)
-            .dynamic_test_linking(script_config.config.dynamic_test_linking)
-            .compile(&project)?;
-
-        let mut target_id: Option<ArtifactId> = None;
-
-        // Find target artifact id by name and path in compilation artifacts.
-        for (id, contract) in output.artifact_ids().filter(|(id, _)| id.source == target_path) {
-            if let Some(name) = &target_name {
-                if id.name != *name {
-                    continue;
-                }
-            } else if contract.abi.as_ref().is_none_or(|abi| abi.is_empty())
-                || contract.bytecode.as_ref().is_none_or(|b| match &b.object {
-                    BytecodeObject::Bytecode(b) => b.is_empty(),
-                    BytecodeObject::Unlinked(_) => false,
-                })
-            {
-                // Ignore contracts with empty abi or linked bytecode of length 0 which are
-                // interfaces/abstract contracts/libraries.
-                continue;
-            }
-
-            if let Some(target) = target_id {
-                // We might have multiple artifacts for the same contract but with different
-                // solc versions. Their names will have form of {name}.0.X.Y, so we are
-                // stripping versions off before comparing them.
-                let target_name = target.name.split('.').next().unwrap();
-                let id_name = id.name.split('.').next().unwrap();
-                if target_name != id_name {
-                    eyre::bail!(
-                        "Multiple contracts in the target path. Please specify the contract name with `--tc ContractName`"
-                    );
-                }
-            }
-            target_id = Some(id);
-        }
-
-        let target = target_id.ok_or_eyre("Could not find target contract")?;
-
-        Ok(CompiledState {
-            args,
-            script_config,
-            script_wallets,
-            browser_wallet,
-            build_data: BuildData { output, target, project_root: project.root().to_path_buf() },
-        })
+        Ok(CompiledState { args, script_config, script_wallets, browser_wallet, build_data })
     }
 }
 
@@ -286,7 +280,14 @@ impl<FEN: FoundryEvmNetwork> CompiledState<FEN> {
     pub async fn link(self) -> Result<LinkedState<FEN>> {
         let Self { args, script_config, script_wallets, browser_wallet, build_data } = self;
 
-        let build_data = build_data.link(&script_config).await?;
+        let build_data = build_data
+            .link(
+                &script_config.config,
+                &script_config.evm_opts,
+                script_config.sender_nonce,
+                script_config.resolved_fork()?,
+            )
+            .await?;
 
         Ok(LinkedState { args, script_config, script_wallets, browser_wallet, build_data })
     }

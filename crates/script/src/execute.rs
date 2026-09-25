@@ -64,31 +64,31 @@ pub struct ExecutionData {
     pub abi: JsonAbi,
 }
 
+impl ExecutionData {
+    /// Selects the linked script bytecode and encodes the requested function call.
+    pub fn prepare(args: &ScriptArgs, build_data: &LinkedBuildData) -> Result<Self> {
+        let target_contract = build_data.get_target_contract()?;
+        let bytecode = target_contract.bytecode().ok_or_eyre("target contract has no bytecode")?;
+        let (func, calldata) = args.get_method_and_calldata(&target_contract.abi)?;
+        ensure_clean_constructor(&target_contract.abi)?;
+        Ok(Self { func, calldata, bytecode: bytecode.clone(), abi: target_contract.abi.clone() })
+    }
+}
+
 impl<FEN: FoundryEvmNetwork> LinkedState<FEN> {
     /// Given linked and compiled artifacts, prepares data we need for execution.
     /// This includes the function to call and the calldata to pass to it.
     pub async fn prepare_execution(self) -> Result<PreExecutionState<FEN>> {
         let Self { args, script_config, script_wallets, browser_wallet, build_data } = self;
 
-        let target_contract = build_data.get_target_contract()?;
-
-        let bytecode = target_contract.bytecode().ok_or_eyre("target contract has no bytecode")?;
-
-        let (func, calldata) = args.get_method_and_calldata(&target_contract.abi)?;
-
-        ensure_clean_constructor(&target_contract.abi)?;
+        let execution_data = ExecutionData::prepare(&args, &build_data)?;
 
         Ok(PreExecutionState {
             args,
             script_config,
             script_wallets,
             browser_wallet,
-            execution_data: ExecutionData {
-                func,
-                calldata,
-                bytecode: bytecode.clone(),
-                abi: target_contract.abi.clone(),
-            },
+            execution_data,
             build_data,
         })
     }
