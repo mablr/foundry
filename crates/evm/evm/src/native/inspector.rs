@@ -134,7 +134,7 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
         if interp.is_static() {
             return MessageResultExt { stop: InstrStop::Revert, gas, ..Default::default() };
         }
-        let code = match self.cheatcodes.artifact_code(&request.path) {
+        let code = match self.cheatcodes.artifact_code(&request.path, false) {
             Ok(code) => code,
             Err(output) => {
                 return MessageResultExt {

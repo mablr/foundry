@@ -101,6 +101,8 @@ interface Vm {
     function deployCode(string calldata artifactPath, bytes calldata constructorArgs, uint256 value)
         external returns (address);
     function deal(address account, uint256 balance) external;
+    function getCode(string calldata artifactPath) external view returns (bytes memory);
+    function getDeployedCode(string calldata artifactPath) external view returns (bytes memory);
     function prank(address sender) external;
 }
 
@@ -138,6 +140,7 @@ contract NativeDeployHandler {
 }
 
 contract NativeDeployCodeTest {
+    Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
     NativeDeployHandler handler;
 
     function setUp() public {
@@ -164,6 +167,14 @@ contract NativeDeployCodeTest {
         require(NativeDeployTarget(handler.deployByName()).marker() == 7);
         require(NativeDeployTarget(handler.deployFromJson()).marker() == 7);
     }
+
+    function testArtifactBytecode() public view {
+        require(keccak256(vm.getCode("NativeDeployTarget")) == keccak256(type(NativeDeployTarget).creationCode));
+        require(
+            keccak256(vm.getDeployedCode("NativeDeployTarget"))
+                == keccak256(type(NativeDeployTarget).runtimeCode)
+        );
+    }
 }
 "#,
     );
@@ -175,13 +186,14 @@ contract NativeDeployCodeTest {
 [SOLC_VERSION] [ELAPSED]
 Compiler run successful!
 
-Ran 3 tests for test/NativeDeployCode.t.sol:NativeDeployCodeTest
+Ran 4 tests for test/NativeDeployCode.t.sol:NativeDeployCodeTest
+[PASS] testArtifactBytecode() ([GAS])
 [PASS] testArtifactPathForms() ([GAS])
 [PASS] testConstructorArgsAndValue() ([GAS])
 [PASS] testRollbackAndRedeploy() ([GAS])
-Suite result: ok. 3 passed; 0 failed; 0 skipped; [ELAPSED]
+Suite result: ok. 4 passed; 0 failed; 0 skipped; [ELAPSED]
 
-Ran 1 test suite [ELAPSED]: 3 tests passed, 0 failed, 0 skipped (3 total tests)
+Ran 1 test suite [ELAPSED]: 4 tests passed, 0 failed, 0 skipped (4 total tests)
 
 "#]],
     );

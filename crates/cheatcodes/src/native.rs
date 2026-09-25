@@ -81,9 +81,9 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
         self.config = Arc::new(config);
     }
 
-    /// Resolves creation code with the same artifact rules as the other cheatcodes.
-    pub fn artifact_code(&self, path: &str) -> Result<Bytes, Bytes> {
-        crate::artifact::get_artifact_code(&self.config, path, false).map_err(Error::encode)
+    /// Resolves artifact bytecode with the same rules as the other cheatcodes.
+    pub fn artifact_code(&self, path: &str, deployed: bool) -> Result<Bytes, Bytes> {
+        crate::artifact::get_artifact_code(&self.config, path, deployed).map_err(Error::encode)
     }
 
     /// Installs code at the cheatcode address for Solidity `EXTCODESIZE` checks.
@@ -331,6 +331,16 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
                         (InstrStop::Return, Bytes::new())
                     }
                     Err(_) => (InstrStop::Revert, Bytes::new()),
+                }
+            }
+            Ok(Vm::VmCalls::getCode(call)) => match self.artifact_code(&call.artifactPath, false) {
+                Ok(code) => (InstrStop::Return, code.abi_encode().into()),
+                Err(error) => (InstrStop::Revert, error),
+            },
+            Ok(Vm::VmCalls::getDeployedCode(call)) => {
+                match self.artifact_code(&call.artifactPath, true) {
+                    Ok(code) => (InstrStop::Return, code.abi_encode().into()),
+                    Err(error) => (InstrStop::Revert, error),
                 }
             }
             Ok(Vm::VmCalls::warp(call)) => {
