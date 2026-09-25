@@ -5051,7 +5051,7 @@ dependencies = [
 [[package]]
 name = "evm2"
 version = "0.1.0"
-source = "git+https://github.com/mablr/evm2?rev=2b51ce7d44c38b06eb125a5863655a4f470390f0#2b51ce7d44c38b06eb125a5863655a4f470390f0"
+source = "git+https://github.com/mablr/evm2?rev=2632660d8b641b7ddd5929bc6221bc1bce959806#2632660d8b641b7ddd5929bc6221bc1bce959806"
 dependencies = [
  "alloy-consensus",
  "alloy-eip7928",
@@ -5091,7 +5091,7 @@ dependencies = [
 [[package]]
 name = "evm2-inspectors"
 version = "0.1.0"
-source = "git+https://github.com/mablr/evm2?rev=2b51ce7d44c38b06eb125a5863655a4f470390f0#2b51ce7d44c38b06eb125a5863655a4f470390f0"
+source = "git+https://github.com/mablr/evm2?rev=2632660d8b641b7ddd5929bc6221bc1bce959806#2632660d8b641b7ddd5929bc6221bc1bce959806"
 dependencies = [
  "alloy-consensus",
  "alloy-eip2930",
@@ -5111,7 +5111,7 @@ dependencies = [
 [[package]]
 name = "evm2-macros"
 version = "0.1.0"
-source = "git+https://github.com/mablr/evm2?rev=2b51ce7d44c38b06eb125a5863655a4f470390f0#2b51ce7d44c38b06eb125a5863655a4f470390f0"
+source = "git+https://github.com/mablr/evm2?rev=2632660d8b641b7ddd5929bc6221bc1bce959806#2632660d8b641b7ddd5929bc6221bc1bce959806"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6140,8 +6140,8 @@ dependencies = [
  "foundry-evm-abi",
  "foundry-evm-hardforks",
  "foundry-evm-networks",
- "foundry-fork-db 0.27.0 (git+https://github.com/mablr/foundry-core?rev=0ad6f3dcf71c93a3242c54893d436c4dedcc59e9)",
  "foundry-fork-db 0.27.0 (git+https://github.com/foundry-rs/foundry-core?rev=6228965ea8112f70b3ae2ef418666ebab1fc8ae8)",
+ "foundry-fork-db 0.27.0 (git+https://github.com/mablr/foundry-core?rev=66762c281f2a639add122c302c045be83e9bbeac)",
  "foundry-test-utils",
  "futures",
  "itertools 0.15.0",
@@ -6321,28 +6321,6 @@ dependencies = [
 [[package]]
 name = "foundry-fork-db"
 version = "0.27.0"
-source = "git+https://github.com/mablr/foundry-core?rev=0ad6f3dcf71c93a3242c54893d436c4dedcc59e9#0ad6f3dcf71c93a3242c54893d436c4dedcc59e9"
-dependencies = [
- "alloy-chains",
- "alloy-consensus",
- "alloy-primitives",
- "alloy-provider",
- "alloy-rpc-types",
- "evm2",
- "eyre",
- "futures",
- "parking_lot",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "foundry-fork-db"
-version = "0.27.0"
 source = "git+https://github.com/foundry-rs/foundry-core?rev=6228965ea8112f70b3ae2ef418666ebab1fc8ae8#6228965ea8112f70b3ae2ef418666ebab1fc8ae8"
 dependencies = [
  "alloy-chains",
@@ -6361,6 +6339,28 @@ dependencies = [
  "tracing",
  "url",
  "zstd 0.14.0",
+]
+
+[[package]]
+name = "foundry-fork-db"
+version = "0.27.0"
+source = "git+https://github.com/mablr/foundry-core?rev=66762c281f2a639add122c302c045be83e9bbeac#66762c281f2a639add122c302c045be83e9bbeac"
+dependencies = [
+ "alloy-chains",
+ "alloy-consensus",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-types",
+ "evm2",
+ "eyre",
+ "futures",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "url",
 ]
 
 [[package]]

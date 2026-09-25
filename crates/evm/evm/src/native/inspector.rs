@@ -333,7 +333,7 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
             };
         };
         let state_gas_spent = outcome.result.state_gas_spent().saturating_sub(precharged_state);
-        let execution_gas_spent = outcome.result.execution_gas_spent().saturating_sub(stipend);
+        let execution_gas_spent = outcome.result.execution_gas_spent();
         let mut gas =
             GasTracker::new_with_execution_gas_and_reservoir(message.gas_limit, message.reservoir);
         if gas.spend_state(state_gas_spent).and_then(|()| gas.spend(execution_gas_spent)).is_err() {
@@ -470,6 +470,13 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for EthereumInspe
             && message.kind == MessageKind::Call
         {
             return Some(self.isolate_call(interp, message));
+        }
+        if self.isolate
+            && !self.in_isolated_transaction
+            && message.depth == 1
+            && message.kind == MessageKind::StaticCall
+        {
+            interp.host().state_mut().cool_loaded_accesses(|_| false);
         }
         None
     }
@@ -867,6 +874,10 @@ mod tests {
             (result.state_gas_spent(), result.execution_gas_spent())
         };
 
-        assert_eq!(transact(true), transact(false));
+        let isolated = transact(true);
+        let plain = transact(false);
+        assert_eq!(isolated.0, plain.0);
+        // The synthetic child's EIP-2780 intrinsic gas is charged to its parent.
+        assert_eq!(isolated.1, plain.1 + 15_000);
     }
 }
