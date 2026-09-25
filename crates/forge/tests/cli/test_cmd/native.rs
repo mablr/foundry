@@ -337,13 +337,16 @@ forgetest_init!(evm2_prank_tracks_call_lifetime, |prj, cmd| {
         r#"
 interface Vm {
     function prank(address msgSender) external;
+    function prank(address msgSender, address txOrigin) external;
     function startPrank(address msgSender) external;
+    function startPrank(address msgSender, address txOrigin) external;
     function stopPrank() external;
 }
 
 contract NativePrankTest {
     Vm constant vm = Vm(address(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D));
     address constant alice = address(0xA11CE);
+    address constant bob = address(0xB0B);
 
     function sender() external view returns (address) {
         return msg.sender;
@@ -351,6 +354,19 @@ contract NativePrankTest {
 
     function nestedSender() external view returns (address, address) {
         return (msg.sender, this.sender());
+    }
+
+    function origin() external view returns (address) {
+        return tx.origin;
+    }
+
+    function nestedOrigin() external view returns (address, address) {
+        return (tx.origin, this.origin());
+    }
+
+    function originThenRevert() external view {
+        require(tx.origin == bob, "origin was not changed before revert");
+        revert("expected");
     }
 
     function testPrankThroughNestedCall() public {
@@ -365,6 +381,34 @@ contract NativePrankTest {
         vm.prank(alice);
         require(this.sender() == alice, "first call was not pranked");
         require(this.sender() == address(this), "prank leaked to second call");
+    }
+
+    function testPrankOriginThroughNestedCall() public {
+        address original = tx.origin;
+        vm.prank(alice, bob);
+        (address outer, address inner) = this.nestedOrigin();
+        require(outer == bob && inner == bob, "origin was not changed in nested call");
+        require(this.origin() == original, "origin survived outer return");
+    }
+
+    function testPrankOriginAfterRevert() public {
+        address original = tx.origin;
+        vm.prank(alice, bob);
+        try this.originThenRevert() {
+            revert("child did not revert");
+        } catch Error(string memory reason) {
+            require(keccak256(bytes(reason)) == keccak256("expected"), "unexpected child revert");
+        }
+        require(this.origin() == original, "origin survived revert");
+    }
+
+    function testStartPrankOrigin() public {
+        address original = tx.origin;
+        vm.startPrank(alice, bob);
+        require(this.origin() == bob, "origin was not changed");
+        require(this.origin() == bob, "origin did not persist");
+        vm.stopPrank();
+        require(this.origin() == original, "origin survived stop");
     }
 
     function testStartAndStopPrank() public {
@@ -385,13 +429,16 @@ contract NativePrankTest {
 [SOLC_VERSION] [ELAPSED]
 Compiler run successful!
 
-Ran 3 tests for test/NativePrank.t.sol:NativePrankTest
+Ran 6 tests for test/NativePrank.t.sol:NativePrankTest
+[PASS] testPrankOriginAfterRevert() ([GAS])
+[PASS] testPrankOriginThroughNestedCall() ([GAS])
 [PASS] testPrankThroughNestedCall() ([GAS])
 [PASS] testSinglePrank() ([GAS])
 [PASS] testStartAndStopPrank() ([GAS])
-Suite result: ok. 3 passed; 0 failed; 0 skipped; [ELAPSED]
+[PASS] testStartPrankOrigin() ([GAS])
+Suite result: ok. 6 passed; 0 failed; 0 skipped; [ELAPSED]
 
-Ran 1 test suite [ELAPSED]: 3 tests passed, 0 failed, 0 skipped (3 total tests)
+Ran 1 test suite [ELAPSED]: 6 tests passed, 0 failed, 0 skipped (6 total tests)
 
 "#]]);
 });

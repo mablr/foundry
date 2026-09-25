@@ -16,6 +16,9 @@ pub use local_state::LocalState;
 mod fork;
 pub use fork::EthereumFork;
 
+mod types;
+pub use types::FoundryEvmTypes;
+
 /// Accepted state for Ethereum execution backed by an RPC fork.
 pub type ForkState = LocalState<fork_db::SharedBackend>;
 

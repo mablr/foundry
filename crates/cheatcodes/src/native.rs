@@ -4,14 +4,14 @@ use crate::Vm;
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_sol_types::SolInterface;
 use evm2::{
-    BaseEvmTypes, Inspector,
+    Inspector,
     bytecode::Bytecode,
     evm::{AccountInfo, Database},
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
 use foundry_evm_core::{
     constants::{CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, HARDHAT_CONSOLE_ADDRESS},
-    native::LocalState,
+    native::{FoundryEvmTypes, LocalState},
 };
 use std::collections::BTreeMap;
 
@@ -19,12 +19,14 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Default)]
 pub struct NativeCheatcodes {
     pranks: BTreeMap<u16, NativePrank>,
+    active_origins: BTreeMap<u16, Option<Address>>,
 }
 
 #[derive(Clone, Copy, Debug)]
 struct NativePrank {
     caller: Address,
     new_caller: Address,
+    new_origin: Option<Address>,
     single_call: bool,
     used: bool,
 }
@@ -44,9 +46,10 @@ impl NativeCheatcodes {
 
     fn start_prank(
         &mut self,
-        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
-        message: &Message<BaseEvmTypes>,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &Message<FoundryEvmTypes>,
         new_caller: Address,
+        new_origin: Option<Address>,
         single_call: bool,
     ) -> (InstrStop, Bytes) {
         if interp.host().state_mut().account(&new_caller, false).is_err() {
@@ -60,18 +63,24 @@ impl NativeCheatcodes {
         }
         self.pranks.insert(
             depth,
-            NativePrank { caller: message.caller, new_caller, single_call, used: false },
+            NativePrank {
+                caller: message.caller,
+                new_caller,
+                new_origin,
+                single_call,
+                used: false,
+            },
         );
         (InstrStop::Return, Bytes::new())
     }
 }
 
-impl Inspector<BaseEvmTypes> for NativeCheatcodes {
+impl Inspector<FoundryEvmTypes> for NativeCheatcodes {
     fn call(
         &mut self,
-        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
-        message: &mut Message<BaseEvmTypes>,
-    ) -> Option<MessageResult<BaseEvmTypes>> {
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &mut Message<FoundryEvmTypes>,
+    ) -> Option<MessageResult<FoundryEvmTypes>> {
         if message.call_target != CHEATCODE_ADDRESS {
             let depth = message.depth.saturating_sub(1);
             if let Some((prank_depth, prank)) = self.pranks.range_mut(..=depth).next_back()
@@ -86,6 +95,11 @@ impl Inspector<BaseEvmTypes> for NativeCheatcodes {
                     });
                 }
                 message.caller = prank.new_caller;
+                if let Some(new_origin) = prank.new_origin {
+                    let context = interp.host().ext_mut();
+                    self.active_origins.insert(depth, context.origin_override);
+                    context.origin_override = Some(new_origin);
+                }
                 prank.used = true;
             }
             return None;
@@ -109,10 +123,16 @@ impl Inspector<BaseEvmTypes> for NativeCheatcodes {
                 (InstrStop::Return, Bytes::new())
             }
             Ok(Vm::VmCalls::prank_0(call)) => {
-                self.start_prank(interp, message, call.msgSender, true)
+                self.start_prank(interp, message, call.msgSender, None, true)
+            }
+            Ok(Vm::VmCalls::prank_1(call)) => {
+                self.start_prank(interp, message, call.msgSender, Some(call.txOrigin), true)
             }
             Ok(Vm::VmCalls::startPrank_0(call)) => {
-                self.start_prank(interp, message, call.msgSender, false)
+                self.start_prank(interp, message, call.msgSender, None, false)
+            }
+            Ok(Vm::VmCalls::startPrank_1(call)) => {
+                self.start_prank(interp, message, call.msgSender, Some(call.txOrigin), false)
             }
             Ok(Vm::VmCalls::stopPrank(_)) => {
                 self.pranks.remove(&message.depth.saturating_sub(1));
@@ -161,9 +181,9 @@ impl Inspector<BaseEvmTypes> for NativeCheatcodes {
 
     fn call_end(
         &mut self,
-        _interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
-        message: &Message<BaseEvmTypes>,
-        _result: &mut MessageResult<BaseEvmTypes>,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &Message<FoundryEvmTypes>,
+        _result: &mut MessageResult<FoundryEvmTypes>,
     ) {
         if message.call_target == CHEATCODE_ADDRESS
             || message.call_target == HARDHAT_CONSOLE_ADDRESS
@@ -171,6 +191,9 @@ impl Inspector<BaseEvmTypes> for NativeCheatcodes {
             return;
         }
         let depth = message.depth.saturating_sub(1);
+        if let Some(previous_origin) = self.active_origins.remove(&depth) {
+            interp.host().ext_mut().origin_override = previous_origin;
+        }
         if self.pranks.get(&depth).is_some_and(|prank| prank.single_call && prank.used) {
             self.pranks.remove(&depth);
         }

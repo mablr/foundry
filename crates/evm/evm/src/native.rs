@@ -2,11 +2,11 @@
 
 use alloy_consensus::transaction::Recovered;
 use evm2::{
-    BaseEvmTypes, Evm, ExecutionConfig, Inspector, NoopInspector, Precompiles, TxResult,
+    Evm, ExecutionConfig, Inspector, NoopInspector, Precompiles, TxResult,
     ethereum::{TxEnvelope, ethereum_tx_registry},
     evm::{Database, Db, DynDatabase, EmptyDB, registry::HandlerResult},
 };
-use foundry_evm_core::native::{EthereumEnv, LocalState};
+use foundry_evm_core::native::{EthereumEnv, FoundryEvmTypes, LocalState};
 
 mod inspector;
 pub use inspector::EthereumInspectorStack;
@@ -21,7 +21,7 @@ impl EthereumFactory {
         self,
         env: EthereumEnv,
         database: impl DynDatabase + 'db,
-    ) -> Evm<'db, BaseEvmTypes> {
+    ) -> Evm<'db, FoundryEvmTypes> {
         Evm::new_with_execution_config(
             ExecutionConfig::for_spec_and_version(env.spec, env.version),
             env.spec,
@@ -57,7 +57,7 @@ impl<D: Database + Clone> EthereumExecutor<D, EthereumInspectorStack> {
     }
 }
 
-impl<D: Database + Clone, I: Inspector<BaseEvmTypes> + Clone> EthereumExecutor<D, I> {
+impl<D: Database + Clone, I: Inspector<FoundryEvmTypes> + Clone> EthereumExecutor<D, I> {
     /// Creates an executor with an inspector retained across accepted transactions.
     pub const fn with_inspector(env: EthereumEnv, state: LocalState<D>, inspector: I) -> Self {
         Self { env, state, inspector }
@@ -227,12 +227,12 @@ mod tests {
             calls: usize,
         }
 
-        impl Inspector<BaseEvmTypes> for BalanceInspector {
+        impl Inspector<FoundryEvmTypes> for BalanceInspector {
             fn call(
                 &mut self,
-                interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
-                message: &mut Message<BaseEvmTypes>,
-            ) -> Option<MessageResult<BaseEvmTypes>> {
+                interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+                message: &mut Message<FoundryEvmTypes>,
+            ) -> Option<MessageResult<FoundryEvmTypes>> {
                 self.calls += 1;
                 interp
                     .host()

@@ -3,13 +3,17 @@
 use alloy_primitives::Log;
 use alloy_sol_types::{SolEvent, SolInterface, SolValue};
 use evm2::{
-    BaseEvmTypes, EvmTypesHost, Inspector,
+    EvmTypesHost, Inspector,
     evm::Database,
     interpreter::{GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt},
 };
 use foundry_cheatcodes::native::NativeCheatcodes;
 use foundry_common::{ErrorExt, fmt::ConsoleFmt};
-use foundry_evm_core::{abi::console, constants::HARDHAT_CONSOLE_ADDRESS, native::LocalState};
+use foundry_evm_core::{
+    abi::console,
+    constants::HARDHAT_CONSOLE_ADDRESS,
+    native::{FoundryEvmTypes, LocalState},
+};
 
 /// Native Ethereum inspectors and their per-test observations.
 #[derive(Clone, Debug, Default)]
@@ -30,16 +34,16 @@ impl EthereumInspectorStack {
     }
 }
 
-impl Inspector<BaseEvmTypes> for EthereumInspectorStack {
-    fn log(&mut self, log: &Log, _host: &mut <BaseEvmTypes as EvmTypesHost>::Host<'_>) {
+impl Inspector<FoundryEvmTypes> for EthereumInspectorStack {
+    fn log(&mut self, log: &Log, _host: &mut <FoundryEvmTypes as EvmTypesHost>::Host<'_>) {
         self.logs.push(log.clone());
     }
 
     fn call(
         &mut self,
-        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
-        message: &mut Message<BaseEvmTypes>,
-    ) -> Option<MessageResult<BaseEvmTypes>> {
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &mut Message<FoundryEvmTypes>,
+    ) -> Option<MessageResult<FoundryEvmTypes>> {
         if message.call_target == HARDHAT_CONSOLE_ADDRESS {
             let (stop, output) = match console::hh::ConsoleCalls::abi_decode(&message.input) {
                 Ok(call) => {
@@ -66,9 +70,9 @@ impl Inspector<BaseEvmTypes> for EthereumInspectorStack {
 
     fn call_end(
         &mut self,
-        interp: &mut Interpreter<'_, '_, BaseEvmTypes>,
-        message: &Message<BaseEvmTypes>,
-        result: &mut MessageResult<BaseEvmTypes>,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &Message<FoundryEvmTypes>,
+        result: &mut MessageResult<FoundryEvmTypes>,
     ) {
         self.cheatcodes.call_end(interp, message, result);
     }
