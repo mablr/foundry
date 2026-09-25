@@ -54,6 +54,64 @@ forgetest!(script_slow_help_explains_presimulation, |_prj, cmd| {
 "#]]);
 });
 
+forgetest_async!(native_script_replays_broadcast_on_clean_fork, |prj, cmd| {
+    let (api, handle) = spawn(NodeConfig::test()).await;
+    let target = address!("000000000000000000000000000000000000beef");
+    // Return only when slot zero is nonzero; otherwise revert.
+    api.anvil_set_code(target, hex!("60005415600857005b60006000fd").into()).await.unwrap();
+    let script = prj.add_script(
+        "NativeReplay.s.sol",
+        r#"
+interface Vm {
+    function store(address target, bytes32 slot, bytes32 value) external;
+    function load(address target, bytes32 slot) external view returns (bytes32);
+    function startBroadcast() external;
+    function stopBroadcast() external;
+}
+
+contract NativeReplay {
+    Vm constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
+    address constant TARGET = address(0xbeef);
+
+    function run() external {
+        vm.store(TARGET, bytes32(0), bytes32(uint256(1)));
+        require(vm.load(TARGET, bytes32(0)) == bytes32(uint256(1)), "store not visible");
+        (bool beforeBroadcast,) = TARGET.staticcall("");
+        require(beforeBroadcast, "pre-broadcast call failed");
+        vm.startBroadcast();
+        (bool ok, bytes memory data) = TARGET.call("");
+        if (!ok) {
+            assembly { revert(add(data, 32), mload(data)) }
+        }
+        vm.stopBroadcast();
+    }
+}
+"#,
+    );
+    let rpc = handle.http_endpoint();
+
+    // The local vm.store makes script execution succeed, but is absent from the replay fork.
+    cmd.forge_fuse()
+        .args(["script", script.to_str().unwrap(), "--fork-url", rpc.as_str()])
+        .assert_failure()
+        .stderr_eq(str![[r#"
+Error: on-chain simulation failed: Revert
+
+"#]]);
+
+    api.anvil_set_storage_at(target, U256::ZERO, alloy_primitives::B256::with_last_byte(1))
+        .await
+        .unwrap();
+    cmd.forge_fuse()
+        .args(["script", script.to_str().unwrap(), "--fork-url", rpc.as_str()])
+        .assert_success()
+        .stdout_eq(str![[r#"
+...
+SIMULATION COMPLETE.
+
+"#]]);
+});
+
 fn latest_dry_run_sequence(root: &Path) -> ScriptSequence<Ethereum> {
     let path = foundry_common::fs::json_files(&root.join("broadcast"))
         .find(|path| path.ends_with("dry-run/run-latest.json"))

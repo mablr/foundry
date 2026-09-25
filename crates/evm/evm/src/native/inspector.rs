@@ -285,6 +285,12 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
             }
         };
         let mut backend = self.backend.clone();
+        // The child needs bytecode fetched into the parent's transaction cache.
+        backend
+            .database_mut()
+            .cache
+            .contracts
+            .extend(interp.host().state().overlay_db().cache.contracts.clone());
         let stipend = intrinsic_gas(
             &version,
             message.caller,

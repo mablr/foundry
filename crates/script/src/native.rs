@@ -9,12 +9,12 @@ use crate::{
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_dyn_abi::FunctionExt;
 use alloy_json_abi::InternalType;
-use alloy_network::{Ethereum, TransactionBuilder};
+use alloy_network::{Ethereum, NetworkTransactionBuilder, TransactionBuilder};
 use alloy_primitives::{
-    Address, Bytes, KECCAK256_EMPTY, Log, TxKind, U256, keccak256, map::HashMap,
+    Address, Bytes, KECCAK256_EMPTY, Log, Signature, TxKind, U256, keccak256, map::HashMap,
 };
 use alloy_rpc_types::TransactionRequest;
-use evm2::{TxResult, ethereum::TxEnvelope, evm::Database};
+use evm2::{EvmFeatures, TxResult, ethereum::TxEnvelope, evm::Database};
 use eyre::Result;
 use foundry_cheatcodes::{
     BroadcastableTransaction, BroadcastableTransactions, CheatsConfig, Wallets,
@@ -63,8 +63,14 @@ pub(crate) async fn run(args: ScriptArgs, config: Config, evm_opts: EvmOpts) -> 
     } else {
         context.show_output(&execution)?;
     }
-    if execution.has_transactions() && context.evm_opts.fork_url.is_some() {
-        eyre::bail!("native on-chain simulation is not implemented");
+    if execution.has_transactions()
+        && context.evm_opts.fork_url.is_some()
+        && !context.args.skip_simulation
+    {
+        context.simulate_transactions(&execution).await?;
+        if !shell::is_json() {
+            sh_println!("\nSIMULATION COMPLETE.")?;
+        }
     }
     Ok(())
 }
@@ -125,6 +131,35 @@ impl NativeScriptContext {
             let env = EthereumEnv::local_from_config(&self.config, &self.evm_opts)?;
             self.execute_on(env, LocalState::default())
         }
+    }
+
+    /// Replays broadcastable transactions against a fresh copy of the resolved fork.
+    async fn simulate_transactions(&self, execution: &NativeScriptExecution) -> Result<()> {
+        let resolved =
+            self.resolved_fork.as_ref().ok_or_else(|| eyre::eyre!("fork not resolved"))?;
+        let fork = EthereumFork::open(&self.config, &self.evm_opts, resolved).await?;
+        let mut env = fork.env;
+        env.version.features.remove(EvmFeatures::BALANCE_CHECK);
+        env.version.features.insert(EvmFeatures::BALANCE_TOP_UP);
+        let executor = EthereumExecutor::new_foundry(env, fork.state);
+        let mut runner = NativeScriptRunner::new(
+            executor,
+            CALLER,
+            self.evm_opts.sender,
+            self.evm_opts.gas_limit(),
+            self.evm_opts.env.gas_price.unwrap_or_default().into(),
+        );
+        let rpc =
+            self.evm_opts.fork_url.as_deref().ok_or_else(|| eyre::eyre!("missing RPC URL"))?;
+        for tx in execution.transactions() {
+            eyre::ensure!(
+                tx.rpc.as_deref().is_none_or(|url| url == rpc),
+                "native script simulation across multiple RPCs is not implemented"
+            );
+            let run = runner.simulate(&tx.transaction)?;
+            eyre::ensure!(run.result.status, "on-chain simulation failed: {:?}", run.result.stop);
+        }
+        Ok(())
     }
 
     fn execute_on<D: Database + Clone + 'static>(
@@ -531,6 +566,15 @@ impl NativeScriptExecution {
                 .chain(self.script.iter())
                 .any(|stage| !stage.transactions.is_empty())
     }
+
+    fn transactions(&self) -> impl Iterator<Item = &BroadcastableTransaction<Ethereum>> {
+        self.library_transactions
+            .iter()
+            .chain(self.libraries.iter().flat_map(|stage| &stage.transactions))
+            .chain(&self.deployment.transactions)
+            .chain(self.setup.iter().flat_map(|stage| &stage.transactions))
+            .chain(self.script.iter().flat_map(|stage| &stage.transactions))
+    }
 }
 
 /// Compiled, linked, and ABI-encoded inputs for native Ethereum script execution.
@@ -637,6 +681,50 @@ impl<D: Database + Clone + 'static> NativeScriptRunner<D> {
         Ok(Self::collect(result, &mut inspector))
     }
 
+    /// Replays a collected on-chain transaction and accepts its state for subsequent calls.
+    pub fn simulate(
+        &mut self,
+        transaction: &TransactionMaybeSigned<Ethereum>,
+    ) -> Result<NativeScriptRun> {
+        let (typed, sender) = match transaction {
+            TransactionMaybeSigned::Signed { tx, from } => (tx.clone().into(), *from),
+            TransactionMaybeSigned::Unsigned(request) => {
+                let sender =
+                    request.from.ok_or_else(|| eyre::eyre!("missing transaction sender"))?;
+                let mut request = request.clone();
+                let mut state = self.executor.state().clone();
+                let nonce =
+                    Database::get_account(&mut state, &sender)?.map_or(0, |account| account.nonce);
+                request.nonce.get_or_insert(nonce);
+                request.gas.get_or_insert(self.effective_gas_limit());
+                request.chain_id.get_or_insert(self.executor.env().version.chain_id);
+                let basefee = self.executor.env().block.basefee.to::<u128>();
+                let price = self.gas_price.max(basefee);
+                if request.max_fee_per_gas.is_some()
+                    || request.max_priority_fee_per_gas.is_some()
+                    || request.authorization_list.is_some()
+                    || request.blob_versioned_hashes.is_some()
+                {
+                    request.max_fee_per_gas.get_or_insert(price);
+                    request.max_priority_fee_per_gas.get_or_insert(0);
+                } else {
+                    request.gas_price.get_or_insert(price);
+                }
+                let typed = request
+                    .build_unsigned()
+                    .map_err(|err| eyre::eyre!("invalid simulation transaction: {err}"))?;
+                (typed, sender)
+            }
+        };
+        let typed =
+            alloy_consensus::EthereumTypedTransaction::<alloy_consensus::TxEip4844>::from(typed);
+        let envelope =
+            TxEnvelope::from(typed.into_envelope(Signature::new(U256::ONE, U256::ONE, false)));
+        let tx = Recovered::new_unchecked(envelope, sender);
+        let result = self.executor.transact(&tx)?;
+        Ok(Self::collect(result, self.executor.inspector_mut()))
+    }
+
     fn transaction(
         &self,
         sender: Address,
@@ -648,7 +736,7 @@ impl<D: Database + Clone + 'static> NativeScriptRunner<D> {
         Ok(Recovered::new_unchecked(
             TxEnvelope::Legacy(TxLegacy {
                 nonce,
-                gas_limit: self.gas_limit,
+                gas_limit: self.effective_gas_limit(),
                 gas_price: self.gas_price,
                 to,
                 input,
@@ -664,6 +752,14 @@ impl<D: Database + Clone + 'static> NativeScriptRunner<D> {
             logs: inspector.take_logs(),
             traces: inspector.take_traces(),
             transactions: inspector.take_broadcast_transactions(),
+        }
+    }
+
+    fn effective_gas_limit(&self) -> u64 {
+        if self.executor.env().version.features.contains(EvmFeatures::BLOCK_GAS_LIMIT_CHECK) {
+            self.executor.env().block.gas_limit.min(U256::from(self.gas_limit)).to::<u64>()
+        } else {
+            self.gas_limit
         }
     }
 }
@@ -852,6 +948,24 @@ mod tests {
             Database::get_storage(&mut runner.executor().state().clone(), &address, &U256::ZERO)
                 .unwrap(),
             U256::ONE
+        );
+
+        let mut simulation_env = env;
+        simulation_env.version.features.remove(EvmFeatures::BALANCE_CHECK);
+        simulation_env.version.features.insert(EvmFeatures::BALANCE_TOP_UP);
+        let executor =
+            EthereumExecutor::new_foundry(simulation_env, runner.executor().state().clone());
+        let mut simulation = NativeScriptRunner::new(executor, sender, sender, 100_000, 0);
+        let simulated = simulation.simulate(transaction).unwrap();
+        assert!(simulated.result.status, "{:#?}", simulated.result);
+        assert_eq!(
+            Database::get_storage(
+                &mut simulation.executor().state().clone(),
+                &address,
+                &U256::ZERO
+            )
+            .unwrap(),
+            U256::from(2)
         );
     }
 }
