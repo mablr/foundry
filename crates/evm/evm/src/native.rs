@@ -78,6 +78,11 @@ impl<D: Database + Clone + 'static, I: NativeInspector<D>> EthereumExecutor<D, I
         &self.env
     }
 
+    /// Returns the execution environment for the next transaction.
+    pub const fn env_mut(&mut self) -> &mut EthereumEnv {
+        &mut self.env
+    }
+
     /// Returns the accepted state.
     pub const fn state(&self) -> &LocalState<D> {
         &self.state

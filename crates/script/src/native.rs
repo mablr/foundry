@@ -5,6 +5,7 @@ use crate::{
     build::{BuildData, LinkedBuildData, ScriptPredeployLibraries},
     execute::ExecutionData,
     resolve_script_fork, resolve_script_sender_nonce,
+    sequence::get_commit_hash,
 };
 use alloy_consensus::{TxLegacy, transaction::Recovered};
 use alloy_dyn_abi::FunctionExt;
@@ -16,6 +17,7 @@ use alloy_primitives::{
 use alloy_rpc_types::TransactionRequest;
 use evm2::{EvmFeatures, TxResult, ethereum::TxEnvelope, evm::Database};
 use eyre::Result;
+use forge_script_sequence::{ScriptSequence, ScriptTransactionKind, TransactionWithMetadata, now};
 use foundry_cheatcodes::{
     BroadcastableTransaction, BroadcastableTransactions, CheatsConfig, Wallets,
 };
@@ -49,6 +51,7 @@ use foundry_evm::{
 use foundry_evm_networks::NetworkVariant;
 use foundry_wallets::wallet_browser::signer::BrowserSigner;
 use serde::Serialize;
+use std::collections::VecDeque;
 use yansi::Paint;
 
 /// Executes the Ethereum `forge script` command through the native pipeline.
@@ -63,13 +66,15 @@ pub(crate) async fn run(args: ScriptArgs, config: Config, evm_opts: EvmOpts) -> 
     } else {
         context.show_output(&execution)?;
     }
-    if execution.has_transactions()
-        && context.evm_opts.fork_url.is_some()
-        && !context.args.skip_simulation
-    {
-        context.simulate_transactions(&execution).await?;
+    if execution.has_transactions() && context.evm_opts.fork_url.is_some() {
+        let mut sequence = context.prepare_sequence(&execution).await?;
+        sequence.save(false, true)?;
         if !shell::is_json() {
-            sh_println!("\nSIMULATION COMPLETE.")?;
+            if context.args.skip_simulation {
+                sh_println!("\nSKIPPING ON CHAIN SIMULATION.")?;
+            } else {
+                sh_println!("\nSIMULATION COMPLETE.")?;
+            }
         }
     }
     Ok(())
@@ -133,33 +138,151 @@ impl NativeScriptContext {
         }
     }
 
-    /// Replays broadcastable transactions against a fresh copy of the resolved fork.
-    async fn simulate_transactions(&self, execution: &NativeScriptExecution) -> Result<()> {
+    /// Builds a broadcast sequence, replaying transactions on a fresh fork when requested.
+    async fn prepare_sequence(
+        &self,
+        execution: &NativeScriptExecution,
+    ) -> Result<ScriptSequence<Ethereum>> {
         let resolved =
             self.resolved_fork.as_ref().ok_or_else(|| eyre::eyre!("fork not resolved"))?;
-        let fork = EthereumFork::open(&self.config, &self.evm_opts, resolved).await?;
-        let mut env = fork.env;
-        env.version.features.remove(EvmFeatures::BALANCE_CHECK);
-        env.version.features.insert(EvmFeatures::BALANCE_TOP_UP);
-        let executor = EthereumExecutor::new_foundry(env, fork.state);
-        let mut runner = NativeScriptRunner::new(
-            executor,
-            CALLER,
-            self.evm_opts.sender,
-            self.evm_opts.gas_limit(),
-            self.evm_opts.env.gas_price.unwrap_or_default().into(),
-        );
         let rpc =
             self.evm_opts.fork_url.as_deref().ok_or_else(|| eyre::eyre!("missing RPC URL"))?;
+        let chain = self.evm_opts.env.chain_id.unwrap_or(resolved.context().execution_chain_id);
+        let mut runner = if self.args.skip_simulation {
+            None
+        } else {
+            let fork = EthereumFork::open(&self.config, &self.evm_opts, resolved).await?;
+            let mut env = fork.env;
+            env.version.features.remove(EvmFeatures::BALANCE_CHECK);
+            env.version.features.insert(EvmFeatures::BALANCE_TOP_UP);
+            let executor = EthereumExecutor::new_foundry(env, fork.state);
+            Some(NativeScriptRunner::new(
+                executor,
+                CALLER,
+                self.evm_opts.sender,
+                self.evm_opts.gas_limit(),
+                self.evm_opts.env.gas_price.unwrap_or_default().into(),
+            ))
+        };
+        let mut transactions = VecDeque::new();
         for tx in execution.transactions() {
             eyre::ensure!(
                 tx.rpc.as_deref().is_none_or(|url| url == rpc),
                 "native script simulation across multiple RPCs is not implemented"
             );
-            let run = runner.simulate(&tx.transaction)?;
-            eyre::ensure!(run.result.status, "on-chain simulation failed: {:?}", run.result.stop);
+            let mut metadata = TransactionWithMetadata::from_tx_request(tx.transaction.clone());
+            metadata.rpc = rpc.to_owned();
+            metadata.is_fixed_gas_limit = metadata.transaction.gas().is_some();
+            if let Some(request) = metadata.transaction.as_unsigned_mut() {
+                request.chain_id.get_or_insert(chain);
+            }
+            let sender = metadata
+                .transaction
+                .from()
+                .ok_or_else(|| eyre::eyre!("missing transaction sender"))?;
+            if let Some(to) = metadata.transaction.to() {
+                metadata.contract_address = Some(to);
+                if to == self.evm_opts.create2_deployer
+                    && let Some(input) = metadata.transaction.input()
+                    && input.len() >= 32
+                {
+                    let (salt, code) = input.split_at(32);
+                    metadata.call_kind = ScriptTransactionKind::Create2;
+                    metadata.contract_address =
+                        Some(to.create2_from_code(alloy_primitives::B256::from_slice(salt), code));
+                }
+            } else {
+                let nonce = metadata
+                    .transaction
+                    .nonce()
+                    .ok_or_else(|| eyre::eyre!("missing transaction nonce"))?;
+                metadata.call_kind = ScriptTransactionKind::Create;
+                metadata.contract_address = Some(sender.create(nonce));
+            }
+            if let Some(runner) = &mut runner {
+                let run = runner.simulate(&metadata.transaction)?;
+                eyre::ensure!(
+                    run.result.status,
+                    "on-chain simulation failed: {:?}",
+                    run.result.stop
+                );
+                if !metadata.is_fixed_gas_limit
+                    && let Some(request) = metadata.transaction.as_unsigned_mut()
+                {
+                    request.gas = Some(
+                        run.result.tx_gas_used().saturating_mul(self.args.gas_estimate_multiplier)
+                            / 100,
+                    );
+                }
+                if self.args.slow {
+                    runner.executor_mut().env_mut().block.number += U256::ONE;
+                }
+            }
+            transactions.push_back(metadata);
         }
-        Ok(())
+        let paths = Some(ScriptSequence::<Ethereum>::get_paths(
+            &self.config,
+            &self.args.sig,
+            &self.plan.build.build_data.target,
+            chain,
+            true,
+        )?);
+        let local = match &self.plan.build.predeploy_libraries {
+            ScriptPredeployLibraries::Default { local, .. }
+            | ScriptPredeployLibraries::Create2 { local, .. } => local,
+        };
+        let local_addresses =
+            local.iter().map(|library| library.address.to_checksum(None)).collect::<Vec<_>>();
+        let libraries = self
+            .plan
+            .build
+            .libraries
+            .libs
+            .iter()
+            .flat_map(|(file, libs)| {
+                libs.iter()
+                    .filter(|(_, address)| !local_addresses.contains(address))
+                    .map(|(name, address)| format!("{}:{name}:{address}", file.to_string_lossy()))
+            })
+            .collect();
+        Ok(ScriptSequence {
+            transactions,
+            receipts: Vec::new(),
+            libraries,
+            pending: Vec::new(),
+            paths,
+            returns: self.returns(execution),
+            timestamp: now().as_millis(),
+            chain,
+            commit: get_commit_hash(&self.config.root),
+        })
+    }
+
+    fn returns(&self, execution: &NativeScriptExecution) -> HashMap<String, NestedValue> {
+        let mut returns = HashMap::default();
+        if let Some(script) = &execution.script
+            && script.result.status
+            && let Ok(decoded) = self.plan.execution.func.abi_decode_output(&script.result.output)
+        {
+            for (index, (token, output)) in
+                decoded.iter().zip(&self.plan.execution.func.outputs).enumerate()
+            {
+                let internal_type = output
+                    .internal_type
+                    .clone()
+                    .unwrap_or(InternalType::Other { contract: None, ty: "unknown".to_string() });
+                let label =
+                    if output.name.is_empty() { index.to_string() } else { output.name.clone() };
+                returns.insert(
+                    label,
+                    NestedValue {
+                        internal_type: internal_type.to_string(),
+                        value: format_token_raw(token),
+                    },
+                );
+            }
+        }
+        returns
     }
 
     fn execute_on<D: Database + Clone + 'static>(
@@ -475,28 +598,7 @@ impl NativeScriptContext {
                 })
             })
             .collect::<Vec<_>>();
-        let mut returns = HashMap::default();
-        if success
-            && let Ok(decoded) = self.plan.execution.func.abi_decode_output(&run.result.output)
-        {
-            for (index, (token, output)) in
-                decoded.iter().zip(&self.plan.execution.func.outputs).enumerate()
-            {
-                let internal_type = output
-                    .internal_type
-                    .clone()
-                    .unwrap_or(InternalType::Other { contract: None, ty: "unknown".to_string() });
-                let label =
-                    if output.name.is_empty() { index.to_string() } else { output.name.clone() };
-                returns.insert(
-                    label,
-                    NestedValue {
-                        internal_type: internal_type.to_string(),
-                        value: format_token_raw(token),
-                    },
-                );
-            }
-        }
+        let returns = self.returns(execution);
         let logs = execution
             .libraries
             .iter()

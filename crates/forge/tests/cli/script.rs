@@ -110,6 +110,29 @@ Error: on-chain simulation failed: Revert
 SIMULATION COMPLETE.
 
 "#]]);
+    let sequence = latest_dry_run_sequence(prj.root());
+    assert_eq!(sequence.transactions.len(), 1);
+    assert_eq!(sequence.transactions[0].transaction.to(), Some(target));
+    assert!(sequence.transactions[0].transaction.gas().is_some());
+    assert!(sequence.receipts.is_empty());
+    let foundry_common::TransactionMaybeSigned::Unsigned(request) =
+        &sequence.transactions[0].transaction
+    else {
+        panic!("expected an unsigned broadcast request");
+    };
+    assert_eq!(request.chain_id, Some(sequence.chain));
+
+    cmd.forge_fuse()
+        .args(["script", script.to_str().unwrap(), "--fork-url", rpc.as_str(), "--skip-simulation"])
+        .assert_success()
+        .stdout_eq(str![[r#"
+...
+SKIPPING ON CHAIN SIMULATION.
+
+"#]]);
+    let sequence = latest_dry_run_sequence(prj.root());
+    assert_eq!(sequence.transactions.len(), 1);
+    assert!(sequence.transactions[0].transaction.gas().is_none());
 });
 
 fn latest_dry_run_sequence(root: &Path) -> ScriptSequence<Ethereum> {
