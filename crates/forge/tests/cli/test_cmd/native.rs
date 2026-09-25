@@ -96,6 +96,7 @@ contract NativeDeployValueTarget {
 import "../src/NativeDeployTarget.sol";
 
 interface Vm {
+    function deployCode(string calldata artifactPath) external returns (address);
     function deployCode(string calldata artifactPath, bytes32 salt) external returns (address);
     function deployCode(string calldata artifactPath, bytes calldata constructorArgs, uint256 value)
         external returns (address);
@@ -126,6 +127,14 @@ contract NativeDeployHandler {
             "src/NativeDeployTarget.sol:NativeDeployValueTarget", abi.encode(uint256(42)), 5
         );
     }
+
+    function deployByName() external returns (address) {
+        return vm.deployCode("NativeDeployTarget");
+    }
+
+    function deployFromJson() external returns (address) {
+        return vm.deployCode("out/NativeDeployTarget.sol/NativeDeployTarget.json");
+    }
 }
 
 contract NativeDeployCodeTest {
@@ -150,6 +159,11 @@ contract NativeDeployCodeTest {
         require(deployed.balance == 5);
         require(address(handler).balance == 5);
     }
+
+    function testArtifactPathForms() public {
+        require(NativeDeployTarget(handler.deployByName()).marker() == 7);
+        require(NativeDeployTarget(handler.deployFromJson()).marker() == 7);
+    }
 }
 "#,
     );
@@ -161,12 +175,13 @@ contract NativeDeployCodeTest {
 [SOLC_VERSION] [ELAPSED]
 Compiler run successful!
 
-Ran 2 tests for test/NativeDeployCode.t.sol:NativeDeployCodeTest
+Ran 3 tests for test/NativeDeployCode.t.sol:NativeDeployCodeTest
+[PASS] testArtifactPathForms() ([GAS])
 [PASS] testConstructorArgsAndValue() ([GAS])
 [PASS] testRollbackAndRedeploy() ([GAS])
-Suite result: ok. 2 passed; 0 failed; 0 skipped; [ELAPSED]
+Suite result: ok. 3 passed; 0 failed; 0 skipped; [ELAPSED]
 
-Ran 1 test suite [ELAPSED]: 2 tests passed, 0 failed, 0 skipped (2 total tests)
+Ran 1 test suite [ELAPSED]: 3 tests passed, 0 failed, 0 skipped (3 total tests)
 
 "#]],
     );

@@ -34,6 +34,8 @@ pub use spec::{CheatcodeDef, Vm};
 #[macro_use]
 mod error;
 
+mod artifact;
+
 mod base64;
 
 mod config;

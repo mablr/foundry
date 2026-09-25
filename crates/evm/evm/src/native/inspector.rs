@@ -13,8 +13,8 @@ use evm2::{
         MessageResultExt, derive_create_destination,
     },
 };
-use foundry_cheatcodes::{Error, Vm, native::NativeCheatcodes};
-use foundry_common::{ContractsByArtifact, ErrorExt, fmt::ConsoleFmt};
+use foundry_cheatcodes::{CheatsConfig, Error, Vm, native::NativeCheatcodes};
+use foundry_common::{ErrorExt, fmt::ConsoleFmt};
 use foundry_evm_core::{
     abi::console,
     constants::{CHEATCODE_ADDRESS, HARDHAT_CONSOLE_ADDRESS},
@@ -22,7 +22,6 @@ use foundry_evm_core::{
 };
 use foundry_evm_coverage::{HitMaps, NativeLineCoverageCollector};
 use foundry_evm_traces::native::{CallTraceArena, TracingInspector, TracingInspectorConfig};
-use std::path::Path;
 
 use super::EthereumFactory;
 
@@ -39,7 +38,6 @@ pub struct EthereumInspectorStack<D: Database + Clone = EmptyDB> {
     tracing: Option<TracingInspector>,
     traces: Vec<CallTraceArena>,
     coverage: Option<NativeLineCoverageCollector>,
-    artifacts: ContractsByArtifact,
 }
 
 struct NativeDeployCodeRequest {
@@ -92,7 +90,6 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
             tracing: None,
             traces: Vec::new(),
             coverage: None,
-            artifacts: ContractsByArtifact::default(),
         }
     }
 
@@ -122,29 +119,9 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
         self.coverage.as_mut().map(NativeLineCoverageCollector::take_maps)
     }
 
-    /// Installs linked artifact creation code for native `vm.deployCode` calls.
-    pub fn set_artifacts(&mut self, artifacts: ContractsByArtifact) {
-        self.artifacts = artifacts;
-    }
-
-    fn artifact_code(&self, path: &str) -> Result<Bytes, Bytes> {
-        // TODO: Move Foundry's full artifact-path resolution into engine-independent code.
-        let Some((source, name)) = path.rsplit_once(':') else {
-            return Err(Error::encode("invalid artifact path"));
-        };
-        let mut matches = self.artifacts.iter().filter(|(id, _)| {
-            id.source.ends_with(Path::new(source)) && id.name.split('.').next() == Some(name)
-        });
-        let Some((_, contract)) = matches.next() else {
-            return Err(Error::encode(format!("artifact not found: {path}")));
-        };
-        if matches.next().is_some() {
-            return Err(Error::encode(format!("multiple matching artifacts: {path}")));
-        }
-        contract
-            .bytecode()
-            .cloned()
-            .ok_or_else(|| Error::encode("no bytecode for contract; is it abstract or unlinked?"))
+    /// Installs the running test contract's cheatcode configuration.
+    pub fn set_cheatcode_config(&mut self, config: CheatsConfig) {
+        self.cheatcodes.set_config(config);
     }
 
     fn deploy_code(
@@ -157,7 +134,7 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
         if interp.is_static() {
             return MessageResultExt { stop: InstrStop::Revert, gas, ..Default::default() };
         }
-        let code = match self.artifact_code(&request.path) {
+        let code = match self.cheatcodes.artifact_code(&request.path) {
             Ok(code) => code,
             Err(output) => {
                 return MessageResultExt {

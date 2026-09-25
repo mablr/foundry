@@ -40,6 +40,7 @@ use foundry_evm::{
         BaseCounterExample, CounterExample, FuzzCase, FuzzFixtures, FuzzTestResult, fixture_name,
         strategies::{EnumBounds, fuzz_calldata, fuzz_msg_value},
     },
+    inspectors::CheatsConfig,
     native::{EthereumExecutor, EthereumInspectorStack},
     opts::EvmOpts,
     traces::native::{CallTraceArena as NativeCallTraceArena, TracingInspectorConfig},
@@ -118,7 +119,7 @@ pub(crate) struct NativeTestSetup<'a> {
     tracing: Option<TracingInspectorConfig>,
     coverage: bool,
     isolation: bool,
-    artifacts: Option<&'a ContractsByArtifact>,
+    cheatcode_config: Option<CheatsConfig>,
 }
 
 impl<D: Database + Clone + 'static> NativeContractRunner<D> {
@@ -138,7 +139,7 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             tracing,
             coverage,
             isolation,
-            artifacts,
+            cheatcode_config,
         } = setup;
         env.block.gas_limit = U256::from(gas_limit);
         state.set_balance(sender, U256::MAX)?;
@@ -148,8 +149,8 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
         let expected_address = sender.create(1);
         state.set_balance(expected_address, initial_balance)?;
         let mut executor = EthereumExecutor::new_foundry(env, state);
-        if let Some(artifacts) = artifacts {
-            executor.inspector_mut().set_artifacts(artifacts.clone());
+        if let Some(config) = cheatcode_config {
+            executor.inspector_mut().set_cheatcode_config(config);
         }
         if let Some(tracing) = tracing {
             executor.inspector_mut().enable_tracing(tracing);
@@ -679,7 +680,13 @@ impl NativeMultiContractRunner {
                     ),
                     coverage: self.coverage,
                     isolation: self.config.isolate,
-                    artifacts: Some(&self.prepared.known_contracts),
+                    cheatcode_config: Some(CheatsConfig::new(
+                        &self.config,
+                        self.evm_opts.clone(),
+                        Some(self.prepared.known_contracts.clone()),
+                        Some(id.clone()),
+                        false,
+                    )),
                 },
             )?;
             let runner = match runner {
@@ -1269,7 +1276,7 @@ mod tests {
                 tracing: None,
                 coverage: false,
                 isolation: false,
-                artifacts: None,
+                cheatcode_config: None,
             },
         )
         .unwrap();
@@ -1316,7 +1323,7 @@ mod tests {
                 tracing: None,
                 coverage: false,
                 isolation: false,
-                artifacts: None,
+                cheatcode_config: None,
             },
         )
         .unwrap();

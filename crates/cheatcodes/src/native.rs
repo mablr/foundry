@@ -1,6 +1,6 @@
 //! Ethereum cheatcodes executed through evm2 inspection hooks.
 
-use crate::{Error, Vm};
+use crate::{CheatsConfig, Error, Vm};
 use alloy_primitives::{Address, Bytes, U256};
 use alloy_sol_types::{SolError, SolInterface, SolValue};
 use evm2::{
@@ -21,6 +21,7 @@ use std::{collections::BTreeMap, sync::Arc};
 #[derive(Clone, Debug)]
 pub struct NativeCheatcodes<D: Database + Clone = EmptyDB> {
     backend: LocalState<D>,
+    config: Arc<CheatsConfig>,
     pranks: BTreeMap<u16, NativePrank>,
     active_origins: BTreeMap<u16, Option<Address>>,
     expected_revert: Option<NativeExpectedRevert>,
@@ -61,9 +62,10 @@ impl Default for NativeCheatcodes<EmptyDB> {
 
 impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
     /// Creates native cheatcodes over the same accepted state as the executor.
-    pub const fn new(backend: LocalState<D>) -> Self {
+    pub fn new(backend: LocalState<D>) -> Self {
         Self {
             backend,
+            config: Arc::new(CheatsConfig::default()),
             pranks: BTreeMap::new(),
             active_origins: BTreeMap::new(),
             expected_revert: None,
@@ -72,6 +74,16 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
             backend_reset: None,
             restored_state: None,
         }
+    }
+
+    /// Installs the configuration for the running test contract.
+    pub fn set_config(&mut self, config: CheatsConfig) {
+        self.config = Arc::new(config);
+    }
+
+    /// Resolves creation code with the same artifact rules as the other cheatcodes.
+    pub fn artifact_code(&self, path: &str) -> Result<Bytes, Bytes> {
+        crate::artifact::get_artifact_code(&self.config, path, false).map_err(Error::encode)
     }
 
     /// Installs code at the cheatcode address for Solidity `EXTCODESIZE` checks.
