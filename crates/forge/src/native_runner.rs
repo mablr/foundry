@@ -49,6 +49,12 @@ pub struct NativeContractRunner<D: Database + Clone = EmptyDB> {
     gas_price: u128,
 }
 
+/// The result of deploying and setting up one native test contract.
+pub(crate) enum NativeContractSetup<D: Database + Clone> {
+    Ready(Box<NativeContractRunner<D>>),
+    Failed { stage: &'static str, result: TxResult, logs: Vec<Log> },
+}
+
 /// Libraries linked into a native test contract.
 pub(crate) struct NativeLibraries<'a> {
     code: &'a [Bytes],
@@ -66,12 +72,12 @@ pub(crate) struct NativeTestSetup<'a> {
 
 impl<D: Database + Clone + 'static> NativeContractRunner<D> {
     /// Deploys a linked test contract and executes its optional `setUp()` function.
-    pub(crate) fn new(
+    pub(crate) fn prepare(
         contract: &TestContract,
         mut env: EthereumEnv,
         mut state: LocalState<D>,
         setup: NativeTestSetup<'_>,
-    ) -> Result<Self> {
+    ) -> Result<NativeContractSetup<D>> {
         let NativeTestSetup { sender, initial_balance, gas_limit, gas_price, libraries } = setup;
         env.block.gas_limit = U256::from(gas_limit);
         state.set_balance(sender, U256::MAX)?;
@@ -140,14 +146,25 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
                 }
             }
         }
-        let address = Self::deploy_code(
-            &mut executor,
+        let tx = Self::transaction(
             sender,
             1,
+            TxKind::Create,
             contract.bytecode.clone(),
             gas_limit,
             gas_price,
-        )?;
+        );
+        let result = executor.transact(&tx)?;
+        if !result.status {
+            return Ok(NativeContractSetup::Failed {
+                stage: "constructor()",
+                result,
+                logs: executor.inspector_mut().take_logs(),
+            });
+        }
+        let address = result
+            .created_address
+            .ok_or_else(|| eyre::eyre!("native deployment returned no address"))?;
         ensure!(address == expected_address, "native deployment returned an unexpected address");
 
         executor.state_mut().set_balance(sender, initial_balance)?;
@@ -166,15 +183,15 @@ impl<D: Database + Clone + 'static> NativeContractRunner<D> {
             .and_then(|functions| functions.iter().find(|function| function.inputs.is_empty()))
         {
             let result = runner.execute(setup.selector().into())?;
-            ensure!(
-                result.status,
-                "native setUp() failed: {:?}, output: {}, error: {:?}",
-                result.stop,
-                result.output,
-                result.error_code
-            );
+            if !result.status {
+                return Ok(NativeContractSetup::Failed {
+                    stage: "setUp()",
+                    result,
+                    logs: runner.executor.inspector_mut().take_logs(),
+                });
+            }
         }
-        Ok(runner)
+        Ok(NativeContractSetup::Ready(Box::new(runner)))
     }
 
     /// Returns the deployed test contract address.
@@ -315,7 +332,7 @@ impl NativeMultiContractRunner {
                 continue;
             }
             let timer = Instant::now();
-            let runner = NativeContractRunner::new(
+            let runner = NativeContractRunner::prepare(
                 contract,
                 env,
                 state.clone(),
@@ -330,6 +347,22 @@ impl NativeMultiContractRunner {
                     },
                 },
             )?;
+            let runner = match runner {
+                NativeContractSetup::Ready(runner) => runner,
+                NativeContractSetup::Failed { stage, result, logs } => {
+                    let mut failure = TestResult::fail(self.failure_reason(&result));
+                    failure.logs = logs;
+                    suites.insert(
+                        id.identifier(),
+                        SuiteResult::new(
+                            timer.elapsed(),
+                            [(stage.to_string(), failure)].into(),
+                            Vec::new(),
+                        ),
+                    );
+                    continue;
+                }
+            };
             let mut tests = BTreeMap::new();
             for function in matcher.matching_test_functions(filter, id, &contract.abi) {
                 let kind = matcher.test_function_kind(
@@ -344,13 +377,7 @@ impl NativeMultiContractRunner {
                 );
                 let (result, logs) = runner.run_unit(function)?;
                 let passed = result.status;
-                let reason = (!passed).then(|| {
-                    if result.output.is_empty() {
-                        format!("EvmError: {:?}", result.stop)
-                    } else {
-                        self.prepared.revert_decoder.decode(&result.output, None)
-                    }
-                });
+                let reason = (!passed).then(|| self.failure_reason(&result));
                 let input = Bytes::copy_from_slice(function.selector().as_slice());
                 let stipend = intrinsic_gas(
                     &env.version,
@@ -375,6 +402,14 @@ impl NativeMultiContractRunner {
             suites.insert(id.identifier(), SuiteResult::new(timer.elapsed(), tests, Vec::new()));
         }
         Ok(suites)
+    }
+
+    fn failure_reason(&self, result: &TxResult) -> String {
+        if result.output.is_empty() {
+            format!("EvmError: {:?}", result.stop)
+        } else {
+            self.prepared.revert_decoder.decode(&result.output, None)
+        }
     }
 }
 
@@ -404,7 +439,7 @@ mod tests {
             BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
         );
         let sender = Address::with_last_byte(0xa);
-        let runner = NativeContractRunner::new(
+        let runner = NativeContractRunner::prepare(
             &contract,
             env,
             LocalState::default(),
@@ -417,6 +452,9 @@ mod tests {
             },
         )
         .unwrap();
+        let NativeContractSetup::Ready(runner) = runner else {
+            panic!("native test contract deployment failed");
+        };
 
         assert_eq!(runner.address(), sender.create(1));
         let (result, _) = runner.run_unit(&contract.abi.functions["testValue"][0]).unwrap();

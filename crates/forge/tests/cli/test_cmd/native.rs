@@ -4,6 +4,63 @@ use alloy_primitives::{Address, B256, Bytes, U256};
 use anvil::{NodeConfig, spawn};
 use foundry_test_utils::{forgetest_async, forgetest_init, str};
 
+forgetest_init!(evm2_reports_setup_failures_as_suite_results, |prj, cmd| {
+    prj.update_config(|config| config.isolate = false);
+    prj.add_test(
+        "NativeSetupFailure.t.sol",
+        r#"
+contract ConstructorFailureTest {
+    constructor() { revert("deploy failure"); }
+    function testNeverRuns() public pure {}
+}
+
+contract SetupFailureTest {
+    function setUp() public pure { revert("setup failure"); }
+    function testNeverRuns() public pure {}
+}
+
+contract HealthyTest {
+    function testRuns() public pure {}
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.env("FOUNDRY_EVM2_NATIVE", "1");
+    cmd.arg("test").assert_failure().stdout_eq(str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeSetupFailure.t.sol:ConstructorFailureTest
+[FAIL: deploy failure] constructor() ([GAS])
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test for test/NativeSetupFailure.t.sol:HealthyTest
+[PASS] testRuns() ([GAS])
+Suite result: ok. 1 passed; 0 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test for test/NativeSetupFailure.t.sol:SetupFailureTest
+[FAIL: setup failure] setUp() ([GAS])
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; [ELAPSED]
+
+Ran 3 test suites [ELAPSED]: 1 tests passed, 2 failed, 0 skipped (3 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/NativeSetupFailure.t.sol:ConstructorFailureTest
+[FAIL: deploy failure] constructor() ([GAS])
+
+Encountered 1 failing test in test/NativeSetupFailure.t.sol:SetupFailureTest
+[FAIL: setup failure] setUp() ([GAS])
+
+Encountered a total of 2 failing tests, 1 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 2 failed tests
+Tip: Run `forge test --debug --match-test <TEST_NAME>` to inspect one failing test in the debugger
+
+"#]]);
+});
+
 forgetest_init!(evm2_expect_revert_matches_external_calls, |prj, cmd| {
     prj.update_config(|config| config.isolate = false);
     prj.add_test(
