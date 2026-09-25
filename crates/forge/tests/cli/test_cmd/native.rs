@@ -144,6 +144,78 @@ Tip: Run `forge test --rerun` to retry only the 1 failed test
     ]);
 });
 
+forgetest_init!(evm2_invariant_checks_after_invariant, |prj, cmd| {
+    prj.update_config(|config| {
+        config.invariant.runs = 1;
+        config.invariant.depth = 2;
+    });
+    prj.add_test(
+        "NativeAfterInvariant.t.sol",
+        r#"
+contract NativeHookHandler {
+    uint256 public count;
+
+    function increment() external {
+        count++;
+    }
+}
+
+contract NativeAfterInvariantTest {
+    NativeHookHandler handler;
+
+    function setUp() public {
+        handler = new NativeHookHandler();
+    }
+
+    function targetContracts() public view returns (address[] memory targets) {
+        targets = new address[](1);
+        targets[0] = address(handler);
+    }
+
+    function invariantAlways() public pure {}
+
+    function afterInvariant() public view {
+        require(handler.count() < 2, "hook saw two calls");
+    }
+}
+"#,
+    );
+
+    cmd.forge_fuse();
+    cmd.args(["test", "--match-contract", "NativeAfterInvariantTest"]).assert_failure().stdout_eq(
+        str![[r#"
+[COMPILING_FILES] with [SOLC_VERSION]
+[SOLC_VERSION] [ELAPSED]
+Compiler run successful!
+
+Ran 1 test for test/NativeAfterInvariant.t.sol:NativeAfterInvariantTest
+[FAIL: hook saw two calls]
+	[Sequence] (original: 2, shrunk: 2)
+		sender=[..] addr=[..] calldata=0x[..] args=[]
+		sender=[..] addr=[..] calldata=0x[..] args=[]
+ invariantAlways() (runs: 1, calls: 2, reverts: 0)
+Suite result: FAILED. 0 passed; 1 failed; 0 skipped; [ELAPSED]
+
+Ran 1 test suite [ELAPSED]: 0 tests passed, 1 failed, 0 skipped (1 total tests)
+
+Failing tests:
+Encountered 1 failing test in test/NativeAfterInvariant.t.sol:NativeAfterInvariantTest
+[FAIL: hook saw two calls]
+	[Sequence] (original: 2, shrunk: 2)
+		sender=[..] addr=[..] calldata=0x[..] args=[]
+		sender=[..] addr=[..] calldata=0x[..] args=[]
+ invariantAlways() (runs: 1, calls: 2, reverts: 0)
+
+Encountered a total of 1 failing tests, 0 tests succeeded
+
+Tip: Run `forge test --rerun` to retry only the 1 failed test
+
+[SEED] (use `--fuzz-seed` to reproduce)
+
+"#]],
+    );
+});
+
 forgetest_init!(evm2_runs_table_rows_from_setup_fixtures, |prj, cmd| {
     prj.add_test(
         "NativeTable.t.sol",

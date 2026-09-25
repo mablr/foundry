@@ -952,6 +952,10 @@ impl NativeMultiContractRunner {
     ) -> Result<TestResult> {
         ensure!(invariant.inputs.is_empty(), "invariant functions must take no parameters");
         let targets = runner.invariant_targets(abi, &self.prepared.known_contracts)?;
+        let after_invariant = abi
+            .functions
+            .get("afterInvariant")
+            .and_then(|functions| functions.iter().find(|function| function.inputs.is_empty()));
         let config = &self.config.invariant;
         ensure!(!config.call_override, "native invariant call override is not implemented");
         ensure!(!config.has_delay(), "native invariant transaction delays are not implemented");
@@ -1036,6 +1040,17 @@ impl NativeMultiContractRunner {
                         });
                         break 'campaign;
                     }
+                }
+            }
+            if let Some(after_invariant) = after_invariant {
+                let (result, _, traces) = run.run_unit(after_invariant)?;
+                native_traces = traces;
+                if !result.status {
+                    failure = Some(NativeInvariantFailure::Predicate {
+                        reason: self.failure_reason(&result),
+                        sequence,
+                    });
+                    break 'campaign;
                 }
             }
         }
