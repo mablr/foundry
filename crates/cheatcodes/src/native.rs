@@ -1,17 +1,20 @@
 //! Ethereum cheatcodes executed through evm2 inspection hooks.
 
-use crate::{CheatsConfig, Error, Vm};
-use alloy_primitives::{Address, B256, Bytes, U256};
+use crate::{BroadcastableTransaction, BroadcastableTransactions, CheatsConfig, Error, Vm};
+use alloy_network::{Ethereum, TransactionBuilder};
+use alloy_primitives::{Address, B256, Bytes, TxKind, U256};
+use alloy_rpc_types::TransactionRequest;
 use alloy_sol_types::{SolError, SolInterface, SolValue};
 use evm2::{
     Inspector,
     bytecode::Bytecode,
     evm::{AccountInfo, Database, Db, EmptyDB, State},
     interpreter::{
-        GasTracker, InstrStop, Interpreter, Message, MessageResult, MessageResultExt,
+        GasTracker, InstrStop, Interpreter, Message, MessageKind, MessageResult, MessageResultExt,
         derive_create_destination,
     },
 };
+use foundry_common::TransactionMaybeSigned;
 use foundry_evm_core::{
     constants::{
         CHEATCODE_ADDRESS, CHEATCODE_CONTRACT_HASH, HARDHAT_CONSOLE_ADDRESS, MAGIC_ASSUME,
@@ -28,6 +31,8 @@ pub struct NativeCheatcodes<D: Database + Clone = EmptyDB> {
     pranks: BTreeMap<u16, NativePrank>,
     active_origins: BTreeMap<u16, Option<Address>>,
     synthetic_origins: BTreeMap<u16, Option<Address>>,
+    broadcast: Option<NativeBroadcast>,
+    broadcast_transactions: BroadcastableTransactions<Ethereum>,
     expected_revert: Option<NativeExpectedRevert>,
     snapshots: BTreeMap<U256, Arc<NativeSnapshot<D>>>,
     next_snapshot_id: U256,
@@ -47,6 +52,15 @@ struct NativePrank {
     caller: Address,
     new_caller: Address,
     new_origin: Option<Address>,
+    single_call: bool,
+    used: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct NativeBroadcast {
+    caller: Address,
+    sender: Address,
+    depth: u16,
     single_call: bool,
     used: bool,
 }
@@ -111,6 +125,8 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
             pranks: BTreeMap::new(),
             active_origins: BTreeMap::new(),
             synthetic_origins: BTreeMap::new(),
+            broadcast: None,
+            broadcast_transactions: BroadcastableTransactions::default(),
             expected_revert: None,
             snapshots: BTreeMap::new(),
             next_snapshot_id: U256::ONE,
@@ -127,6 +143,183 @@ impl<D: Database + Clone + 'static> NativeCheatcodes<D> {
     /// Resolves artifact bytecode with the same rules as the other cheatcodes.
     pub fn artifact_code(&self, path: &str, deployed: bool) -> Result<Bytes, Bytes> {
         crate::artifact::get_artifact_code(&self.config, path, deployed).map_err(Error::encode)
+    }
+
+    /// Drains transactions captured by native broadcast cheatcodes.
+    pub fn take_broadcast_transactions(&mut self) -> BroadcastableTransactions<Ethereum> {
+        std::mem::take(&mut self.broadcast_transactions)
+    }
+
+    fn start_broadcast(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &Message<FoundryEvmTypes>,
+        sender: Address,
+        single_call: bool,
+    ) -> (InstrStop, Bytes) {
+        let depth = message.depth.saturating_sub(1);
+        if self.pranks.range(..=depth).next_back().is_some() {
+            return (
+                InstrStop::Revert,
+                Error::encode(
+                    "you have an active prank; broadcasting and pranks are not compatible",
+                ),
+            );
+        }
+        if self.broadcast.is_some() {
+            return (InstrStop::Revert, Error::encode("a broadcast is active already"));
+        }
+        if interp.host().state_mut().account(&sender, false).is_err() {
+            return (InstrStop::Revert, Bytes::new());
+        }
+        self.broadcast = Some(NativeBroadcast {
+            caller: message.caller,
+            sender,
+            depth,
+            single_call,
+            used: false,
+        });
+        (InstrStop::Return, Bytes::new())
+    }
+
+    fn default_broadcast_sender(&self, interp: &Interpreter<'_, '_, FoundryEvmTypes>) -> Address {
+        let sender = self.config.evm_opts.sender;
+        if sender == foundry_config::Config::DEFAULT_SENDER {
+            interp.tx_env().origin
+        } else {
+            sender
+        }
+    }
+
+    fn broadcast_error(gas_limit: u64, error: impl Into<Error>) -> MessageResult<FoundryEvmTypes> {
+        MessageResultExt {
+            stop: InstrStop::Revert,
+            gas: GasTracker::new(gas_limit),
+            output: Error::encode(error),
+            ..Default::default()
+        }
+    }
+
+    fn broadcast_call(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &mut Message<FoundryEvmTypes>,
+    ) -> Option<MessageResult<FoundryEvmTypes>> {
+        let depth = message.depth.saturating_sub(1);
+        let broadcast = self.broadcast.as_mut()?;
+        if depth != broadcast.depth || message.caller != broadcast.caller {
+            return None;
+        }
+        if message.kind == MessageKind::StaticCall {
+            if broadcast.single_call {
+                return Some(Self::broadcast_error(
+                    message.gas_limit,
+                    "`staticcall`s are not allowed after `broadcast`; use `startBroadcast` instead",
+                ));
+            }
+            message.caller = broadcast.sender;
+            let context = interp.host().ext_mut();
+            self.active_origins.insert(depth, context.origin_override);
+            context.origin_override = Some(broadcast.sender);
+            return None;
+        }
+        if message.kind != MessageKind::Call {
+            return Some(Self::broadcast_error(
+                message.gas_limit,
+                "native broadcast does not support this call kind",
+            ));
+        }
+        let chain_id = match u64::try_from(interp.tx_env().chain_id) {
+            Ok(chain_id) => chain_id,
+            Err(_) => return Some(Self::broadcast_error(message.gas_limit, "invalid chain ID")),
+        };
+        let nonce = match interp.host().state_mut().account(&broadcast.sender, false) {
+            Ok(mut account) => {
+                let nonce = account.nonce();
+                if !account.bump_nonce() {
+                    return Some(Self::broadcast_error(
+                        message.gas_limit,
+                        "broadcast nonce overflow",
+                    ));
+                }
+                nonce
+            }
+            Err(_) => {
+                return Some(Self::broadcast_error(
+                    message.gas_limit,
+                    "broadcast account unavailable",
+                ));
+            }
+        };
+        let request = TransactionRequest::default()
+            .with_from(broadcast.sender)
+            .with_to(message.call_target)
+            .with_value(message.value)
+            .with_input(message.input.clone())
+            .with_nonce(nonce)
+            .with_chain_id(chain_id);
+        self.broadcast_transactions.push_back(BroadcastableTransaction {
+            rpc: self.config.evm_opts.fork_url.clone(),
+            transaction: TransactionMaybeSigned::new(request),
+        });
+        message.caller = broadcast.sender;
+        let context = interp.host().ext_mut();
+        self.active_origins.insert(depth, context.origin_override);
+        context.origin_override = Some(broadcast.sender);
+        broadcast.used = true;
+        None
+    }
+
+    fn broadcast_create(
+        &mut self,
+        interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
+        message: &mut Message<FoundryEvmTypes>,
+    ) -> Option<MessageResult<FoundryEvmTypes>> {
+        let depth = message.depth.saturating_sub(1);
+        let broadcast = self.broadcast.as_mut()?;
+        if depth != broadcast.depth || message.caller != broadcast.caller {
+            return None;
+        }
+        if message.kind != MessageKind::Create {
+            return Some(Self::broadcast_error(
+                message.gas_limit,
+                "native CREATE2 broadcast requires the CREATE2 factory",
+            ));
+        }
+        let nonce = match interp.host().state_mut().account(&broadcast.sender, false) {
+            Ok(account) => account.nonce(),
+            Err(_) => {
+                return Some(Self::broadcast_error(
+                    message.gas_limit,
+                    "broadcast account unavailable",
+                ));
+            }
+        };
+        let request = TransactionRequest::default()
+            .with_from(broadcast.sender)
+            .with_kind(TxKind::Create)
+            .with_value(message.value)
+            .with_input(message.input.clone())
+            .with_nonce(nonce);
+        self.broadcast_transactions.push_back(BroadcastableTransaction {
+            rpc: self.config.evm_opts.fork_url.clone(),
+            transaction: TransactionMaybeSigned::new(request),
+        });
+        message.caller = broadcast.sender;
+        message.code_address = broadcast.sender;
+        message.destination = derive_create_destination(
+            message.kind,
+            &broadcast.sender,
+            &message.salt,
+            &message.input,
+            nonce,
+        );
+        message.call_target = message.destination;
+        let context = interp.host().ext_mut();
+        self.active_origins.insert(depth, context.origin_override);
+        context.origin_override = Some(broadcast.sender);
+        broadcast.used = true;
+        None
     }
 
     /// Installs code at the cheatcode address for Solidity `EXTCODESIZE` checks.
@@ -336,6 +529,9 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
         message: &mut Message<FoundryEvmTypes>,
     ) -> Option<MessageResult<FoundryEvmTypes>> {
         if message.call_target != CHEATCODE_ADDRESS {
+            if let Some(result) = self.broadcast_call(interp, message) {
+                return Some(result);
+            }
             let depth = message.depth.saturating_sub(1);
             if let Some((prank_depth, prank)) = self.pranks.range_mut(..=depth).next_back()
                 && depth == *prank_depth
@@ -408,6 +604,27 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
             Ok(Vm::VmCalls::stopPrank(_)) => {
                 self.pranks.remove(&message.depth.saturating_sub(1));
                 (InstrStop::Return, Bytes::new())
+            }
+            Ok(Vm::VmCalls::broadcast_0(_)) => {
+                let sender = self.default_broadcast_sender(interp);
+                self.start_broadcast(interp, message, sender, true)
+            }
+            Ok(Vm::VmCalls::broadcast_1(call)) => {
+                self.start_broadcast(interp, message, call.signer, true)
+            }
+            Ok(Vm::VmCalls::startBroadcast_0(_)) => {
+                let sender = self.default_broadcast_sender(interp);
+                self.start_broadcast(interp, message, sender, false)
+            }
+            Ok(Vm::VmCalls::startBroadcast_1(call)) => {
+                self.start_broadcast(interp, message, call.signer, false)
+            }
+            Ok(Vm::VmCalls::stopBroadcast(_)) => {
+                if self.broadcast.take().is_some() {
+                    (InstrStop::Return, Bytes::new())
+                } else {
+                    (InstrStop::Revert, Error::encode("no broadcast in progress to stop"))
+                }
             }
             Ok(Vm::VmCalls::expectRevert_0(_)) => {
                 self.expect_revert(message.depth.saturating_sub(1), None, false)
@@ -498,6 +715,11 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
         if self.pranks.get(&depth).is_some_and(|prank| prank.single_call && prank.used) {
             self.pranks.remove(&depth);
         }
+        if self.broadcast.is_some_and(|broadcast| {
+            broadcast.single_call && broadcast.used && broadcast.depth == depth
+        }) {
+            self.broadcast = None;
+        }
         self.finish_expected_revert(message, result);
     }
 
@@ -506,6 +728,9 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
         interp: &mut Interpreter<'_, '_, FoundryEvmTypes>,
         message: &mut Message<FoundryEvmTypes>,
     ) -> Option<MessageResult<FoundryEvmTypes>> {
+        if let Some(result) = self.broadcast_create(interp, message) {
+            return Some(result);
+        }
         let depth = message.depth.saturating_sub(1);
         if let Some((prank_depth, prank)) = self.pranks.range_mut(..=depth).next_back()
             && depth == *prank_depth
@@ -553,6 +778,11 @@ impl<D: Database + Clone + 'static> Inspector<FoundryEvmTypes> for NativeCheatco
         }
         if self.pranks.get(&depth).is_some_and(|prank| prank.single_call && prank.used) {
             self.pranks.remove(&depth);
+        }
+        if self.broadcast.is_some_and(|broadcast| {
+            broadcast.single_call && broadcast.used && broadcast.depth == depth
+        }) {
+            self.broadcast = None;
         }
         self.finish_expected_revert(message, result);
     }

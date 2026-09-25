@@ -81,6 +81,11 @@ contract NativeDeployTarget {
     function marker() external pure returns (uint256) {
         return 7;
     }
+
+    function record() external {
+        deployer = msg.sender;
+        origin = tx.origin;
+    }
 }
 
 contract NativeDeployValueTarget {
@@ -107,6 +112,9 @@ interface Vm {
     function getDeployedCode(string calldata artifactPath) external view returns (bytes memory);
     function prank(address sender) external;
     function prank(address sender, address origin) external;
+    function broadcast(address signer) external;
+    function startBroadcast(address signer) external;
+    function stopBroadcast() external;
 }
 
 contract NativeDeployHandler {
@@ -149,6 +157,18 @@ contract NativeDeployHandler {
 
     function deployNormally() external returns (address) {
         return address(new NativeDeployTarget());
+    }
+
+    function broadcastCall(address target) external {
+        vm.broadcast(DEPLOYER);
+        NativeDeployTarget(target).record();
+    }
+
+    function broadcastCreate() external returns (address) {
+        vm.startBroadcast(DEPLOYER);
+        address deployed = address(new NativeDeployTarget());
+        vm.stopBroadcast();
+        return deployed;
     }
 }
 
@@ -198,6 +218,23 @@ contract NativeDeployCodeTest {
         require(normal.deployer() == address(handler));
         require(normal.origin() == tx.origin);
     }
+
+    function testBroadcastCallRestoresOrigin() public {
+        NativeDeployTarget target = NativeDeployTarget(handler.deployNormally());
+        handler.broadcastCall(address(target));
+        require(target.deployer() == address(0xBEEF));
+        require(target.origin() == address(0xBEEF));
+
+        target.record();
+        require(target.deployer() == address(this));
+        require(target.origin() == tx.origin);
+    }
+
+    function testBroadcastCreateRestoresOrigin() public {
+        NativeDeployTarget deployed = NativeDeployTarget(handler.broadcastCreate());
+        require(deployed.deployer() == address(0xBEEF));
+        require(deployed.origin() == address(0xBEEF));
+    }
 }
 "#,
     );
@@ -209,15 +246,17 @@ contract NativeDeployCodeTest {
 [SOLC_VERSION] [ELAPSED]
 Compiler run successful!
 
-Ran 5 tests for test/NativeDeployCode.t.sol:NativeDeployCodeTest
+Ran 7 tests for test/NativeDeployCode.t.sol:NativeDeployCodeTest
 [PASS] testArtifactBytecode() ([GAS])
 [PASS] testArtifactPathForms() ([GAS])
+[PASS] testBroadcastCallRestoresOrigin() ([GAS])
+[PASS] testBroadcastCreateRestoresOrigin() ([GAS])
 [PASS] testConstructorArgsAndValue() ([GAS])
 [PASS] testNormalCreatePrank() ([GAS])
 [PASS] testRollbackAndRedeploy() ([GAS])
-Suite result: ok. 5 passed; 0 failed; 0 skipped; [ELAPSED]
+Suite result: ok. 7 passed; 0 failed; 0 skipped; [ELAPSED]
 
-Ran 1 test suite [ELAPSED]: 5 tests passed, 0 failed, 0 skipped (5 total tests)
+Ran 1 test suite [ELAPSED]: 7 tests passed, 0 failed, 0 skipped (7 total tests)
 
 "#]],
     );

@@ -336,6 +336,54 @@ mod tests {
     }
 
     #[test]
+    fn native_broadcast_collects_sender_nonce_and_call_data() {
+        let caller = Address::with_last_byte(0xa);
+        let sender = Address::with_last_byte(0xb);
+        let target = Address::with_last_byte(0xc);
+        let mut state = LocalState::default();
+        state.set_balance(caller, U256::from(10)).unwrap();
+        state.set_balance(sender, U256::from(10)).unwrap();
+        let env = EthereumEnv::new(
+            SpecId::CANCUN,
+            BlockEnvExt { gas_limit: U256::from(30_000_000), ..Default::default() },
+        );
+        let mut executor = EthereumExecutor::new_foundry(env, state);
+        let broadcast = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                gas_limit: 100_000,
+                to: TxKind::Call(CHEATCODE_ADDRESS),
+                input: Vm::broadcast_1Call { signer: sender }.abi_encode().into(),
+                ..Default::default()
+            }),
+            caller,
+        );
+        assert!(executor.transact(&broadcast).unwrap().status);
+
+        let input = Bytes::from_static(&[1, 2, 3]);
+        let call = Recovered::new_unchecked(
+            TxEnvelope::Legacy(TxLegacy {
+                nonce: 1,
+                gas_limit: 100_000,
+                to: TxKind::Call(target),
+                value: U256::from(3),
+                input: input.clone(),
+                ..Default::default()
+            }),
+            caller,
+        );
+        assert!(executor.transact(&call).unwrap().status);
+        let mut transactions = executor.inspector_mut().take_broadcast_transactions();
+        let transaction = transactions.pop_front().unwrap().transaction;
+        assert!(transactions.is_empty());
+        assert_eq!(transaction.from(), Some(sender));
+        assert_eq!(transaction.to(), Some(target));
+        assert_eq!(transaction.value(), Some(U256::from(3)));
+        assert_eq!(transaction.input(), Some(&input));
+        assert_eq!(transaction.nonce(), Some(0));
+        assert_eq!(executor.state().database().account_info(&sender).unwrap().nonce, 1);
+    }
+
+    #[test]
     fn deployed_code_executes_from_accepted_state() {
         let caller = Address::with_last_byte(0xa);
         let mut state = LocalState::default();

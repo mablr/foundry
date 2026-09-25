@@ -1,6 +1,7 @@
 //! Inspectors for native Ethereum execution.
 
 use alloy_consensus::{TxLegacy, transaction::Recovered};
+use alloy_network::Ethereum;
 use alloy_primitives::{Address, Bytes, Log, TxKind, U256};
 use alloy_sol_types::{SolEvent, SolInterface, SolValue};
 use evm2::{
@@ -14,7 +15,7 @@ use evm2::{
     },
 };
 use foundry_cheatcodes::{
-    CheatsConfig, Error,
+    BroadcastableTransactions, CheatsConfig, Error,
     native::{NativeCheatcodes, NativeDeployCodeRequest},
 };
 use foundry_common::{ErrorExt, fmt::ConsoleFmt};
@@ -68,6 +69,11 @@ impl<D: Database + Clone + 'static> EthereumInspectorStack<D> {
     /// Drains logs in observation order, including Hardhat console calls.
     pub fn take_logs(&mut self) -> Vec<Log> {
         std::mem::take(&mut self.logs)
+    }
+
+    /// Drains transactions captured by script broadcast cheatcodes.
+    pub fn take_broadcast_transactions(&mut self) -> BroadcastableTransactions<Ethereum> {
+        self.cheatcodes.take_broadcast_transactions()
     }
 
     /// Enables call and opcode tracing for subsequent executions.
