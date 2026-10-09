@@ -1,7 +1,8 @@
 //! Cheatcode EVM inspector.
 
 use crate::{
-    Cheatcode, CheatsConfig, CheatsCtxt, Error, Result,
+    BroadcastableTransaction, BroadcastableTransactions, Cheatcode, CheatsConfig, CheatsCtxt,
+    Error, Result,
     Vm::{self, AccountAccess},
     evm::{
         DealRecord, GasRecord, RecordAccess, journaled_account,
@@ -19,7 +20,7 @@ use crate::{
     utils::IgnoredTraces,
 };
 use alloy_consensus::BlobTransactionSidecarVariant;
-use alloy_network::{Ethereum, Network, TransactionBuilder};
+use alloy_network::TransactionBuilder;
 use alloy_primitives::{
     Address, B256, Bytes, Log, TxKind, U256, hex,
     map::{AddressHashMap, HashMap, HashSet},
@@ -78,6 +79,8 @@ use std::{
     path::PathBuf,
     sync::{Arc, OnceLock},
 };
+
+pub use crate::StorageHook;
 
 mod env_overrides;
 pub use env_overrides::EnvOverrideState;
@@ -258,30 +261,12 @@ impl TestContext {
     }
 }
 
-/// Helps collecting transactions from different forks.
-#[derive(Clone, Debug)]
-pub struct BroadcastableTransaction<N: Network = Ethereum> {
-    /// The optional RPC URL.
-    pub rpc: Option<String>,
-    /// The transaction to broadcast.
-    pub transaction: TransactionMaybeSigned<N>,
-}
-
 #[derive(Clone, Debug, Copy)]
 pub struct RecordDebugStepInfo {
     /// The debug trace node index when the recording starts.
     pub start_node_idx: usize,
     /// The original tracer config when the recording starts.
     pub original_tracer_config: TracingInspectorConfig,
-}
-
-/// A callback registered for a storage access hook.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct StorageHook {
-    /// Contract that receives the callback.
-    pub callback_target: Address,
-    /// Callback function selector.
-    pub callback_selector: [u8; 4],
 }
 
 #[derive(Clone, Debug)]
@@ -572,9 +557,6 @@ impl ArbitraryStorage {
         value
     }
 }
-
-/// List of transactions that can be broadcasted.
-pub type BroadcastableTransactions<N> = VecDeque<BroadcastableTransaction<N>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CreatedAccountsFrameKind {
@@ -1468,7 +1450,7 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
                 &input,
                 call.transfer_value(),
                 call.gas_limit,
-                call.scheme,
+                call.scheme.into(),
             );
         }
 
@@ -1513,10 +1495,10 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
                         value,
                     ) {
                         None => {
-                            if return_data.ret_type.is_ok() {
-                                ecx.journal_mut().checkpoint_commit();
-                            } else {
+                            if return_data.reverts {
                                 ecx.journal_mut().checkpoint_revert(checkpoint);
+                            } else {
+                                ecx.journal_mut().checkpoint_commit();
                             }
                         }
                         Some(err) => {
@@ -1540,7 +1522,11 @@ impl<FEN: FoundryEvmNetwork> Cheatcodes<FEN> {
 
                 return Some(CallOutcome {
                     result: InterpreterResult {
-                        result: return_data.ret_type,
+                        result: if return_data.reverts {
+                            InstructionResult::Revert
+                        } else {
+                            InstructionResult::Return
+                        },
                         output: return_data.data,
                         gas,
                     },

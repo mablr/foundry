@@ -456,6 +456,7 @@ where
         Ok((sequence, index))
     }
 
+    #[cfg(any(test, feature = "revm"))]
     pub(crate) fn persist_batch_signed_payload(
         &mut self,
         sequence: usize,
@@ -476,6 +477,7 @@ where
         Ok(hash)
     }
 
+    #[cfg(any(test, feature = "revm"))]
     pub(crate) fn persist_batch_delegated_request(
         &mut self,
         sequence: usize,
@@ -489,6 +491,7 @@ where
         )
     }
 
+    #[cfg(any(test, feature = "revm"))]
     fn persist_batch_attempt(
         &mut self,
         sequence: usize,

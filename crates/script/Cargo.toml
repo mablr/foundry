@@ -20,8 +20,7 @@ foundry-config.workspace = true
 foundry-common.workspace = true
 foundry-evm.workspace = true
 foundry-evm-networks.workspace = true
-alloy-evm.workspace = true
-foundry-debugger.workspace = true
+foundry-debugger = { workspace = true, optional = true }
 foundry-cheatcodes.workspace = true
 foundry-wallets = { workspace = true, features = ["browser", "tempo"] }
 foundry-linking.workspace = true
@@ -29,6 +28,8 @@ forge-script-sequence.workspace = true
 
 serde.workspace = true
 eyre.workspace = true
+evm2.workspace = true
+evm2-inspectors.workspace = true
 serde_json.workspace = true
 foundry-compilers.workspace = true
 reqwest = { workspace = true, features = ["stream"] }
@@ -57,16 +58,28 @@ alloy-eips.workspace = true
 alloy-consensus.workspace = true
 thiserror.workspace = true
 
-tempo-alloy.workspace = true
+tempo-alloy = { workspace = true, optional = true }
 tempo-primitives.workspace = true
 
 [dev-dependencies]
+tempo-alloy.workspace = true
 anvil.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
 
 [features]
-default = ["optimism"]
+default = ["optimism", "revm"]
+revm = [
+    "dep:tempo-alloy",
+    "forge-script-sequence/revm",
+    "forge-verify/revm",
+    "foundry-cli/revm",
+    "foundry-common/revm",
+    "foundry-evm/revm",
+    "foundry-cheatcodes/revm",
+    "dep:foundry-debugger",
+]
 monad = [
+    "revm",
     "anvil/monad",
     "foundry-config/monad",
     "foundry-evm/monad",
@@ -78,6 +91,7 @@ monad = [
     "forge-verify/monad",
 ]
 base = [
+    "revm",
     "anvil/base",
     "foundry-evm/base",
     "foundry-evm-networks/base",
@@ -89,6 +103,7 @@ base = [
     "forge-verify/base",
 ]
 optimism = [
+    "revm",
     "foundry-evm/optimism",
     "foundry-evm-networks/optimism",
     "foundry-common/optimism",

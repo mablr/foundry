@@ -1,12 +1,11 @@
-use std::{cmp::Ordering, num::NonZeroU64, sync::Arc, time::Duration};
+use std::{cmp::Ordering, sync::Arc, time::Duration};
 
 use crate::{
     ScriptArgs, ScriptConfig,
     build::LinkedBuildData,
     progress::ScriptProgress,
-    receipts::is_mined_receipt_for,
-    recovery::{AttemptKind, DelegatedStatus},
-    sequence::{ScriptSequenceKind, completed_transaction_prefix},
+    recovery::DelegatedStatus,
+    sequence::ScriptSequenceKind,
     session::{
         RemainingScriptTransaction, SignerScope,
         insert_session_access_key_for_remaining_transactions,
@@ -15,14 +14,17 @@ use crate::{
     verify::BroadcastedState,
 };
 use alloy_chains::{Chain, NamedChain};
-use alloy_consensus::{SignableTransaction, Signed, transaction::SignerRecoverable};
+use alloy_consensus::{SignableTransaction, Signed};
 use alloy_eips::eip2718::{Decodable2718, Encodable2718};
+#[cfg(feature = "revm")]
+use alloy_network::TransactionResponse;
 use alloy_network::{
     EthereumWallet, Network, NetworkTransactionBuilder, ReceiptResponse, TransactionBuilder,
-    TransactionResponse,
 };
+#[cfg(feature = "revm")]
+use alloy_primitives::keccak256;
 use alloy_primitives::{
-    Address, Bytes, TxHash, TxKind, U256, keccak256,
+    Address, Bytes, TxHash,
     map::{AddressHashMap, AddressHashSet, HashMap},
     utils::format_units,
 };
@@ -31,10 +33,10 @@ use alloy_provider::{
     transport::{RpcError, TransportError},
     utils::Eip1559Estimation,
 };
-use alloy_rpc_types::TransactionRequest;
 use alloy_signer::Signature;
-use eyre::{Context, ContextCompat, Result, bail};
-use forge_script_sequence::ScriptSequence;
+#[cfg(feature = "revm")]
+use eyre::ContextCompat;
+use eyre::{Context, Result, bail};
 use foundry_cheatcodes::Wallets;
 use foundry_cli::utils::{has_batch_support, has_different_gas_calc};
 use foundry_common::{
@@ -47,11 +49,10 @@ use foundry_common::{
     tempo::{TempoSponsor, maybe_print_fee_token, resolve_and_set_fee_token},
 };
 use foundry_config::Config;
+use foundry_evm::core::evm::FoundryEvmNetwork;
+#[cfg(feature = "revm")]
 use foundry_evm::{
-    core::{
-        constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH,
-        evm::{FoundryEvmNetwork, TempoEvmNetwork},
-    },
+    core::{constants::DEFAULT_CREATE2_DEPLOYER_CODEHASH, evm::TempoEvmNetwork},
     traces::CallKind,
 };
 use foundry_wallets::{
@@ -60,10 +61,27 @@ use foundry_wallets::{
 };
 use futures::{FutureExt, StreamExt, future::join_all, stream::FuturesUnordered};
 use itertools::Itertools;
-use tempo_alloy::{
-    TempoNetwork,
-    rpc::{TempoTransactionReceipt, TempoTransactionRequest},
-};
+#[cfg(feature = "revm")]
+use std::num::NonZeroU64;
+#[cfg(feature = "revm")]
+use tempo_alloy::rpc::TempoTransactionReceipt;
+
+#[cfg(feature = "revm")]
+use crate::recovery::AttemptKind;
+
+#[cfg(any(test, feature = "revm"))]
+use crate::{receipts::is_mined_receipt_for, sequence::completed_transaction_prefix};
+#[cfg(any(test, feature = "revm"))]
+use alloy_consensus::transaction::SignerRecoverable;
+#[cfg(any(test, feature = "revm"))]
+use alloy_primitives::{TxKind, U256};
+#[cfg(any(test, feature = "revm"))]
+use alloy_rpc_types::TransactionRequest;
+#[cfg(any(test, feature = "revm"))]
+use forge_script_sequence::ScriptSequence;
+#[cfg(any(test, feature = "revm"))]
+use tempo_alloy::{TempoNetwork, rpc::TempoTransactionRequest};
+#[cfg(any(test, feature = "revm"))]
 use tempo_primitives::transaction::{Call, TempoTxEnvelope};
 
 /// Represents how to send a single transaction.
@@ -163,6 +181,10 @@ where
                     }
                 }
             }
+        }
+
+        if tx.blob_versioned_hashes().is_some() && tx.max_fee_per_blob_gas().is_none() {
+            tx.set_max_fee_per_blob_gas(provider.get_blob_base_fee().await?);
         }
 
         if let Some(wallet) = tempo_wallet {
@@ -310,6 +332,7 @@ fn is_unlocked_non_submission(code: i64, message: &str) -> bool {
     code == -32602 && message == "No Signer available"
 }
 
+#[cfg(any(test, feature = "revm"))]
 fn tempo_batch_calls(
     sequence: &ScriptSequence<TempoNetwork>,
     first_operation: usize,
@@ -351,6 +374,7 @@ fn tempo_batch_calls(
         .collect()
 }
 
+#[cfg(any(test, feature = "revm"))]
 fn validate_tempo_batch_request(
     request: &TempoTransactionRequest,
     sender: Address,
@@ -370,6 +394,7 @@ fn validate_tempo_batch_request(
     Ok(())
 }
 
+#[cfg(any(test, feature = "revm"))]
 fn validate_tempo_batch_payload(
     request: &TempoTransactionRequest,
     payload: &[u8],
@@ -394,6 +419,7 @@ fn validate_tempo_batch_payload(
     Ok(envelope.trie_hash())
 }
 
+#[cfg(any(test, feature = "revm"))]
 fn validate_tempo_batch_envelope(
     envelope: &TempoTxEnvelope,
     sender: Address,
@@ -1131,6 +1157,7 @@ impl<FEN: FoundryEvmNetwork> BundledState<FEN> {
     }
 }
 
+#[cfg(feature = "revm")]
 impl BundledState<TempoEvmNetwork> {
     /// Broadcasts all transactions as a single Tempo batch transaction (type 0x76).
     ///
@@ -1670,6 +1697,7 @@ impl BundledState<TempoEvmNetwork> {
     }
 }
 
+#[cfg(feature = "revm")]
 async fn send_tempo_batch_payload(
     provider: &RootProvider<TempoNetwork>,
     payload: &[u8],
@@ -1692,6 +1720,7 @@ async fn send_tempo_batch_payload(
     }
 }
 
+#[cfg(any(test, feature = "revm"))]
 async fn wait_for_batch_receipt<N: Network>(
     provider: &RootProvider<N>,
     tx_hash: TxHash,
@@ -2263,6 +2292,29 @@ mod tests {
             from: Address::ZERO,
             to: None,
             contract_address: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn unsigned_blob_preparation_fills_only_missing_fee() {
+        for fee in [None, Some(13)] {
+            let asserter = Asserter::new();
+            let provider: RootProvider<Ethereum> =
+                alloy_provider::ProviderBuilder::default().connect_mocked_client(asserter.clone());
+            if fee.is_none() {
+                asserter.push_success(&alloy_primitives::U128::from(7));
+            }
+            let mut request = TransactionRequest::default();
+            request.set_blob_versioned_hashes(vec![B256::repeat_byte(1)]);
+            if let Some(fee) = fee {
+                request.set_max_fee_per_blob_gas(fee);
+            }
+            let mut sender = SendTransactionKind::<Ethereum>::Unlocked(request);
+            sender.prepare(&provider, false, true, false, 100, None).await.unwrap();
+            let SendTransactionKind::Unlocked(request) = sender else {
+                panic!("unsigned intent changed")
+            };
+            assert_eq!(request.max_fee_per_blob_gas, Some(fee.unwrap_or(7)));
         }
     }
 }

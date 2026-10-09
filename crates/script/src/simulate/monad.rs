@@ -3,7 +3,8 @@
 use super::{PreSimulationState, RpcContexts, RpcSimulationContext, context_for_rpc};
 use crate::{
     ScriptResult,
-    runner::{GasSearch, ScriptRunner, needs_more_gas},
+    gas_search::GasSearch,
+    runner::{ScriptRunner, needs_more_gas},
     simulate::FilledTransactionsState,
     transaction::ScriptTransactionBuilder,
 };
@@ -146,10 +147,13 @@ impl PreSimulationState<MonadEvmNetwork> {
 
         let mut contexts = HashMap::default();
         for (rpc, context) in self.build_runners().await? {
+            let super::SimulationRunner::Legacy(runner) = context.runner.into_inner() else {
+                eyre::bail!("Monad simulation requires its legacy runner");
+            };
             contexts.insert(
                 rpc,
                 RpcSimulationContext {
-                    runner: RwLock::new(MonadSimulation::new(context.runner.into_inner())?),
+                    runner: RwLock::new(MonadSimulation::new(*runner)?),
                     decoder: context.decoder,
                 },
             );
