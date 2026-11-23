@@ -1,0 +1,14 @@
+name = "foundry-formal"
+defaultTargets = ["Symbolic", "Deploy", "Cheatcodes", "Lifecycle"]
+
+[[lean_lib]]
+name = "Symbolic"
+
+[[lean_lib]]
+name = "Deploy"
+
+[[lean_lib]]
+name = "Cheatcodes"
+
+[[lean_lib]]
+name = "Lifecycle"
