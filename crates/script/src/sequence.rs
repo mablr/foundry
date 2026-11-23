@@ -16,22 +16,45 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt::{Error, Write},
+    hash::Hash,
     path::{Path, PathBuf},
 };
 
+/// Returns the number of leading transactions of `sequence` that are already mined, which is
+/// where `--resume` restarts broadcasting.
+///
+/// See [`completed_prefix`] for the contract.
 pub(crate) fn completed_transaction_prefix<N: Network>(
     sequence: &ScriptSequence<N>,
 ) -> Result<usize> {
-    let mut receipts = HashMap::<_, usize>::new();
-    for receipt in &sequence.receipts {
-        *receipts.entry(receipt.transaction_hash()).or_default() += 1;
+    completed_prefix(
+        sequence.transactions.iter().map(|transaction| transaction.hash),
+        sequence.receipts.iter().map(|receipt| receipt.transaction_hash()),
+    )
+}
+
+/// Matches receipt hashes against transaction hashes and returns the resume index.
+///
+/// Contract: returns `Ok(k)` iff the first `k` transactions all have a hash and the multiset of
+/// those `k` hashes equals the multiset of receipt hashes; otherwise returns an error. In
+/// particular `k` is always the number of receipts, and at most one `k` satisfies the contract.
+/// Proved for the Lean model in `formal/Deploy/Resume.lean` (`completedPrefix_iff`,
+/// `spec_unique`); the exhaustive test `completed_prefix_matches_spec` checks this function
+/// against the same contract.
+fn completed_prefix<H: Eq + Hash>(
+    transactions: impl IntoIterator<Item = Option<H>>,
+    receipts: impl IntoIterator<Item = H>,
+) -> Result<usize> {
+    let mut remaining = HashMap::<_, usize>::new();
+    for receipt in receipts {
+        *remaining.entry(receipt).or_default() += 1;
     }
 
     let mut prefix = 0;
     let mut incomplete = false;
-    for transaction in &sequence.transactions {
-        let complete = transaction.hash.is_some_and(|hash| {
-            receipts.get_mut(&hash).is_some_and(|count| {
+    for hash in transactions {
+        let complete = hash.is_some_and(|hash| {
+            remaining.get_mut(&hash).is_some_and(|count| {
                 if *count == 0 {
                     false
                 } else {
@@ -49,7 +72,7 @@ pub(crate) fn completed_transaction_prefix<N: Network>(
             incomplete = true;
         }
     }
-    if receipts.values().any(|count| *count != 0) {
+    if remaining.values().any(|count| *count != 0) {
         bail!("script progress contains a receipt without a matching operation");
     }
     Ok(prefix)
@@ -847,5 +870,55 @@ mod tests {
         assert_eq!(loaded.recovery.delegated_attempts()[0].2, attempt);
         assert!(paths.0.exists());
         assert!(paths.1.exists());
+    }
+
+    /// Reference for the [`completed_prefix`] contract, written independently of the scan.
+    fn completed_prefix_spec(transactions: &[Option<u8>], receipts: &[u8]) -> Option<usize> {
+        let k = receipts.len();
+        let mut prefix = transactions.get(..k)?.iter().copied().collect::<Option<Vec<_>>>()?;
+        let mut receipts = receipts.to_vec();
+        prefix.sort_unstable();
+        receipts.sort_unstable();
+        (prefix == receipts).then_some(k)
+    }
+
+    /// Calls `f` with every sequence of length at most `max_len` over `alphabet`.
+    fn for_each_sequence<T: Copy>(alphabet: &[T], max_len: usize, f: &mut impl FnMut(&[T])) {
+        fn go<T: Copy>(
+            alphabet: &[T],
+            max_len: usize,
+            current: &mut Vec<T>,
+            f: &mut impl FnMut(&[T]),
+        ) {
+            f(current);
+            if current.len() < max_len {
+                for &item in alphabet {
+                    current.push(item);
+                    go(alphabet, max_len, current, f);
+                    current.pop();
+                }
+            }
+        }
+        go(alphabet, max_len, &mut Vec::new(), f);
+    }
+
+    /// Conformance with `formal/Deploy/Resume.lean`: every transaction list of up to five
+    /// entries over three hashes (or none) against every receipt list of up to four hashes.
+    #[test]
+    fn completed_prefix_matches_spec() {
+        let mut cases = 0;
+        for_each_sequence(&[None, Some(0), Some(1), Some(2)], 5, &mut |transactions| {
+            for_each_sequence(&[0, 1, 2], 4, &mut |receipts| {
+                let actual =
+                    completed_prefix(transactions.iter().copied(), receipts.iter().copied());
+                assert_eq!(
+                    actual.ok(),
+                    completed_prefix_spec(transactions, receipts),
+                    "transactions: {transactions:?}, receipts: {receipts:?}"
+                );
+                cases += 1;
+            });
+        });
+        assert_eq!(cases, 1365 * 121);
     }
 }
