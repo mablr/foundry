@@ -214,7 +214,19 @@ fn is_partial_match(
     try_extract_and_compare_bytecode(local_bytecode, bytecode)
 }
 
+/// Compares two codes up to their trailing CBOR metadata.
+///
+/// Contract: returns `true` iff the codes are equal, or have the same length and agree outside a
+/// metadata region `[m, len - 2)` that both declare with the same trailing length. Solidity's init
+/// code locates the runtime and the constructor arguments by compile-time offsets, so onchain
+/// code declaring a longer metadata region than the local code would hide bytes the constructor
+/// decodes as arguments. Proved for the Lean model in `formal/Deploy/Metadata.lean`
+/// (`tryExtract_iff`, `matchBytecodes_args`).
 fn try_extract_and_compare_bytecode(mut local_bytecode: &[u8], mut bytecode: &[u8]) -> bool {
+    if local_bytecode.len() != bytecode.len() {
+        return false;
+    }
+
     local_bytecode = ignore_metadata_hash(local_bytecode);
     bytecode = ignore_metadata_hash(bytecode);
 
@@ -919,5 +931,46 @@ contract Broken {
 
         // Matching onchain args must not allow stripping past the local buffer.
         assert_eq!(match_bytecodes(&local, &args, &args, false, BytecodeHash::Ipfs), None);
+    }
+
+    /// Onchain code that declares a longer metadata region than the local code must not match.
+    /// Solidity's init code reads the constructor arguments from the end of the compiled
+    /// program, so a longer region would hide argument bytes the constructor actually decodes.
+    #[test]
+    fn metadata_region_must_not_hide_constructor_args() {
+        let code = alloy_primitives::hex!("6080604052348015600e575f5ffd5b50607b80601a5f395ff3fe");
+        let metadata = alloy_primitives::hex!(
+            "a2646970667358221220"
+            "1111111111111111111111111111111111111111111111111111111111111111"
+            "64736f6c634300081e0033"
+        );
+        let owner = Address::repeat_byte(0xa1).into_word();
+        let local = [code.as_slice(), &metadata, owner.as_slice()].concat();
+
+        // The last two bytes of `smuggled` declare a region spanning the real metadata and the
+        // rest of `smuggled`. ciborium decodes its leading CBOR map and ignores the remainder.
+        let smuggled = U256::from(metadata.len() + 30).to_be_bytes::<32>();
+        let onchain = [code.as_slice(), &metadata, &smuggled, owner.as_slice()].concat();
+
+        // The deployed constructor decodes `smuggled` as its first argument, not `owner`.
+        assert_eq!(&onchain[code.len() + metadata.len()..][..32], smuggled.as_slice());
+        assert_eq!(
+            match_bytecodes(&local, &onchain, owner.as_slice(), false, BytecodeHash::Ipfs),
+            None
+        );
+
+        // The same holds for runtime code.
+        let local = [code.as_slice(), &metadata].concat();
+        let onchain = [code.as_slice(), &metadata, &smuggled].concat();
+        assert_eq!(match_bytecodes(&local, &onchain, &[], true, BytecodeHash::Ipfs), None);
+
+        // Metadata of the same length still yields a partial match.
+        let mut other = metadata;
+        other[10] = 0x22;
+        let onchain = [code.as_slice(), &other].concat();
+        assert_eq!(
+            match_bytecodes(&local, &onchain, &[], true, BytecodeHash::Ipfs),
+            Some(VerificationType::Partial)
+        );
     }
 }
