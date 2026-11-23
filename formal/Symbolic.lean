@@ -8,3 +8,4 @@ import Symbolic.BoolRules
 import Symbolic.Lowering
 import Symbolic.Smt
 import Symbolic.Xor
+import Symbolic.Bits
