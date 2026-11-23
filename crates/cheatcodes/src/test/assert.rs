@@ -539,6 +539,8 @@ fn assert_le<'a, T: PartialOrd>(left: &'a T, right: &'a T) -> ComparisonResult<'
     }
 }
 
+/// Returns `|left - right|`, computed exactly: the opposite-sign sum is at most `2^256 - 1`, so
+/// `wrapping_add` never wraps. This is `getDeltaInt_eq` in `formal/Cheatcodes/Approx.lean`.
 fn get_delta_int(left: I256, right: I256) -> U256 {
     let (left_sign, left_abs) = left.into_sign_and_abs();
     let (right_sign, right_abs) = right.into_sign_and_abs();
@@ -552,7 +554,9 @@ fn get_delta_int(left: I256, right: I256) -> U256 {
 
 /// Calculates the relative delta for an absolute difference.
 ///
-/// Avoids overflow in the multiplication by using [`U512`] to hold the intermediary result.
+/// Avoids overflow in the multiplication by using [`U512`] to hold the intermediary result, so the
+/// result is exactly `⌊abs_diff * 10^18 / right⌋`, or `Overflow` iff that is at least `2^256`
+/// (`calcDeltaFull_eq` in `formal/Cheatcodes/Approx.lean`).
 fn calc_delta_full<T>(abs_diff: U256, right: U256) -> Result<U256, EqRelAssertionError<T>> {
     let delta = U512::from(abs_diff) * U512::from(10).pow(U512::from(EQ_REL_DELTA_RESOLUTION))
         / U512::from(right);
@@ -1137,5 +1141,49 @@ mod tests {
         assert_eq!(trace.halt(), None);
         assert!(copy.take_skipped_host_effects());
         assert_eq!(trace.halt(), halt);
+    }
+
+    /// The vectors and results of `#eval vectors` in `formal/Cheatcodes/Approx.lean`, where
+    /// `getDeltaInt_eq` and `intRel_eq_spec` prove the deltas exact.
+    #[test]
+    fn approx_eq_matches_lean_vectors() {
+        /// Relative delta, or why it is not reported.
+        #[derive(Debug, PartialEq)]
+        enum Rel {
+            Delta(U256),
+            Undefined,
+            Overflow,
+        }
+
+        let int = |value: i64| I256::try_from(value).unwrap();
+        let delta = |value: &str| Rel::Delta(U256::from_str_radix(value, 10).unwrap());
+        let (min, max) = (I256::MIN, I256::MAX);
+        for (left, right, abs, rel) in [
+            (min, max, U256::MAX, delta("2000000000000000000")),
+            (max, min, U256::MAX, delta("1999999999999999999")),
+            (min, min, U256::ZERO, delta("0")),
+            (int(-5), int(3), U256::from(8), delta("2666666666666666666")),
+            (int(3), int(-5), U256::from(8), delta("1600000000000000000")),
+            (int(-3), int(-5), U256::from(2), delta("400000000000000000")),
+            (int(0), int(0), U256::ZERO, delta("0")),
+            (int(7), int(0), U256::from(7), Rel::Undefined),
+            (max, int(1), max.into_raw() - U256::ONE, Rel::Overflow),
+            (min, int(-1), max.into_raw(), Rel::Overflow),
+            (int(1), int(3), U256::from(2), delta("666666666666666666")),
+            (int(-1), max, U256::ONE << 255, delta("1000000000000000000")),
+        ] {
+            assert_eq!(get_delta_int(left, right), abs, "{left} - {right}");
+            assert!(int_assert_approx_eq_abs(left, right, abs).is_ok());
+            assert_eq!(int_assert_approx_eq_abs(left, right, U256::ZERO).is_ok(), abs.is_zero());
+            let actual = match int_assert_approx_eq_rel(left, right, U256::ZERO) {
+                Ok(()) => Rel::Delta(U256::ZERO),
+                Err(EqRelAssertionError::Failure(failure)) => match failure.real_delta {
+                    EqRelDelta::Defined(delta) => Rel::Delta(delta),
+                    EqRelDelta::Undefined => Rel::Undefined,
+                },
+                Err(EqRelAssertionError::Overflow) => Rel::Overflow,
+            };
+            assert_eq!(actual, rel, "{left} rel {right}");
+        }
     }
 }

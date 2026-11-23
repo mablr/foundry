@@ -88,6 +88,11 @@ impl EmitMismatch {
 /// Fills or checks the expected emits against an emitted log.
 ///
 /// Returns the failure reason if the log violates an expectation.
+///
+/// Once the expectations are filled, the logs of a call satisfy them iff the positive ones are
+/// matched in declaration order by consecutive blocks of logs, each with at least `count` matching
+/// logs, and no log matches a `count = 0` one. This is `run_spec` in
+/// `formal/Cheatcodes/ExpectEmit.lean`, which models this function as `observeWith`.
 pub(crate) fn observe_log(tracker: &mut ExpectedEmitTracker, log: &Log) -> Option<&'static str> {
     // Fill or check the expected emits.
     // We expect for emit checks to be filled as they're declared (from oldest to newest),
@@ -266,7 +271,7 @@ impl LogCountMap {
 /// has one, otherwise the sum over all emitters.
 ///
 /// Counts only logs that satisfy the checks against `log`, or every recorded log when `log` is
-/// `None`.
+/// `None`. This is `relCount` in `formal/Cheatcodes/ExpectEmit.lean` (`step_found_iff`).
 fn matched_count(
     expected: &ExpectedEmit,
     count_map: &AddressHashMap<LogCountMap>,
@@ -757,6 +762,85 @@ mod tests {
         assert_eq!(found(&tracker), [true]);
         assert!(check_call_emits(&mut tracker, 0, false, true).is_none());
         assert!(tracker.is_empty());
+    }
+
+    /// Whether `log` is one `expected` looks for: `relevant` in
+    /// `formal/Cheatcodes/ExpectEmit.lean`.
+    fn relevant(expected: &ExpectedEmit, log: &Log) -> bool {
+        checks_topics_and_data(expected.checks, expected.log.as_ref().unwrap(), &log.data)
+            && expected.address.is_none_or(|address| address == log.address)
+    }
+
+    /// `Sat` in `formal/Cheatcodes/ExpectEmit.lean`, by brute force over the splits of `logs`:
+    /// consecutive blocks of the logs, in order, each match one expectation at least `count`
+    /// times.
+    fn sat(expected: &[&ExpectedEmit], logs: &[Log]) -> bool {
+        let Some((first, rest)) = expected.split_first() else { return true };
+        (0..=logs.len()).any(|split| {
+            let matches = logs[..split].iter().filter(|log| relevant(first, log)).count();
+            matches as u64 >= first.count && sat(rest, &logs[split..])
+        })
+    }
+
+    /// Checks `observe_log` and `check_call_emits` against the contract proved as `run_spec` in
+    /// `formal/Cheatcodes/ExpectEmit.lean`, on pseudo-random queues and logs.
+    #[test]
+    fn matcher_conforms_to_specification() {
+        let bodies = [
+            log(EMITTER, vec![TOPIC_A], b"a"),
+            log(EMITTER, vec![TOPIC_A], b"b"),
+            log(EMITTER, vec![TOPIC_B], b"a"),
+        ];
+        let mut ignore_data = ALL;
+        ignore_data[4] = false;
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = |bound: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % bound) as usize
+        };
+
+        for _ in 0..20_000 {
+            let mut tracker = ExpectedEmitTracker::new();
+            for _ in 0..1 + next(3) {
+                let checks = if next(2) == 0 { ALL } else { ignore_data };
+                let address = [None, Some(EMITTER), Some(OTHER)][next(3)];
+                let count = next(3) as u64;
+                expect_with(&mut tracker, Some(&bodies[next(3)]), checks, address, count, false);
+            }
+            let logs = (0..next(7))
+                .map(|_| {
+                    let data = bodies[next(3)].data.clone();
+                    Log { address: [EMITTER, OTHER][next(2)], data }
+                })
+                .collect::<Vec<_>>();
+            let declared = tracker.iter().map(|(expected, _)| expected.clone()).collect::<Vec<_>>();
+
+            let zero_hit = logs.iter().position(|log| {
+                declared.iter().any(|expected| expected.count == 0 && relevant(expected, log))
+            });
+            let mut failure = None;
+            for (i, log) in logs.iter().enumerate() {
+                if let Some(reason) = observe_log(&mut tracker, log) {
+                    failure = Some((i, reason));
+                    break;
+                }
+            }
+            let case = format!("{declared:?} {logs:?}");
+            assert_eq!(
+                failure,
+                zero_hit.map(|i| (i, "log emitted but expected 0 times")),
+                "{case}"
+            );
+            if failure.is_none() {
+                let positive =
+                    declared.iter().filter(|expected| expected.count > 0).collect::<Vec<_>>();
+                let passed = check_call_emits(&mut tracker, 0, false, true).is_none();
+                assert_eq!(passed, sat(&positive, &logs), "{case}");
+                assert_eq!(tracker.is_empty(), passed, "{case}");
+            }
+        }
     }
 
     #[test]

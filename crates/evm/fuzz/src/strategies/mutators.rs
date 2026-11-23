@@ -166,12 +166,18 @@ impl BoundMutator for I256 {
 
 /// Maps a random draw to a value in `[min, max]` other than `current`, given
 /// `min <= current <= max` and `min < max`.
+///
+/// Every such value is the image of a draw below `max - min` (`uBound_some` and
+/// `uBound_surjective` in `formal/Cheatcodes/Bound.lean`).
 fn bound_u256(current: U256, min: U256, max: U256, draw: U256) -> U256 {
     min + skip_offset(draw % (max - min), current - min)
 }
 
 /// Maps a random draw to a value in `[min, max]` other than `current`, given
 /// `min <= current <= max` and `min < max`. With `flip`, the draw counts down from `max`.
+///
+/// Every such value is the image of some draw (`iBound_some` and `iBound_surjective` in
+/// `formal/Cheatcodes/Bound.lean`).
 fn bound_i256(current: I256, min: I256, max: I256, draw: U256, flip: bool) -> I256 {
     // Two's complement subtraction of ordered values gives their exact distance.
     let span = max.into_raw().wrapping_sub(min.into_raw());

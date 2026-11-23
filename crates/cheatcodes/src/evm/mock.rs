@@ -255,8 +255,11 @@ fn make_acc_non_empty<FEN: FoundryEvmNetwork>(
 
 /// Finds the return data queue of the mock matching a call.
 ///
-/// An exact calldata and value match wins. Otherwise, the first mock in map order whose calldata
-/// prefixes `input` and whose value, if set, equals `value` is used.
+/// A mock matches if its calldata prefixes `input` and its value, if set, equals `value`. Of the
+/// matching mocks, the one with the longest calldata wins and, for equal calldata, the one with a
+/// value wins over the one without. The reversed key order sorts every prefix of `input` at or
+/// after `ctx`, longest first, so the first match in range is that mock. This is `findMock_spec`
+/// in `formal/Cheatcodes/Mock.lean`.
 pub(crate) fn find_mock_returns<'a, T>(
     mocks: &'a mut BTreeMap<MockCallDataContext, VecDeque<T>>,
     input: &Bytes,
@@ -351,6 +354,58 @@ mod tests {
         let queue = find_mock_returns(&mut mocks, &Bytes::from_static(b"call"), None).unwrap();
         assert!(queue.is_empty());
         assert!(find_mock_returns(&mut mocks, &Bytes::from_static(b"other"), None).is_none());
+    }
+
+    /// Checks the lookup against the brute-force contract proved as `findMock_spec` in
+    /// `formal/Cheatcodes/Mock.lean`: among the mocks whose calldata prefixes the input and whose
+    /// value is unset or equal, the one with the longest calldata wins, then the one with a value.
+    #[test]
+    fn lookup_matches_longest_prefix_reference() {
+        let strings = |max_len: usize| {
+            (0..=max_len)
+                .flat_map(|len| {
+                    (0..1u32 << len).map(move |bits| {
+                        Bytes::from((0..len).map(|i| (bits >> i & 1) as u8).collect::<Vec<_>>())
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        let values = [None, Some(U256::ZERO), Some(U256::from(1)), Some(U256::from(2))];
+        let keys = strings(2)
+            .into_iter()
+            .flat_map(|calldata| values[..3].iter().map(move |&value| (calldata.clone(), value)))
+            .map(|(calldata, value)| MockCallDataContext { calldata, value })
+            .collect::<Vec<_>>();
+        let inputs = strings(3);
+
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        for _ in 0..2000 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            let present =
+                keys.iter().enumerate().filter(|(i, _)| seed >> i & 1 == 1).collect::<Vec<_>>();
+            let mut mocks = present
+                .iter()
+                .map(|(i, key)| ((*key).clone(), VecDeque::from([*i])))
+                .collect::<BTreeMap<_, _>>();
+
+            for input in &inputs {
+                for &value in &values {
+                    let reference = present
+                        .iter()
+                        .filter(|(_, key)| {
+                            input.starts_with(&key.calldata)
+                                && key.value.is_none_or(|key_value| Some(key_value) == value)
+                        })
+                        .max_by_key(|(_, key)| (key.calldata.len(), key.value.is_some()))
+                        .map(|(i, _)| *i);
+                    let found = find_mock_returns(&mut mocks, input, value)
+                        .map(|queue| *queue.front().unwrap());
+                    assert_eq!(found, reference, "input {input}, value {value:?}, mocks {seed:#x}");
+                }
+            }
+        }
     }
 
     #[test]
