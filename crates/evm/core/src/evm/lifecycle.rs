@@ -393,6 +393,13 @@ impl PersistentWrite {
     /// later replay keeps the saturation. Each change takes the highest [`Replay`] mode of the
     /// writes it combines, so a change that includes an absolute write keeps setting the value it
     /// left under enclosing rollbacks.
+    ///
+    /// Proved in `formal/Lifecycle/PersistentWrite.lean`: the values stay in range
+    /// (`applyAll_le`), an absolute write resets the account (`accOf_absolute`), the modes combine
+    /// by maximum (`accOf_mode`), replaying the returned changes over the same pre-state leaves
+    /// the same values (`applyAll_applied`), combining agrees with one-by-one application when
+    /// nothing saturates (`applyAll_eq_applySeq`), and deferring balance and nonce writes past the
+    /// others is sound because they touch disjoint fields (`applyAccount_separates`).
     pub fn apply_all<'w>(
         writes: impl IntoIterator<Item = &'w Self>,
         state: &mut State<'_>,
@@ -654,6 +661,11 @@ impl<F: FoundryEvmFactory> ExecutionLifecycle<F> {
     }
 
     /// Registers a fork without selecting it and returns its local fork ID.
+    ///
+    /// The fork starts from what the running transaction loaded and created in the local context
+    /// before it last left it. While the local context is active it has loaded nothing
+    /// (`WF.homeUnloaded` in `formal/Lifecycle/RegistryProofs.lean`), so a fork created then
+    /// starts from its database (`createFork_fresh`).
     pub fn create_fork(
         &mut self,
         info: ForkInfo,
@@ -671,6 +683,14 @@ impl<F: FoundryEvmFactory> ExecutionLifecycle<F> {
     /// Persistent accounts carry their accepted state into the target. Leaving the local context
     /// makes what the running transaction loaded and created there the initial state of every
     /// fork.
+    ///
+    /// Only what the source context holds in its accepted state carries: locations it never
+    /// loaded or read, including through untracked reads, which cache in the overlay, are read
+    /// from the target's database. Proved over the model in `formal/Lifecycle/Contract.lean`:
+    /// persistent accounts carry (`selectFork_carries_persistent`), other accounts keep each
+    /// context's state (`selectFork_isolates`), and every departure from the local context, also
+    /// one after a revert to a snapshot of it, overwrites the slots it loaded in every fork
+    /// (`selectFork_from_local_seeds_forks`).
     pub fn select_fork(
         &mut self,
         evm: &mut Evm<'_, F::Types>,
@@ -708,6 +728,8 @@ impl<F: FoundryEvmFactory> ExecutionLifecycle<F> {
     /// The fork starts over from the initial fork state, keeping persistent accounts and accounts
     /// created on the fork. Rolling the running context also keeps other loaded accounts, but
     /// reloads only their info from the new database, discarding their pre-roll storage slots.
+    /// See `rollFork_active_resets`, `rollFork_active_persistent` and `rollFork_inactive` in
+    /// `formal/Lifecycle/Contract.lean`.
     ///
     /// With `cache`, the fork resumes with it as its accepted state, such as state replayed up to a
     /// transaction.
@@ -923,7 +945,11 @@ impl<F: FoundryEvmFactory> ExecutionLifecycle<F> {
     ///
     /// Logs emitted since the snapshot are kept. Only the context that was active at the snapshot
     /// gets its state back and becomes active again; other contexts, persistent
-    /// accounts and forks created after the snapshot are left as they are.
+    /// accounts and forks created after the snapshot are left as they are. The running context,
+    /// if it is another one, keeps its accepted state but drops what the running transaction wrote
+    /// on it since it last became active; what an earlier switch away from it accepted stays.
+    /// Proved over the model as `revertTo_restores`, `revertTo_frame`, `revertTo_leaves_running`
+    /// and `revertTo_keeps` in `formal/Lifecycle/Contract.lean`.
     /// The replaced state is materialized, so that a failing frame can reinstate it over a backing
     /// database with [`SnapshotRestores`](super::SnapshotRestores).
     pub fn revert(

@@ -405,7 +405,8 @@ impl<T: EvmTypesHost> ForkRegistry<T> {
     /// Merges persistent accounts' accepted state from `source` into `target`.
     ///
     /// Slots of `source` override those of `target`, and other `target` slots are kept unless
-    /// `source` wiped the account's storage.
+    /// `source` wiped the account's storage. Only what `source` caches carries: `mergePersistent`
+    /// in `formal/Lifecycle/Registry.lean`.
     pub(super) fn merge_persistent(&self, source: &Cache, target: &mut Cache) {
         for address in &self.persistent {
             copy_account(address, source, target);

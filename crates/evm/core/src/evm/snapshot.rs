@@ -70,6 +70,11 @@ impl<T: EvmTypesHost> fmt::Debug for LifecycleSnapshot<T> {
 /// Only the first restoration since a frame started is retained, which is the one that frame needs
 /// to unwind, so retained states are bounded by call depth. A nested transaction has its own
 /// journal and needs its own instance.
+///
+/// Modeled in `formal/Lifecycle/Restores.lean`, which proves the bound for properly nested frames
+/// (`R.Inv.bound`), that a failing frame reinstates its first restoration with the ledger recorded
+/// then followed by the writes since (`frameEnd_after_capture`), and that frames close in stack
+/// order (`frameEnd_frames`).
 #[derive(Clone, Debug, Default)]
 pub struct SnapshotRestores {
     frames: Vec<RestoreFrame>,
@@ -221,3 +226,6 @@ impl SnapshotRestores {
         self.kept
     }
 }
+
+#[cfg(test)]
+mod tests;

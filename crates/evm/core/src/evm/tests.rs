@@ -20,6 +20,9 @@ use std::num::NonZeroU64;
 use tempo_alloy::primitives::{TempoTransaction, TempoTxEnvelope, transaction::Call};
 use tempo_primitives::TempoSignature;
 
+mod lifecycle_model;
+mod persistent_write_model;
+
 const GWEI: u128 = 1_000_000_000;
 pub(crate) const ETHER: u128 = 1_000_000_000_000_000_000;
 
@@ -182,7 +185,7 @@ where
     evm.state_mut().account(&persistent).unwrap().set_balance(U256::from(6));
     evm.state_mut().commit_transaction();
 
-    // Reverting a snapshot taken on the fork restores every fork's state and the selection.
+    // Reverting a snapshot taken on the fork restores the fork's state and the selection.
     let on_fork = lifecycle.snapshot(&mut evm);
     lifecycle.select_fork(&mut evm, None, phase).unwrap();
     assert_eq!(slot(&mut evm), U256::from(8));
