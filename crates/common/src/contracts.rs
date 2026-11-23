@@ -67,6 +67,12 @@ fn has_call_protection(code: &BytecodeObject) -> bool {
 }
 
 /// Sorts and merges overlapping or adjacent byte ranges.
+///
+/// Contract: the result is sorted, each range ends strictly before the next one starts, and it
+/// covers exactly the bytes the input covers. No merged range ends after the last input end, so
+/// the `u32` narrowing is exact. Proved for the Lean model in `formal/Deploy/Offsets.lean`
+/// (`normalize_separated`, `covers_normalize`, `normalize_bounds`); checked against a byte mask
+/// by `normalize_offsets_matches_mask`.
 fn normalize_offsets(offsets: &mut Vec<Offsets>) {
     offsets.sort_by_key(|o| o.start);
 
@@ -85,6 +91,44 @@ fn normalize_offsets(offsets: &mut Vec<Offsets>) {
         merged.push(offset);
     }
     *offsets = merged;
+}
+
+/// Returns whether `deployed_code` and `code` agree on every byte outside the `ignored` ranges.
+///
+/// Contract: for `code.len()` equal to the length of `deployed_code`, returns `true` iff every
+/// byte outside the union of `ignored` decodes and equals the byte of `code`; the ranges may
+/// overlap, touch or come in any order. Proved for the Lean model in `formal/Deploy/Offsets.lean`
+/// (`partialMatch_iff`); checked against a byte mask by `matches_outside_matches_mask`.
+///
+/// Panics if a range starts past the end of the code.
+fn matches_outside(deployed_code: &BytecodeObject, code: &[u8], mut ignored: Vec<Offsets>) -> bool {
+    // Merge ranges from independent sources before slicing between them.
+    normalize_offsets(&mut ignored);
+
+    // Compares `left..right`, or the whole suffix from `left` when `right` is `None`.
+    let matches = |left: usize, right: Option<usize>| {
+        let code = right.map_or(&code[left..], |right| &code[left..right]);
+        match deployed_code {
+            BytecodeObject::Bytecode(bytes) => {
+                right.map_or(&bytes[left..], |right| &bytes[left..right]) == code
+            }
+            BytecodeObject::Unlinked(bytes) => {
+                let hex = right.map_or(&bytes[left * 2..], |right| &bytes[left * 2..right * 2]);
+                Bytes::from_str(hex).is_ok_and(|bytes| *bytes == *code)
+            }
+        }
+    };
+
+    let mut left = 0;
+    for offset in ignored {
+        let right = offset.start as usize;
+        if !matches(left, Some(right)) {
+            return false;
+        }
+        left = right + offset.length as usize;
+    }
+
+    left >= code.len() || matches(left, None)
 }
 
 impl From<CompactBytecode> for BytecodeData {
@@ -365,7 +409,7 @@ impl ContractsByArtifact {
         let mut partial_match = None;
         let mut exact_match = None;
         let mut ambiguous_partial = false;
-        'contracts: for (id, contract) in self.iter() {
+        for (id, contract) in self.iter() {
             let Some(deployed_bytecode) = &contract.deployed_bytecode else {
                 continue;
             };
@@ -420,47 +464,7 @@ impl ContractsByArtifact {
                 });
             }
 
-            // Merge ranges from independent sources before slicing between them.
-            normalize_offsets(&mut ignored);
-
-            let mut left = 0;
-            for offset in ignored {
-                let right = offset.start as usize;
-
-                let matched = match deployed_code {
-                    BytecodeObject::Bytecode(bytes) => bytes[left..right] == code[left..right],
-                    BytecodeObject::Unlinked(bytes) => {
-                        if let Ok(bytes) = Bytes::from_str(&bytes[left * 2..right * 2]) {
-                            bytes == code[left..right]
-                        } else {
-                            false
-                        }
-                    }
-                };
-
-                if !matched {
-                    continue 'contracts;
-                }
-
-                left = right + offset.length as usize;
-            }
-
-            let is_partial = if left < code.len() {
-                match deployed_code {
-                    BytecodeObject::Bytecode(bytes) => bytes[left..] == code[left..],
-                    BytecodeObject::Unlinked(bytes) => {
-                        if let Ok(bytes) = Bytes::from_str(&bytes[left * 2..]) {
-                            bytes == code[left..]
-                        } else {
-                            false
-                        }
-                    }
-                }
-            } else {
-                true
-            };
-
-            if !is_partial {
+            if !matches_outside(deployed_code, code, ignored) {
                 continue;
             }
 
@@ -1012,5 +1016,89 @@ mod tests {
             offsets,
             vec![Offsets { start: 1, length: 5 }, Offsets { start: 10, length: 5 }]
         );
+    }
+
+    /// Returns every list of at most `max_len` ranges with `start <= max_start` and
+    /// `length <= max_length`.
+    fn range_lists(max_len: usize, max_start: u32, max_length: u32) -> Vec<Vec<Offsets>> {
+        let ranges = (0..=max_start)
+            .flat_map(|start| (0..=max_length).map(move |length| Offsets { start, length }))
+            .collect::<Vec<_>>();
+        let mut lists = vec![vec![]];
+        let mut last = vec![vec![]];
+        for _ in 0..max_len {
+            last = last
+                .iter()
+                .flat_map(|list| {
+                    ranges.iter().map(move |range| [list.as_slice(), &[range.clone()]].concat())
+                })
+                .collect();
+            lists.extend(last.iter().cloned());
+        }
+        lists
+    }
+
+    /// Returns which of the first `len` bytes `ranges` cover.
+    fn mask(ranges: &[Offsets], len: usize) -> Vec<bool> {
+        (0..len)
+            .map(|i| {
+                ranges.iter().any(|r| r.start as usize <= i && i < (r.start + r.length) as usize)
+            })
+            .collect()
+    }
+
+    /// Conformance with `formal/Deploy/Offsets.lean` (`normalize_separated`,
+    /// `covers_normalize`): all lists of up to three ranges over a 10-byte window.
+    #[test]
+    fn normalize_offsets_matches_mask() {
+        let lists = range_lists(3, 6, 4);
+        assert_eq!(lists.len(), 1 + 35 + 35 * 35 + 35 * 35 * 35);
+        for list in lists {
+            let mut normalized = list.clone();
+            normalize_offsets(&mut normalized);
+            for pair in normalized.windows(2) {
+                assert!(
+                    pair[0].start + pair[0].length < pair[1].start,
+                    "{list:?} -> {normalized:?}"
+                );
+            }
+            assert_eq!(mask(&normalized, 12), mask(&list, 12), "{list:?} -> {normalized:?}");
+        }
+    }
+
+    /// Conformance with `formal/Deploy/Offsets.lean` (`partialMatch_iff`): for all lists of up to
+    /// two ranges starting within six bytes of code, and every set of differing bytes, the
+    /// comparison succeeds iff every differing byte is covered. Differing bytes are a changed
+    /// byte for linked code and an undecodable placeholder for unlinked code.
+    #[test]
+    fn matches_outside_matches_mask() {
+        let code = [0x10u8, 0x11, 0x12, 0x13, 0x14, 0x15];
+        for list in range_lists(2, code.len() as u32, 3) {
+            let covered = mask(&list, code.len());
+            for differing in 0..1u32 << code.len() {
+                let differs = |i: usize| differing & (1 << i) != 0;
+                let expected = (0..code.len()).all(|i| !differs(i) || covered[i]);
+
+                let linked = code
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &byte)| if differs(i) { !byte } else { byte })
+                    .collect::<Vec<_>>();
+                let linked = BytecodeObject::Bytecode(linked.into());
+                assert_eq!(matches_outside(&linked, &code, list.clone()), expected, "{list:?}");
+
+                let unlinked = code
+                    .iter()
+                    .enumerate()
+                    .map(
+                        |(i, byte)| {
+                            if differs(i) { "__".to_string() } else { hex::encode([*byte]) }
+                        },
+                    )
+                    .collect::<String>();
+                let unlinked = BytecodeObject::Unlinked(unlinked);
+                assert_eq!(matches_outside(&unlinked, &code, list.clone()), expected, "{list:?}");
+            }
+        }
     }
 }
