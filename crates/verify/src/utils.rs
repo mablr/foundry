@@ -619,6 +619,7 @@ mod tests {
     use crate::verify::VerifierArgs;
     use alloy_json_abi::JsonAbi;
     use foundry_cli::opts::EtherscanOpts;
+    use foundry_common::find_metadata_start;
     use foundry_compilers::PathStyle;
     use foundry_config::NamedChain;
     use foundry_test_utils::{TestProject, util::SOLC_VERSION};
@@ -972,5 +973,102 @@ contract Broken {
             match_bytecodes(&local, &onchain, &[], true, BytecodeHash::Ipfs),
             Some(VerificationType::Partial)
         );
+    }
+
+    /// Deterministic xorshift generator for the conformance tests.
+    struct XorShift(u64);
+
+    impl XorShift {
+        /// Returns a value below `bound`.
+        fn below(&mut self, bound: usize) -> usize {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 % bound as u64) as usize
+        }
+
+        /// Returns a byte that starts a CBOR item of some kind, or a plain opcode.
+        fn byte(&mut self) -> u8 {
+            const ALPHABET: [u8; 6] = [0x00, 0x01, 0x60, 0xa1, 0x41, 0xff];
+            ALPHABET[self.below(ALPHABET.len())]
+        }
+
+        /// Returns up to `max` random bytes.
+        fn bytes(&mut self, max: usize) -> Vec<u8> {
+            (0..self.below(max + 1)).map(|_| self.byte()).collect()
+        }
+    }
+
+    /// The `SameUpToMetadata` contract of `formal/Deploy/Metadata.lean`: equal, or of equal
+    /// length and equal outside a metadata region that both sides declare identically.
+    fn same_up_to_metadata(a: &[u8], b: &[u8]) -> bool {
+        a == b
+            || (a.len() == b.len()
+                && find_metadata_start(a).is_some_and(|m| {
+                    find_metadata_start(b) == Some(m)
+                        && a[..m] == b[..m]
+                        && a[a.len() - 2..] == b[b.len() - 2..]
+                }))
+    }
+
+    /// Conformance with `formal/Deploy/Metadata.lean` (`tryExtract_iff`,
+    /// `matchBytecodes_creation_sound`): random codes with real and forged metadata tails,
+    /// mutated and compared both as runtime code and as creation code with arguments.
+    #[test]
+    fn match_bytecodes_matches_contract() {
+        let mut rng = XorShift(0x9e37_79b9_7f4a_7c15);
+        let with_metadata = |prefix: &[u8], metadata: &[u8]| {
+            [prefix, metadata, &(metadata.len() as u16).to_be_bytes()].concat()
+        };
+
+        let (mut partial, mut rejected) = (0, 0);
+        for _ in 0..200_000 {
+            let prefix = rng.bytes(4);
+            let metadata = rng.bytes(3);
+            let local = with_metadata(&prefix, &metadata);
+            let onchain = match rng.below(5) {
+                0 => local.clone(),
+                1 => with_metadata(&prefix, &rng.bytes(3)),
+                2 => {
+                    let mut onchain = local.clone();
+                    let i = rng.below(onchain.len());
+                    onchain[i] = rng.byte();
+                    onchain
+                }
+                3 => [local.as_slice(), &rng.bytes(3)].concat(),
+                _ => rng.bytes(8),
+            };
+
+            let expected = same_up_to_metadata(&local, &onchain);
+            let actual = match_bytecodes(&local, &onchain, &[], true, BytecodeHash::Ipfs);
+            assert_eq!(actual.is_some(), expected, "local: {local:?}, onchain: {onchain:?}");
+            if expected && local != onchain {
+                partial += 1;
+            } else if !expected {
+                rejected += 1;
+            }
+
+            let args = rng.bytes(2);
+            if args.is_empty() {
+                continue;
+            }
+            let local = [local.as_slice(), &args].concat();
+            let onchain =
+                if rng.below(2) == 0 { [onchain.as_slice(), &args].concat() } else { onchain };
+            let actual = match_bytecodes(&local, &onchain, &args, false, BytecodeHash::Ipfs);
+            let expected = local == onchain
+                || (onchain.ends_with(&args)
+                    && same_up_to_metadata(
+                        &local[..local.len() - args.len()],
+                        &onchain[..onchain.len() - args.len()],
+                    ));
+            assert_eq!(actual.is_some(), expected, "local: {local:?}, onchain: {onchain:?}");
+            if actual.is_some() {
+                // The constructor decodes exactly the supplied arguments.
+                assert_eq!(&onchain[local.len() - args.len()..], args.as_slice());
+            }
+        }
+        // Both outcomes are well represented.
+        assert!(partial > 5_000 && rejected > 50_000, "partial: {partial}, rejected: {rejected}");
     }
 }
