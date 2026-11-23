@@ -4,6 +4,7 @@ import Symbolic.Expr
 import Symbolic.Guard
 import Symbolic.Rewrites
 import Symbolic.WordRules
+import Symbolic.BoolRules
 import Symbolic.Lowering
 import Symbolic.Smt
 import Symbolic.Xor
