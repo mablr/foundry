@@ -133,68 +133,66 @@ impl GaussianNoiseMutator for I256 {
 /// Mutator that bounds the current value of an uint or int in the given range.
 /// The mutated value is always different from the current value.
 pub trait BoundMutator: Sized + Copy + Debug {
+    /// Returns a random value in `[min, max]` other than `self`, or `None` if `self` is outside
+    /// the range or the range has fewer than two values.
+    ///
+    /// Every such value can be returned, and the draw is biased towards small offsets from `min`
+    /// (and, for signed values, from `max`).
     fn bound(self, min: Self, max: Self, test_runner: &mut TestRunner) -> Option<Self>;
 }
 
 impl BoundMutator for U256 {
     #[instrument(name = "U256::bound", level = "trace", skip(test_runner), ret)]
     fn bound(self, min: Self, max: Self, test_runner: &mut TestRunner) -> Option<Self> {
-        if min > max || self < min || self > max || min == max {
+        if min >= max || self < min || self > max {
             return None;
         }
 
-        let rng = test_runner.rng();
-
-        loop {
-            let bits = rng.random_range(8..=256);
-            let mask = (Self::ONE << bits) - Self::ONE;
-            let candidate = Self::from(rng.random::<u128>()) & mask;
-
-            // Map to range.
-            let candidate = min + (candidate % ((max - min).saturating_add(Self::ONE)));
-
-            if candidate != self {
-                return Some(candidate);
-            }
-        }
+        Some(bound_u256(self, min, max, random_width_biased(test_runner)))
     }
 }
 
 impl BoundMutator for I256 {
     #[instrument(name = "I256::bound", level = "trace", skip(test_runner), ret)]
     fn bound(self, min: Self, max: Self, test_runner: &mut TestRunner) -> Option<Self> {
-        if min > max || self < min || self > max || min == max {
+        if min >= max || self < min || self > max {
             return None;
         }
 
-        let rng = test_runner.rng();
-
-        loop {
-            let bits = rng.random_range(8..=255);
-            let mask = (U256::ONE << bits) - U256::ONE;
-            let rand_u = U256::from(rng.next_u64()) | (U256::from(rng.next_u64()) << 64);
-            let unsigned_candidate = rand_u & mask;
-
-            let signed_candidate = {
-                let midpoint = U256::ONE << (bits - 1);
-                if unsigned_candidate < midpoint {
-                    Self::from_raw(unsigned_candidate)
-                } else {
-                    Self::from_raw(unsigned_candidate) - Self::from_raw(U256::ONE << bits)
-                }
-            };
-
-            // Map to range.
-            let range = max.saturating_sub(min).saturating_add(Self::ONE).unsigned_abs();
-            let wrapped = Self::from_raw(signed_candidate.unsigned_abs() % range);
-            let candidate =
-                if signed_candidate.is_negative() { max - wrapped } else { min + wrapped };
-
-            if candidate != self {
-                return Some(candidate);
-            }
-        }
+        let draw = random_width_biased(test_runner);
+        Some(bound_i256(self, min, max, draw, test_runner.rng().random()))
     }
+}
+
+/// Maps a random draw to a value in `[min, max]` other than `current`, given
+/// `min <= current <= max` and `min < max`.
+fn bound_u256(current: U256, min: U256, max: U256, draw: U256) -> U256 {
+    min + skip_offset(draw % (max - min), current - min)
+}
+
+/// Maps a random draw to a value in `[min, max]` other than `current`, given
+/// `min <= current <= max` and `min < max`. With `flip`, the draw counts down from `max`.
+fn bound_i256(current: I256, min: I256, max: I256, draw: U256, flip: bool) -> I256 {
+    // Two's complement subtraction of ordered values gives their exact distance.
+    let span = max.into_raw().wrapping_sub(min.into_raw());
+    let mut offset = draw % span;
+    if flip {
+        offset = span - U256::ONE - offset;
+    }
+    let offset = skip_offset(offset, current.into_raw().wrapping_sub(min.into_raw()));
+    I256::from_raw(min.into_raw().wrapping_add(offset))
+}
+
+/// Draws a uniform random value of a random bit width in `[8, 256]`.
+fn random_width_biased(test_runner: &mut TestRunner) -> U256 {
+    let rng = test_runner.rng();
+    let bits = rng.random_range(8..=256);
+    U256::from_limbs(rng.random()) >> (256 - bits)
+}
+
+/// Maps an offset in `[0, span)` to one in `[0, span]` other than `skip`, one to one.
+fn skip_offset(offset: U256, skip: U256) -> U256 {
+    if offset >= skip { offset + U256::ONE } else { offset }
 }
 
 /// Mutator that changes the current value by flipping a random bit.
@@ -734,6 +732,80 @@ mod tests {
         // Test bound in [min, max] range.
         let result = original.bound(U256::MIN, U256::MAX, &mut runner);
         assert!(result.is_some(), "Mutation should occur");
+    }
+
+    #[test]
+    fn u256_bound_reaches_every_other_value() {
+        for (min, max) in [(0u64, 1u64), (0, 5), (7, 12)] {
+            for current in min..=max {
+                let mut hit = (0..max - min)
+                    .map(|draw| {
+                        bound_u256(
+                            U256::from(current),
+                            U256::from(min),
+                            U256::from(max),
+                            U256::from(draw),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                hit.sort();
+                let expected = (min..=max)
+                    .filter(|value| *value != current)
+                    .map(U256::from)
+                    .collect::<Vec<_>>();
+                assert_eq!(hit, expected, "current {current} in [{min}, {max}]");
+            }
+        }
+
+        // The full range reaches `max` and values above `2^128`.
+        let last = U256::MAX - U256::ONE;
+        assert_eq!(bound_u256(U256::ZERO, U256::ZERO, U256::MAX, last), U256::MAX);
+        let high = U256::ONE << 200;
+        assert_eq!(bound_u256(U256::ZERO, U256::ZERO, U256::MAX, high - U256::ONE), high);
+        let mut runner = TestRunner::new(Config::default());
+        let high_draws = (0..256)
+            .filter(|_| U256::ZERO.bound(U256::ZERO, U256::MAX, &mut runner).unwrap() > high)
+            .count();
+        assert!(high_draws > 0, "wide draws reach values above 2^200");
+    }
+
+    #[test]
+    fn i256_bound_reaches_every_other_value() {
+        let int = |value: i64| I256::try_from(value).unwrap();
+        for (min, max) in [(-1i64, 0i64), (-3, 3), (2, 6)] {
+            for current in min..=max {
+                for flip in [false, true] {
+                    let mut hit = (0..(max - min) as u64)
+                        .map(|draw| {
+                            bound_i256(int(current), int(min), int(max), U256::from(draw), flip)
+                        })
+                        .collect::<Vec<_>>();
+                    hit.sort();
+                    let expected =
+                        (min..=max).filter(|value| *value != current).map(int).collect::<Vec<_>>();
+                    assert_eq!(hit, expected, "current {current} in [{min}, {max}], flip {flip}");
+                }
+            }
+        }
+
+        // The full range reaches both ends.
+        let (min, max) = (I256::MIN, I256::MAX);
+        let last = U256::MAX - U256::ONE;
+        assert_eq!(bound_i256(I256::ZERO, min, max, last, false), max);
+        assert_eq!(bound_i256(I256::ZERO, min, max, U256::ZERO, false), min);
+        assert_eq!(bound_i256(max, min, max, U256::ZERO, true), max - I256::ONE);
+        assert_eq!(bound_i256(min, min, max, last, true), min + I256::ONE);
+    }
+
+    #[test]
+    fn bound_rejects_ranges_without_another_value() {
+        let mut runner = TestRunner::new(Config::default());
+        let one = U256::from(1);
+        assert_eq!(one.bound(one, one, &mut runner), None);
+        assert_eq!(one.bound(U256::from(2), U256::from(3), &mut runner), None);
+        assert_eq!(one.bound(U256::from(3), U256::ZERO, &mut runner), None);
+        assert_eq!(I256::MIN.bound(I256::ZERO, I256::MAX, &mut runner), None);
+        assert_eq!(I256::ZERO.bound(I256::ZERO, I256::ZERO, &mut runner), None);
     }
 
     #[test]
