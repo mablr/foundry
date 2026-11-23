@@ -612,6 +612,8 @@ impl<'a, 'cx> SymbolicAbiBuilder<'a, 'cx> {
         Ok(lengths)
     }
 
+    /// Constrains `word` to exactly the `uintN` values. Excluding a valid value would hide its
+    /// counterexample (`Symbolic.constrain_uint_exact` in `formal/Symbolic`).
     pub(super) fn constrain_uint(
         &mut self,
         state: &mut SymbolicAbiState,
@@ -628,6 +630,8 @@ impl<'a, 'cx> SymbolicAbiBuilder<'a, 'cx> {
         }
     }
 
+    /// Constrains `word` to exactly the `intN` values, as `word == signextend(N / 8 - 1, word)`
+    /// (`Symbolic.constrain_int_exact` in `formal/Symbolic`).
     pub(super) fn constrain_int(
         &mut self,
         state: &mut SymbolicAbiState,

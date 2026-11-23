@@ -71,6 +71,12 @@ pub(super) fn normalize_constraints_for_solver_cached(
 }
 
 /// Applies context-dependent rewrites to an already context-free-normalized conjunction.
+///
+/// A rewrite justified by facts of the same query keeps every point that satisfies the query, so
+/// an UNSAT answer for the result holds for the input (`Symbolic.refinesBUnder_and` in
+/// `formal/Symbolic`). Keeping a predicate out of its own context protects completeness: a
+/// self-justified rewrite can only drop the predicate, which risks a spurious model, not a false
+/// UNSAT.
 fn normalize_contextually(
     cx: &mut SymCx,
     normalized: Vec<SymBoolExpr>,

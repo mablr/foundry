@@ -215,7 +215,8 @@ fn affine_terms<'a>(relation: &Relation<'a>) -> ([Option<&'a SymExpr>; 2], U256)
 /// Checks a contradiction certificate by XORing selected source equalities directly. All opaque
 /// terms must cancel, leaving `0 = nonzero`, or `0 != 0` for a disequality certificate. This is a
 /// necessary contradiction even when atoms are related (e.g. `x` and `x & mask`); no independence
-/// assumption is used to establish UNSAT.
+/// assumption is used to establish UNSAT. Proved as `Symbolic.check_certificate_sound` in
+/// `formal/Symbolic`.
 fn check_certificate(
     relations: &[Relation<'_>],
     sources: U256,

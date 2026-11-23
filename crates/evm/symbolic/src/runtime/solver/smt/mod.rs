@@ -316,7 +316,9 @@ impl SmtCseWriter<'_> {
     /// Writes a division whose operands fit `width` bits over that width.
     ///
     /// `bvurem` by zero returns the dividend at any width. `bvudiv` by zero returns all ones, so
-    /// that case keeps the 256-bit result.
+    /// that case keeps the 256-bit result. The term equals the full-width `bvudiv` or `bvurem`
+    /// whenever both operands fit `width` bits (`Symbolic.narrowUDiv_eq`, `Symbolic.narrowURem_eq`
+    /// in `formal/Symbolic`).
     fn write_narrow_division(
         &self,
         out: &mut String,
@@ -346,6 +348,9 @@ impl SmtCseWriter<'_> {
         }
     }
 
+    /// Writes `addmod`, `mulmod` or `mulDiv` over a 512-bit intermediate, matching
+    /// [`SymTernOp::eval`] (`Symbolic.wideModular_addMod`, `wideModular_mulMod` and
+    /// `wideModular_mulDiv` in `formal/Symbolic`).
     fn write_wide_modular_arithmetic(
         &self,
         out: &mut String,

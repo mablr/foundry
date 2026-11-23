@@ -893,6 +893,11 @@ impl PathState {
         self.stack.push(SymExpr::binop(cx, op, a, b))
     }
 
+    /// Lowers `DIV`, `SDIV`, `MOD` and `SMOD` to `ite(b == 0, 0, a op b)`.
+    ///
+    /// The guard is what makes the raw division's zero-divisor value irrelevant, so that the EVM
+    /// evaluator and the SMT solver agree on the path condition. Proved as
+    /// `Symbolic.evalK_divGuard` and `Symbolic.WellGuarded.defined` in `formal/Symbolic`.
     pub(crate) fn bin_word_div_zero_guard(
         &mut self,
         cx: &mut SymCx,

@@ -519,6 +519,15 @@ impl SymExpr {
         }
     }
 
+    /// Builds `left binop right`, simplifying with the rewrite arms below.
+    ///
+    /// Every arm must refine the raw node: wherever the raw node is defined, with a raw division
+    /// by zero undefined, the result is defined with the same value. This is the contract that
+    /// keeps the EVM meaning of [`SymBinOp::eval`] and the SMT meaning of [`SymBinOp::smt`] in
+    /// agreement, so an arm may assume a nonzero divisor for a raw division it consumes. The
+    /// inventory in `formal/Symbolic/README.md` lists each arm with its `Symbolic.rw_*` theorem
+    /// or the reason it is not modelled; `formal/Symbolic/check-inventory.sh` checks it is
+    /// complete.
     pub(crate) fn binop(cx: &mut SymCx, binop: SymBinOp, left: Self, right: Self) -> Self {
         match binop {
             SymBinOp::Add => match (left.kind(), right.kind()) {
@@ -1738,6 +1747,11 @@ impl SymExpr {
         Some(U256::from_be_bytes(word))
     }
 
+    /// Returns an upper bound on the significant bits of every defined value of the word.
+    ///
+    /// A raw `UDiv` or `URem` is bounded by its dividend, which holds only where the divisor is
+    /// nonzero: SMT-LIB `bvudiv x 0` is all ones. Callers rely on the bound only where the
+    /// expression is defined. Proved as `Symbolic.unsignedBits_sound` in `formal/Symbolic`.
     pub(crate) fn unsigned_bits(&self) -> usize {
         let mut bit_widths = HashMap::default();
         let mut remaining = usize::MAX;
@@ -2391,6 +2405,11 @@ pub(crate) enum SymBinOp {
 
 impl SymBinOp {
     /// Returns the SMT function of a 256-bit operator. The SMT writer emits `MulHigh` itself.
+    ///
+    /// The division operators keep SMT-LIB semantics at a zero divisor (`x / 0` is all ones,
+    /// `x % 0` is `x`), unlike [`Self::eval`]. Both agree on every query whose raw divisions are
+    /// only observed where the divisor is nonzero, as `DIV` and `MOD` lower them
+    /// (`Symbolic.evalK_sound` and `Symbolic.evalK_divGuard` in `formal/Symbolic`).
     pub(crate) const fn smt(self) -> &'static str {
         match self {
             Self::MulHigh => unreachable!(),
@@ -2410,6 +2429,10 @@ impl SymBinOp {
         }
     }
 
+    /// Evaluates the operator with EVM semantics, where every division by zero is zero.
+    ///
+    /// See [`Self::smt`] for why this differs from the solver at a zero divisor and why that is
+    /// sound.
     pub(crate) fn eval(self, left: U256, right: U256) -> U256 {
         match self {
             Self::Add => left.wrapping_add(right),
