@@ -4,7 +4,7 @@ pragma solidity ^0.8.18;
 import "utils/Test.sol";
 
 contract BoundTest is Test {
-    function testBoundReachesEveryOtherValue() public view {
+    function testBoundReachesEveryOtherValue() public {
         bool[4] memory hit;
         for (uint256 i = 0; i < 200; i++) {
             uint256 value = vm.bound(uint256(1), 0, 3);
@@ -15,7 +15,7 @@ contract BoundTest is Test {
         assertTrue(hit[0] && hit[2] && hit[3]);
     }
 
-    function testBoundSignedReachesEveryOtherValue() public view {
+    function testBoundSignedReachesEveryOtherValue() public {
         bool[5] memory hit;
         for (uint256 i = 0; i < 200; i++) {
             int256 value = vm.bound(int256(0), -2, 2);
@@ -27,7 +27,7 @@ contract BoundTest is Test {
     }
 
     /// Values at or above `2^128` are reachable on wide ranges.
-    function testBoundReachesWideValues() public view {
+    function testBoundReachesWideValues() public {
         bool high;
         bool highSigned;
         for (uint256 i = 0; i < 100; i++) {
