@@ -112,7 +112,7 @@ lemmas), `clzWord_spec`, `constrain_int_exact` (31 lemmas), and the small word i
   `SymBinOp::eval`/`smt`, `unsigned_bits`, `bin_word_div_zero_guard`, `check_certificate`,
   `write_narrow_division`, `write_wide_modular_arithmetic`, `constrain_uint`/`constrain_int`,
   `normalize_contextually`), so a change there points at the proof to revisit.
-- A differential fuzzer was run against the Rust implementation while building this model: random
+- A differential fuzzer (`differential/fuzz.rs`, run as described in its README) was run against the Rust implementation while building this model: random
   and template-driven expression DAGs (Euclidean sums, `a - a % d`, checked-multiply guards,
   ceiling division, Remco's `mul_high`, power-of-two moduli, shifts, `SIGNEXTEND`/`BYTE`/`CLZ`,
   guarded signed division) were built through the smart constructors and compared with a
