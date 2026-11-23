@@ -9,3 +9,4 @@ import Symbolic.Lowering
 import Symbolic.Smt
 import Symbolic.Xor
 import Symbolic.Bits
+import Symbolic.NormRules
