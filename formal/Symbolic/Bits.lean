@@ -301,6 +301,61 @@ theorem rw_one_bit_word (a : Expr) (h1 : unsignedBits a = 1) :
   · have : v = 1#256 := BitVec.eq_of_toNat_eq (by rw [BitVec.toNat_ofNat]; omega)
     subst this; rfl
 
+/-! ## `and_const` and the remaining `shr_const` arms -/
+
+theorem bv_or_and (x y m : BitVec 256) : (x ||| y) &&& m = (x &&& m) ||| (y &&& m) := by bv_decide
+theorem bv_and_and (x m : BitVec 256) : x &&& m &&& m = x &&& m := by bv_decide
+theorem bv_self_and (x m : BitVec 256) : x &&& x &&& m = x &&& m := by bv_decide
+
+/-- `(a | b) & mask => (a & mask) | (b & mask)`. -/
+theorem rw_and_const_or (a b : Expr) (m : Word) :
+    Expr.bin .and (.bin .or a b) (.const m) ⊑
+      .bin .or (.bin .and a (.const m)) (.bin .and b (.const m)) := by
+  intro env v hv
+  obtain ⟨o, k, ho, hk, _, rfl⟩ := bin_defined hv
+  obtain ⟨x, y, hx, hy, _, rfl⟩ := bin_defined ho
+  simp at hk; subst hk
+  rw [bin_of_defined (bin_of_defined hx (evalK_const' _) (by simp [BinOp.isDiv]))
+    (bin_of_defined hy (evalK_const' _) (by simp [BinOp.isDiv])) (by simp [BinOp.isDiv])]
+  simp only [BinOp.evm, Option.some.injEq]
+  exact (bv_or_and x y _).symm
+
+/-- `(a & mask) & mask => a & mask`. -/
+theorem rw_and_const_idem (a : Expr) (m : Word) :
+    Expr.bin .and (.bin .and a (.const m)) (.const m) ⊑ .bin .and a (.const m) := by
+  intro env v hv
+  obtain ⟨o, k, ho, hk, _, rfl⟩ := bin_defined hv
+  obtain ⟨x, k', hx, hk', _, rfl⟩ := bin_defined ho
+  simp at hk hk'; subst hk hk'
+  rw [bin_of_defined hx (evalK_const' _) (by simp [BinOp.isDiv])]
+  simp only [BinOp.evm, Option.some.injEq]
+  exact (bv_and_and x _).symm
+
+/-- `(a & a) & mask => a & mask`. -/
+theorem rw_and_const_self (a : Expr) (m : Word) :
+    Expr.bin .and (.bin .and a a) (.const m) ⊑ .bin .and a (.const m) := by
+  intro env v hv
+  obtain ⟨o, k, ho, hk, _, rfl⟩ := bin_defined hv
+  obtain ⟨x, x', hx, hx', _, rfl⟩ := bin_defined ho
+  have : x' = x := Option.some.inj (hx'.symm.trans hx)
+  subst this
+  simp at hk; subst hk
+  rw [bin_of_defined hx (evalK_const' _) (by simp [BinOp.isDiv])]
+  simp only [BinOp.evm, Option.some.injEq]
+  exact (bv_self_and x' _).symm
+
+/-- `a >> 256 => 0`, for every constant shift of at least 256. -/
+theorem rw_shr_ge_256 (a : Expr) (k : Word) (hk : 256 ≤ k.toNat) :
+    Expr.bin .shr a (.const k) ⊑ .const 0 := by
+  intro env v hv
+  obtain ⟨x, k', hx, hk', _, rfl⟩ := bin_defined hv
+  simp at hk'; subst hk'
+  simp only [evalK_const', BinOp.evm, Option.some.injEq]
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.ushiftRight_eq', BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow,
+    Nat.div_eq_of_lt (lt_pow_of_lt_pow_le x.isLt hk)]
+  rfl
+
 end
 
 end Symbolic
