@@ -46,13 +46,12 @@ fn widen(value: U256) -> I512 {
     I512::from_raw(U512::from(value))
 }
 
+/// The balance and nonce results of `apply_ref`.
+type Applied = (Option<(U256, Replay)>, Option<(u64, Replay)>);
+
 /// `applyAll` for the balance and for the nonce writes that reach the accumulator, returning each
 /// value and mode if the account has writes of the kind.
-fn apply_ref(
-    balance: U256,
-    nonce: u64,
-    writes: &[PersistentWrite],
-) -> (Option<(U256, Replay)>, Option<(u64, Replay)>) {
+fn apply_ref(balance: U256, nonce: u64, writes: &[PersistentWrite]) -> Applied {
     let (mut balances, mut nonces) = (None::<Acc>, None::<Acc>);
     for write in writes {
         match write {

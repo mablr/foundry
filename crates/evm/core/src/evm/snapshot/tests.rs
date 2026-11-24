@@ -68,7 +68,7 @@ impl Model {
         };
         for x in &mut self.replaced {
             if let Some(l) = &mut x.later {
-                l.dropped.extend(ledger.iter().skip(l.since).cloned());
+                l.dropped.extend(ledger.iter().skip(l.since).copied());
                 l.since = len;
             }
         }
@@ -95,7 +95,7 @@ impl Model {
         let later = x.later.map_or_else(Vec::new, |l| {
             l.dropped
                 .into_iter()
-                .chain(ledger.iter().skip(l.since).cloned())
+                .chain(ledger.iter().skip(l.since).copied())
                 .map(|(depth, _, (value, _))| (depth, None, (value, true)))
                 .collect()
         });

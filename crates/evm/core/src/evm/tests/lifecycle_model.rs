@@ -422,7 +422,7 @@ impl Real {
                 Some(model_id)
             }
             Op::RevertTo(id, keep) => {
-                let Some(snapshot) = self.snapshots.get(&id) else { return None };
+                let snapshot = self.snapshots.get(&id)?;
                 let action = if keep {
                     RevertStateSnapshotAction::RevertKeep
                 } else {
@@ -431,7 +431,7 @@ impl Real {
                 ok(self.lifecycle.revert(&mut self.evm, *snapshot, action, phase).is_some())
             }
             Op::DeleteSnapshot(id) => {
-                let Some(snapshot) = self.snapshots.get(&id) else { return None };
+                let snapshot = self.snapshots.get(&id)?;
                 ok(self.lifecycle.delete_snapshot(*snapshot))
             }
             Op::RollFork(id, seed) => {
@@ -522,7 +522,7 @@ fn random_op(rng: &mut Rng, model: &Model) -> Op {
     let snap = rng.below(model.next_snap + 1);
     match rng.below(17) {
         0 if (model.forks.len() as u64) < MAX_FORKS => Op::CreateFork(1 + rng.below(3)),
-        0 | 1 | 2 => Op::SelectFork(fork),
+        0..=2 => Op::SelectFork(fork),
         3 | 4 => Op::SetBalance(account, value),
         5 | 6 => Op::SetSlot(account, value),
         7 => Op::MakePersistent(account),
