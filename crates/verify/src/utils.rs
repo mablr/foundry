@@ -1002,13 +1002,18 @@ contract Broken {
     /// The `SameUpToMetadata` contract of `formal/Deploy/Metadata.lean`: equal, or of equal
     /// length and equal outside a metadata region that both sides declare identically.
     fn same_up_to_metadata(a: &[u8], b: &[u8]) -> bool {
-        a == b
-            || (a.len() == b.len()
-                && find_metadata_start(a).is_some_and(|m| {
-                    find_metadata_start(b) == Some(m)
-                        && a[..m] == b[..m]
-                        && a[a.len() - 2..] == b[b.len() - 2..]
-                }))
+        if a == b {
+            return true;
+        }
+        if a.len() != b.len() {
+            return false;
+        }
+        match (find_metadata_start(a), find_metadata_start(b)) {
+            (Some(start_a), Some(start_b)) => {
+                start_a == start_b && a[..start_a] == b[..start_a] && a.ends_with(&b[b.len() - 2..])
+            }
+            _ => false,
+        }
     }
 
     /// Conformance with `formal/Deploy/Metadata.lean` (`tryExtract_iff`,

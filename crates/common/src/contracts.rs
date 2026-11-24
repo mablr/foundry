@@ -1030,7 +1030,9 @@ mod tests {
             last = last
                 .iter()
                 .flat_map(|list| {
-                    ranges.iter().map(move |range| [list.as_slice(), &[range.clone()]].concat())
+                    ranges
+                        .iter()
+                        .map(move |range| [list.as_slice(), std::slice::from_ref(range)].concat())
                 })
                 .collect();
             lists.extend(last.iter().cloned());
